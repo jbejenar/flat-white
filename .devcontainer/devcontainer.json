@@ -1,9 +1,8 @@
 {
   "name": "flat-white",
   "dockerComposeFile": "../docker-compose.yml",
-  "service": "db",
+  "service": "app",
   "workspaceFolder": "/workspaces/flat-white",
-  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
   "features": {
     "ghcr.io/devcontainers/features/python:1": { "version": "3.12" }
   },

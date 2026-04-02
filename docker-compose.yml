@@ -1,4 +1,13 @@
 services:
+  app:
+    image: mcr.microsoft.com/devcontainers/typescript-node:22
+    volumes:
+      - .:/workspaces/flat-white:cached
+    command: sleep infinity
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: postgis/postgis:16-3.5
     ports:
