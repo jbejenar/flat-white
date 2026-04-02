@@ -18,14 +18,16 @@
     "format:check": "prettier --check .",
     "fixture": "./scripts/build-fixture-only.sh"
   },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "eslint": "^9.18.0",
     "prettier": "^3.4.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^3.0.0",
-    "zod": "^3.23.0"
+    "vitest": "^3.0.0"
   },
   "license": "Apache-2.0"
 }
