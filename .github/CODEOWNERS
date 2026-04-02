@@ -1,0 +1,8 @@
+# flat-white code ownership
+* @jbejenar
+
+# Schema contract — changes require explicit review
+src/schema.ts @jbejenar
+docs/DOCUMENT-SCHEMA.md @jbejenar
+fixtures/expected-output.ndjson @jbejenar
+sql/ @jbejenar
