@@ -1,0 +1,8 @@
+version: "1"
+enforcement: warn
+
+thresholds:
+  composite: 46
+  pillars:
+    P1: 40
+    P8: 40

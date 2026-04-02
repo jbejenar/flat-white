@@ -1,0 +1,9 @@
+title = "flat-white gitleaks config"
+
+[allowlist]
+  description = "Allowlist for flat-white"
+  paths = [
+    '''gnaf-loader/''',
+    '''fixtures/''',
+    '''\.env\.example'''
+  ]

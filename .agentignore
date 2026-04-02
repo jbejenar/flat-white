@@ -1,0 +1,36 @@
+# Build artifacts
+dist/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Coverage
+coverage/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lockfiles (large, not useful for agents)
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# gnaf-loader submodule (922 commits, huge — agents should not read this)
+gnaf-loader/
+
+# Data files (6.5GB+ when downloaded)
+data/
+output/
+*.ndjson
+*.ndjson.gz
