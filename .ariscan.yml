@@ -1,8 +1,13 @@
 version: "1"
 enforcement: warn
 
+# Current score: 72/100 (L4 Productive)
+# Threshold set to 60 — blocks merging PRs that regress agent readiness
 thresholds:
-  composite: 46
+  composite: 60
   pillars:
-    P1: 40
-    P8: 40
+    P1: 50   # Agent Context Quality — AGENTS.md, .agentignore
+    P2: 40   # Feedback Loop Speed — test/lint/typecheck scripts, CI
+    P3: 20   # Test Isolation — low until P0 fixtures + P1 tests land
+    P6: 50   # Build Determinism — strict TypeScript, lockfile
+    P8: 40   # Security & Governance — CODEOWNERS, secrets scanning (gates L2+)

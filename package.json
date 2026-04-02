@@ -18,6 +18,25 @@
     "format:check": "prettier --check .",
     "fixture": "./scripts/build-fixture-only.sh"
   },
+  "homepage": "https://github.com/jbejenar/flat-white",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jbejenar/flat-white.git"
+  },
+  "author": "jbejenar",
+  "bugs": {
+    "url": "https://github.com/jbejenar/flat-white/issues"
+  },
+  "keywords": [
+    "australia",
+    "gnaf",
+    "addresses",
+    "ndjson",
+    "boundaries",
+    "geocoding",
+    "data-transformation",
+    "open-data"
+  ],
   "dependencies": {
     "zod": "^3.23.0"
   },
