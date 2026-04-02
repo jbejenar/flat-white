@@ -88,12 +88,12 @@ flat-white/
 │   ├── locality_full.sql             # Locality with neighbours + aliases
 │   └── create_views.sql              # Materialised views for fast export
 │
-├── fixtures/                         # Committed test data — NO gnaf-loader required
-│   ├── README.md                     # What's in the fixture, why each row exists
-│   ├── seed-postgres.sql             # Small fixture (~500 addresses, all edge cases)
-│   ├── expected-output.ndjson        # Known-good output for regression
-│   ├── expected-output-sample.json   # Single prettified doc for human reference
-│   └── edge-cases.md                 # Catalogue of edge cases + which rows cover them
+├── fixtures/                         # Committed test data — loads via psql in <30s
+│   ├── README.md                     # What's in the fixture, row counts, schema version
+│   ├── seed-postgres.sql             # Schema DDL + ~451 addresses + related tables
+│   ├── edge-cases.md                 # Catalogue of edge cases + which rows cover them
+│   ├── expected-output.ndjson        # Known-good output for regression (P0.09)
+│   └── expected-output-sample.json   # Single prettified doc for human reference (P0.09)
 │
 ├── scripts/
 │   ├── build-local.sh                # Full local build: docker up → load → flatten → output

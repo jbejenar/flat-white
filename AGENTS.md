@@ -26,8 +26,9 @@ sql/
   create_views.sql              — materialised views for fast export
 
 fixtures/
-  seed-postgres.sql             — ~500 edge-case addresses (committed)
-  expected-output.ndjson        — regression baseline
+  seed-postgres.sql             — schema DDL + ~451 edge-case addresses (loads via psql <30s)
+  edge-cases.md                 — catalogue of edge cases with PIDs
+  expected-output.ndjson        — regression baseline (once flatten SQL exists)
 ```
 
 ## Key Commands
