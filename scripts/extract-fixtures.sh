@@ -77,8 +77,13 @@ echo "  See fixtures/README.md for the full documentation."
 #   3. Assemble: pre-data + data + post-data (minus cross-subset FK constraints)
 
 echo ""
-echo "TODO: Automate the full extraction pipeline."
-echo "For now, refer to the generation commands in the PR that created this fixture."
-echo ""
-echo "Fixture PIDs selected: $FIXTURE_COUNT"
-echo "Done."
+echo "WARNING: Full extraction pipeline not yet automated."
+echo "  Fixture PIDs selected: $FIXTURE_COUNT"
+echo "  Output NOT generated: $OUTPUT was NOT overwritten."
+echo "  For now, refer to the generation commands in the PR that created this fixture."
+
+# Cleanup temp table
+docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -c \
+  "DROP TABLE IF EXISTS ${SCHEMA}.fixture_pids;" > /dev/null 2>&1
+
+exit 1
