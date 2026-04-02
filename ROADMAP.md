@@ -2,7 +2,7 @@
 
 ### Australian addresses. Flattened and served.
 
-> Last updated: 2026-04-02 · Roadmap version: 1.0.0
+> Last updated: 2026-04-02 · Roadmap version: 1.2.0
 
 ---
 
@@ -132,6 +132,8 @@ flat-white/
 ## Output Document Schema
 
 Every line in the NDJSON is one address document. This schema IS the contract. Breaking changes require a major version bump.
+
+> **Note:** This schema example is illustrative. The authoritative contract is `docs/DOCUMENT-SCHEMA.md` once published (P0.11).
 
 ```json
 {
@@ -388,11 +390,39 @@ Download your state:
 |---|---|---|---|
 | **P0-A** | Data Acquisition | 2 days | VIC loaded into local Postgres, schema explored, edge cases identified |
 | **P0-B** | Fixture + Scaffold | 3 days | Postgres fixtures committed, flatten SQL verified, repo structure complete |
-| **P1** | Flatten Core | 2 weeks | Streaming NDJSON, per-state split, gzip, schema validated, all edge cases |
+| **P1** | Flatten Core | 2 weeks | Streaming NDJSON, per-state split, gzip, schema + data quality validated |
 | **P2** | Container | 1 week | Dockerfile, one `docker run` produces NDJSON from raw data |
-| **P3** | Distribution | 1 week | GitHub Actions matrix build, GitHub Releases, downstream notification |
+| **P3** | Distribution | 1 week | GitHub Actions matrix build, GitHub Releases, adoption quick-start |
 | **P4** | Hardening | 1 week | Verification, build-over-build comparison, monitoring, runbook |
+| **P5** | AWS Mirror | Deferred | S3 upload, latest pointer, OIDC auth, SNS notifications |
 | **E1** | Enhancements | Ongoing | Parquet, delta builds, locality output, schema evolution |
+
+---
+
+## Priority Legend
+
+- 🔴 **P0** — Must ship to unlock next phase.
+- 🟠 **P1** — Should ship to hit adoption and quality targets.
+- 🟡 **P2** — Valuable expansion once core is stable.
+
+---
+
+## Personas
+
+| Persona | Description |
+|---|---|
+| builder/contributor | Develops flat-white code: flatten logic, SQL, container, CI |
+| ops/maintainer | Runs quarterly builds, monitors failures, updates gnaf-loader pins |
+| downstream developer | Integrates flat-white output into geocode-au or other consuming services |
+
+**Data consumer sub-personas:**
+
+| Sub-Persona | What They Need | Notes |
+|---|---|---|
+| Local council GIS team | Per-LGA extract, boundary data, QGIS-friendly format | NDJSON covers basics; Geoparquet (E1.05) unlocks native spatial |
+| Proptech startup | Bulk download, API-friendly, fresh quarterly data | Well-served by GitHub Releases + NDJSON |
+| Government analyst | Statistical area aggregation, ABS mesh blocks, SA1-SA4 | Well-served by boundary enrichment |
+| Academic researcher | Reproducible data, citation format, methodology docs | Needs: version pinning, DOI consideration, build methodology |
 
 ---
 
@@ -400,31 +430,942 @@ Download your state:
 
 **Target:** Week 1 · **Status:** Planned
 
-### P0-A — Data Acquisition (Days 1-2)
+### Epic P0.A — Data Acquisition
 
-| ID | Feature | Pri | Description | Acceptance Criteria |
-|---|---|---|---|---|
-| P0.01 | Repo scaffold | P0 | Create repo with full structure, AGENTS.md, manifest.json, docker-compose, gnaf-loader submodule | `git clone --recurse-submodules` pulls gnaf-loader at pinned release |
-| P0.02 | Local Postgres + PostGIS | P0 | docker-compose with Postgres 16 + PostGIS 3.5 | `docker compose up db` starts Postgres |
-| P0.03 | G-NAF download script | P0 | `src/download.ts` fetches Feb 2026 G-NAF GDA2020 + Admin Boundaries ESRI Shapefiles | Downloads ~6.5GB, extracts to `./data/` |
-| P0.04 | gnaf-loader VIC load | P0 | Run gnaf-loader against local Postgres; VIC-only | `address_principals` has ~3.8M rows; boundary tags present |
-| P0.05 | Schema exploration | P0 | Document loaded schema: table names, row counts, join paths, boundary tag columns | `docs/FIELD-PROVENANCE.md` maps every target field to source table.column |
-| P0.06 | Flatten SQL draft | P0 | `sql/address_full.sql` — master JOIN across 9+ tables | Complete flat row for any VIC PID; all boundary fields populated |
+### Ticket P0.01 — Repo Scaffold
+
+```yaml
+id: P0.01
+title: Repo Scaffold
+status: planned
+priority: p0-critical
+epic: P0.A
+persona: [builder/contributor]
+depends_on: []
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a fully scaffolded repository with the planned directory structure, AGENTS.md, manifest.json, docker-compose, and gnaf-loader submodule so that all downstream development has a stable foundation to build on.
+
+## Problem Statement
+
+flat-white is a greenfield project with a partial scaffold already committed (README, ROADMAP, LICENSE, gnaf-loader submodule, .gitignore). This ticket completes the remaining structure — package.json, tsconfig, docker-compose, .env.example, and directory scaffolding — so that all downstream development has a stable foundation. The scaffold must be complete enough that `git clone --recurse-submodules` gives a contributor everything they need to start.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Repository contains full directory structure matching the Repo Structure section of this roadmap
+  - `Verify:` `ls -R` matches planned structure (empty directories with `.gitkeep` where no files exist yet)
+  - `Evidence:`
+- [ ] `git clone --recurse-submodules` pulls gnaf-loader at a pinned release tag
+  - `Verify:` `git submodule status gnaf-loader` shows pinned commit hash
+  - `Evidence:`
+- [ ] `docker-compose.yml` defines Postgres 16 + PostGIS 3.5 service
+  - `Verify:` `docker compose config` validates without error
+  - `Evidence:`
+- [ ] `.env.example` documents all required environment variables
+  - `Verify:` File exists with documented variables
+  - `Evidence:`
+- [ ] `package.json` with TypeScript 5.7, Node.js 22 engine constraint, and basic scripts
+  - `Verify:` `node -e "require('./package.json')"` parses; `engines.node` specifies `>=22`
+  - `Evidence:`
+- [ ] `tsconfig.json` with strict mode enabled
+  - `Verify:` `npx tsc --showConfig | grep strict` shows `true`
+  - `Evidence:`
+- [ ] `CHANGELOG.md` created with initial "No releases yet" entry
+  - `Verify:` File exists and follows Keep a Changelog format
+  - `Evidence:`
+
+### Documentation
+
+- [ ] `README.md` documents project purpose, quickstart, and links to ROADMAP.md
+  - `Verify:` README contains clone instructions and link to roadmap
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Repository structure, package.json, tsconfig, docker-compose, gnaf-loader submodule, .gitignore, LICENSE, .env.example
+
+### Out — Do Not Implement
+
+- AGENTS.md content → P0.13
+- Decision records → P0.14
+- Source code in `src/` → P0.03+
+- Fixture data → P0.07+
+
+---
+
+### Ticket P0.02 — Local Postgres + PostGIS
+
+```yaml
+id: P0.02
+title: Local Postgres + PostGIS
+status: planned
+priority: p0-critical
+epic: P0.A
+persona: [builder/contributor]
+depends_on: [P0.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a local Postgres 16 + PostGIS 3.5 instance running via docker-compose so that I can load G-NAF data and develop the flatten SQL against a real database.
+
+## Problem Statement
+
+gnaf-loader requires a PostgreSQL database with PostGIS extensions to load G-NAF data and perform spatial boundary joins. Without a reproducible local database setup, developers cannot load data, explore the schema, or develop the flatten SQL. docker-compose ensures every contributor gets an identical database environment regardless of their host OS.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `docker compose up db` starts PostgreSQL 16 with PostGIS 3.5 extensions enabled
+  - `Verify:` `docker compose exec db psql -U postgres -c "SELECT PostGIS_Version()"` returns 3.5.x
+  - `Evidence:`
+- [ ] Database is accessible on `localhost:5432` with credentials from `.env.example`
+  - `Verify:` `psql -h localhost -U postgres -c "SELECT 1"` succeeds
+  - `Evidence:`
+- [ ] Volume mount persists data between container restarts during development
+  - `Verify:` `docker compose down && docker compose up db` retains previously loaded data
+  - `Evidence:`
+- [ ] `docker compose down -v` cleanly destroys all data (ephemeral by design)
+  - `Verify:` No Postgres data remains after volume removal
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- docker-compose service definition for Postgres 16 + PostGIS 3.5
+- Volume configuration for development persistence
+- Port mapping and credential configuration
+
+### Out — Do Not Implement
+
+- Production database setup (Postgres is ephemeral — DEC-002)
+- Dockerfile integration (that is P2.01)
+- gnaf-loader execution (that is P0.04)
+
+---
+
+### Ticket P0.03 — G-NAF Download Script
+
+```yaml
+id: P0.03
+title: G-NAF Download Script
+status: planned
+priority: p0-critical
+epic: P0.A
+persona: [builder/contributor]
+depends_on: [P0.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a script that downloads the latest G-NAF GDA2020 and Administrative Boundaries ESRI Shapefiles from data.gov.au so that I can feed them into gnaf-loader without manually navigating government download pages.
+
+## Problem Statement
+
+G-NAF and Administrative Boundaries data is published quarterly on data.gov.au as large zip archives (~6.5GB combined). The download URLs change each quarter. A reliable download script that handles retries, checksum verification, and extraction is essential for both local development and CI automation. Without it, every contributor must manually find and download the correct files.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `src/download.ts` fetches Feb 2026 G-NAF GDA2020 + Admin Boundaries ESRI Shapefiles from data.gov.au
+  - `Verify:` Script completes and `ls ./data/` shows G-NAF and Administrative-Boundaries directories
+  - `Evidence:`
+- [ ] Downloads ~6.5GB total, extracts to `./data/`
+  - `Verify:` `du -sh ./data/` shows ~6.5GB extracted
+  - `Evidence:`
+- [ ] Progress reporting during download (% complete, MB/s)
+  - `Verify:` Script outputs progress to stdout during download
+  - `Evidence:`
+- [ ] Retry logic for transient network failures (up to 3 retries with exponential backoff)
+  - `Verify:` Simulate network interruption and confirm retry behavior
+  - `Evidence:`
+- [ ] `--skip-download` flag skips download when data already exists
+  - `Verify:` Run twice; second run with `--skip-download` completes instantly
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Download from data.gov.au, extraction, progress reporting, retry logic
+- Version parameter to target specific quarterly releases
+
+### Out — Do Not Implement
+
+- gnaf-loader execution (that is P0.04)
+- Automated version detection (manual version parameter for now)
+
+---
+
+### Ticket P0.04 — gnaf-loader VIC Load
+
+```yaml
+id: P0.04
+title: gnaf-loader VIC Load
+status: planned
+priority: p0-critical
+epic: P0.A
+persona: [builder/contributor]
+depends_on: [P0.02, P0.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need gnaf-loader to successfully load VIC G-NAF data and Administrative Boundaries into local Postgres so that I can verify the loaded schema, develop the flatten SQL, and extract test fixtures.
+
+## Problem Statement
+
+The flatten pipeline depends on gnaf-loader having populated Postgres with the full relational G-NAF model and spatial boundary joins. Without a verified VIC load, no downstream development (SQL authoring, fixture extraction, schema documentation) can proceed. VIC is the reference state because it has ~3.8M addresses covering all major edge cases (Melbourne CBD dual-postcode, high-density units, rural addresses) and fits comfortably in free-runner memory.
+
+## Definition of Done
+
+### Functional
+
+- [ ] gnaf-loader runs against local Postgres 16 + PostGIS 3.5 via docker-compose and loads VIC-only data
+  - `Verify:` `docker compose exec db psql -U postgres -c "SELECT COUNT(*) FROM gnaf.address_principals WHERE state = 'VIC'"` returns ~3.8M rows
+  - `Evidence:`
+- [ ] Administrative Boundary spatial joins are present (LGA, electoral, ABS)
+  - `Verify:` `SELECT COUNT(*) FROM gnaf.address_principal_admin_boundaries WHERE state = 'VIC'` returns ~3.8M rows with non-null LGA
+  - `Evidence:`
+- [ ] gnaf-loader is invoked from the pinned submodule, not a fork or copy
+  - `Verify:` `git submodule status gnaf-loader` shows pinned commit
+  - `Evidence:`
+- [ ] `src/load.ts` wraps gnaf-loader invocation with error handling and logging
+  - `Verify:` Script logs start/end times and exits non-zero on gnaf-loader failure
+  - `Evidence:`
+
+### Performance
+
+- [ ] VIC load completes in under 60 minutes on a machine with 8GB RAM
+  - `Verify:` Time the load and record in PR description
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Running gnaf-loader for VIC state against local docker-compose Postgres
+- Verifying row counts and boundary tag presence
+- Wrapping gnaf-loader invocation in `src/load.ts`
+
+### Out — Do Not Implement
+
+- Multi-state loading (done in P1.11 and P3.01)
+- Flatten SQL (that is P0.06)
+- Fixture extraction (that is P0.07)
+
+---
+
+### Ticket P0.05 — Schema Exploration
+
+```yaml
+id: P0.05
+title: Schema Exploration
+status: planned
+priority: p0-critical
+epic: P0.A
+persona: [builder/contributor]
+depends_on: [P0.04]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a complete mapping of every target output field to its source G-NAF table and column so that I can write correct flatten SQL and verify that no data is lost in the transformation.
+
+## Problem Statement
+
+gnaf-loader creates a complex relational schema with 30+ tables, multiple address types (principal, alias), geocode types, locality relationships, and spatial boundary join tables. Without a documented field provenance map, writing the flatten SQL would require repeated trial-and-error exploration. The provenance document becomes the authoritative reference for both the SQL and the Zod schema.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `docs/FIELD-PROVENANCE.md` maps every target document field to its source G-NAF table.column
+  - `Verify:` Every field in the Output Document Schema section has a corresponding entry in FIELD-PROVENANCE.md
+  - `Evidence:`
+- [ ] Table names, row counts, join paths, and boundary tag columns are documented
+  - `Verify:` Document includes table-level summary with row counts from VIC load
+  - `Evidence:`
+- [ ] Join paths between tables are documented (e.g., address_principals → address_geocodes via address_detail_pid)
+  - `Verify:` A reader can trace any output field back to its source table without database access
+  - `Evidence:`
+
+### Documentation
+
+- [ ] Document is reviewable by humans and agents — no ambiguity in field mappings
+  - `Verify:` Another contributor can read FIELD-PROVENANCE.md and write a SELECT for any field
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Schema documentation from live VIC-loaded database
+- Field provenance mapping for all output document fields
+- Table relationship documentation
+
+### Out — Do Not Implement
+
+- Flatten SQL (that is P0.06)
+- Document schema specification (that is P0.11)
+
+---
+
+### Ticket P0.06 — Flatten SQL Draft
+
+```yaml
+id: P0.06
+title: Flatten SQL Draft
+status: planned
+priority: p0-critical
+epic: P0.A
+persona: [builder/contributor]
+depends_on: [P0.05]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a master SQL query that JOINs across 9+ G-NAF tables to produce a complete flat row for any address so that the TypeScript flattener can stream rows and compose NDJSON documents.
+
+## Problem Statement
+
+The core value of flat-white is transforming G-NAF's normalised relational model into a single denormalised document per address. This requires a complex SQL JOIN across address_principals, address_geocodes, address_aliases, address_secondaries, localities, locality_neighbours, locality_aliases, streets, and address_principal_admin_boundaries (at minimum). Getting this JOIN right — with correct handling of NULLs, one-to-many relationships, and boundary tags — is the most critical technical challenge in the project.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `sql/address_full.sql` contains a master JOIN across 9+ tables producing one flat row per address
+  - `Verify:` `psql -f sql/address_full.sql | head -5` produces valid rows with all expected columns
+  - `Evidence:`
+- [ ] Query produces a complete flat row for any VIC address PID with all boundary fields populated
+  - `Verify:` Spot-check 10 diverse PIDs (CBD, rural, unit, alias) and confirm all fields present
+  - `Evidence:`
+- [ ] NULL handling is correct — optional fields (flatType, levelType, numberLast, etc.) are NULL not empty string
+  - `Verify:` `SELECT flatType FROM ... WHERE flatType = ''` returns 0 rows
+  - `Evidence:`
+- [ ] Boundary fields (LGA, electoral, ABS) are populated from spatial join tables
+  - `Verify:` `SELECT lga_name, state_electorate_name, commonwealth_electorate_name FROM ... LIMIT 5` — all non-null for addresses within boundaries
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Master 9+ table JOIN query in `sql/address_full.sql`
+- Correct NULL handling for optional fields
+- Boundary field population from admin boundary tables
+
+### Out — Do Not Implement
+
+- Array aggregations (aliases, secondaries, geocodes) → P1.02, P1.03, P1.04
+- `sql/address_full_with_arrays.sql` → P1.02+
+- Materialised views → later optimisation
+- Streaming execution → P1.01
 
 **P0-A gate:** Loaded VIC database. Flatten SQL produces target document. Every field traced.
 
-### P0-B — Fixture + Dev Environment (Days 3-5)
+---
 
-| ID | Feature | Pri | Description | Acceptance Criteria |
-|---|---|---|---|---|
-| P0.07 | Fixture extraction | P0 | ~500 addresses covering all edge cases, exported as `seed-postgres.sql` | Standard (50+), units/levels (50+), rural (20+), Melbourne 3000/3004 (20+), aliases (20+), primary-secondary (20+), multi-geocode (20+), boundary edges (10+), retired (10+) |
-| P0.08 | Edge case catalogue | P0 | `fixtures/edge-cases.md` — every edge case with its fixture row | Reviewable by humans and agents |
-| P0.09 | Expected output | P0 | Flatten against fixtures, verify, commit as `expected-output.ndjson` | Regression baseline established |
-| P0.10 | Fixture-only build | P0 | `scripts/build-fixture-only.sh` — seed Postgres, flatten, output NDJSON | <30 seconds. No download. No gnaf-loader. |
-| P0.11 | Document schema spec | P0 | `docs/DOCUMENT-SCHEMA.md` — complete field reference | The contract. Reviewed. |
-| P0.12 | Zod schema | P0 | `src/schema.ts` — runtime validation | Every doc validates |
-| P0.13 | AGENTS.md | P0 | Agent instructions: fixtures, submodule rules, schema contract | Agent-executable from AGENTS.md alone |
-| P0.14 | Decision records | P0 | DEC-001 through DEC-007 | Context, decision, consequences |
+### Epic P0.B — Fixture & Dev Environment
+
+### Ticket P0.07 — Fixture Extraction
+
+```yaml
+id: P0.07
+title: Fixture Extraction
+status: planned
+priority: p0-critical
+epic: P0.B
+persona: [builder/contributor]
+depends_on: [P0.04, P0.06]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a committed set of ~500 carefully selected test addresses covering all edge cases so that I can develop and test the flatten pipeline without downloading 6.5GB of data or running gnaf-loader.
+
+## Problem Statement
+
+The full G-NAF dataset is 6.5GB and takes 30-40 minutes to load per state via gnaf-loader. This makes rapid iteration on flatten logic impossible. A committed fixture subset — small enough to load in seconds, diverse enough to cover every edge case — decouples development from the data acquisition pipeline. This is the foundation of the fixture-first development principle (DEC-005).
+
+## Definition of Done
+
+### Functional
+
+- [ ] `fixtures/seed-postgres.sql` contains ~500 addresses exported from VIC load covering all edge cases
+  - `Verify:` `psql -f fixtures/seed-postgres.sql && SELECT COUNT(*) FROM gnaf.address_principals` returns ~500
+  - `Evidence:`
+- [ ] Coverage categories: standard addresses (50+), units/levels (50+), rural (20+), Melbourne 3000/3004 dual-postcode (20+), aliases (20+), primary-secondary (20+), multi-geocode (20+), boundary edge cases (10+), retired addresses (10+)
+  - `Verify:` Each category has the minimum count documented in `fixtures/edge-cases.md`
+  - `Evidence:`
+- [ ] Fixture includes all related rows from dependent tables (geocodes, localities, streets, boundaries) — not just address_principals
+  - `Verify:` `psql -f fixtures/seed-postgres.sql` creates a self-consistent database that the flatten SQL can query
+  - `Evidence:`
+- [ ] `scripts/extract-fixtures.sh` can re-extract fixtures from a full VIC load
+  - `Verify:` Run script against full load; diff against committed fixture shows only expected additions
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Fixture extraction from VIC-loaded database
+- Coverage of all known edge case categories
+- Self-consistent related table data
+
+### Out — Do Not Implement
+
+- Expected output generation (that is P0.09)
+- Edge case catalogue documentation (that is P0.08)
+- Fixture-only build script (that is P0.10)
+
+---
+
+### Ticket P0.08 — Edge Case Catalogue
+
+```yaml
+id: P0.08
+title: Edge Case Catalogue
+status: planned
+priority: p1-high
+epic: P0.B
+persona: [builder/contributor]
+depends_on: [P0.07]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a documented catalogue of every G-NAF edge case with references to which fixture rows cover them so that I can verify the flatten logic handles all known quirks of Australian address data.
+
+## Problem Statement
+
+Australian address data has numerous edge cases that are not obvious from the schema alone: dual-postcode localities (Melbourne 3000/3004), addresses with multiple geocode types, primary-secondary relationships (parent building with child units), retired addresses that persist in the dataset, and boundary edge cases where an address sits near an LGA or electorate boundary. Without a catalogue, edge cases are discovered ad-hoc during development and may be missed in testing.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `fixtures/edge-cases.md` documents every known edge case with its fixture row PID(s)
+  - `Verify:` Every edge case has at least one PID reference that exists in `seed-postgres.sql`
+  - `Evidence:`
+- [ ] Document is reviewable by both humans and agents — clear descriptions of what makes each case special
+  - `Verify:` A new contributor can understand each edge case without prior G-NAF knowledge
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Edge case documentation and fixture row cross-references
+
+### Out — Do Not Implement
+
+- New edge case discovery from production data (happens organically in P4)
+
+---
+
+### Ticket P0.09 — Expected Output
+
+```yaml
+id: P0.09
+title: Expected Output
+status: planned
+priority: p0-critical
+epic: P0.B
+persona: [builder/contributor]
+depends_on: [P0.06, P0.07]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a committed known-good NDJSON output for the fixture data so that I can run regression tests against it and catch any unintended changes to the flatten logic.
+
+## Problem Statement
+
+Without a committed expected output, there is no regression baseline. Any change to the flatten SQL or TypeScript composition logic could silently alter the output in ways that break downstream consumers. The expected output file serves as the contract verification — if the flatten pipeline produces output that differs from the committed baseline, the build fails.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `fixtures/expected-output.ndjson` contains the known-good flatten output for the fixture data
+  - `Verify:` `wc -l fixtures/expected-output.ndjson` matches the number of address_principals in `seed-postgres.sql`
+  - `Evidence:`
+- [ ] `fixtures/expected-output-sample.json` contains a single prettified document for human reference
+  - `Verify:` `cat fixtures/expected-output-sample.json | python3 -m json.tool` validates as JSON
+  - `Evidence:`
+- [ ] Output matches the document schema defined in this roadmap
+  - `Verify:` Every field in the sample matches the Output Document Schema section
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Generating and committing baseline output from fixtures
+- Prettified sample document for human readability
+
+### Out — Do Not Implement
+
+- Regression test automation (that is P1.15)
+- Schema validation tooling (that is P0.12)
+
+---
+
+### Ticket P0.10 — Fixture-Only Build
+
+```yaml
+id: P0.10
+title: Fixture-Only Build
+status: planned
+priority: p0-critical
+epic: P0.B
+persona: [builder/contributor]
+depends_on: [P0.07, P0.09]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a script that seeds Postgres with fixture data, runs the flatten pipeline, and outputs NDJSON in under 30 seconds so that I can iterate rapidly on flatten logic without waiting for a full data download and load.
+
+## Problem Statement
+
+The full build pipeline (download → gnaf-loader → flatten) takes 30-60 minutes. During development of the flatten logic, SQL, and schema validation, developers need a sub-minute feedback loop. The fixture-only build provides this by seeding a local Postgres with the committed fixture data and running only the flatten step.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `scripts/build-fixture-only.sh` seeds Postgres from `fixtures/seed-postgres.sql`, runs flatten, outputs NDJSON
+  - `Verify:` `./scripts/build-fixture-only.sh && cat output/fixture.ndjson | wc -l` returns ~500 lines
+  - `Evidence:`
+- [ ] No download required — works entirely from committed fixture data
+  - `Verify:` Disconnect network and run script; it succeeds
+  - `Evidence:`
+- [ ] No gnaf-loader required — seeds directly via `psql`
+  - `Verify:` Script does not invoke gnaf-loader
+  - `Evidence:`
+
+### Performance
+
+- [ ] Completes in under 30 seconds on commodity hardware
+  - `Verify:` `time ./scripts/build-fixture-only.sh` shows <30s wall-clock
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Shell script that orchestrates: docker-compose up → psql seed → flatten → output
+- Sub-30-second execution
+
+### Out — Do Not Implement
+
+- Full build orchestration (that is `src/build.ts` in P1)
+- CI integration (that is P2.08)
+
+---
+
+### Ticket P0.11 — Document Schema Spec
+
+```yaml
+id: P0.11
+title: Document Schema Spec
+status: planned
+priority: p0-critical
+epic: P0.B
+persona: [builder/contributor, data consumer, downstream developer]
+depends_on: [P0.06]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer or downstream developer, I need a complete field reference for the NDJSON document schema so that I can build integrations without reverse-engineering the output format.
+
+## Problem Statement
+
+The NDJSON document schema is the contract between flat-white and every downstream consumer. Without a formal specification, consumers must infer field types, nullability, and semantics from sample data — leading to brittle integrations that break on edge cases. The schema spec is the single source of truth that gets published as a GitHub Release asset alongside the data files.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `docs/DOCUMENT-SCHEMA.md` provides a complete field reference for every field in the output document
+  - `Verify:` Every field in the Output Document Schema section of this roadmap has a corresponding entry with type, nullability, and description
+  - `Evidence:`
+- [ ] Document is reviewed and approved as the contract
+  - `Verify:` PR review confirms completeness and accuracy
+  - `Evidence:`
+
+### Documentation
+
+- [ ] Each field includes: name, type, nullability, description, example value, and source G-NAF table.column reference
+  - `Verify:` Spot-check 10 fields for completeness
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Complete field reference documentation in `docs/DOCUMENT-SCHEMA.md`
+- Published as GitHub Release asset
+
+### Out — Do Not Implement
+
+- Zod runtime schema (that is P0.12)
+- Schema evolution tooling (that is E1.04)
+
+---
+
+### Ticket P0.12 — Zod Schema
+
+```yaml
+id: P0.12
+title: Zod Schema
+status: planned
+priority: p0-critical
+epic: P0.B
+persona: [builder/contributor]
+depends_on: [P0.11]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a Zod schema in `src/schema.ts` that provides runtime validation and TypeScript type inference for address documents so that invalid documents are caught during the build rather than shipped to consumers.
+
+## Problem Statement
+
+Static type checking alone cannot catch runtime data issues — NULL values in unexpected fields, incorrect boundary data types, or malformed geocode arrays. Zod provides both runtime validation (every document is validated during flatten) and TypeScript type inference (the schema IS the type definition). This ensures the NDJSON contract defined in `docs/DOCUMENT-SCHEMA.md` is enforced programmatically.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `src/schema.ts` defines Zod schemas for the complete address document, including nested objects (geocode, locality, street, boundaries, aliases, secondaries)
+  - `Verify:` `import { AddressDocument } from './schema'` compiles and type-checks
+  - `Evidence:`
+- [ ] Every document in `fixtures/expected-output.ndjson` validates against the schema
+  - `Verify:` `cat fixtures/expected-output.ndjson | node -e "..."` validates every line
+  - `Evidence:`
+- [ ] Schema matches `docs/DOCUMENT-SCHEMA.md` exactly — no field mismatches
+  - `Verify:` Cross-reference Zod schema fields with DOCUMENT-SCHEMA.md
+  - `Evidence:`
+
+### Testing
+
+- [ ] Unit tests for schema validation: valid documents pass, documents with missing/wrong-type fields fail
+  - `Verify:` `npx vitest run test/unit/schema.test.ts` passes
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Zod schema definitions in `src/schema.ts`
+- TypeScript type exports
+- Unit tests for validation
+
+### Out — Do Not Implement
+
+- Runtime validation integration into flatten pipeline (that is P1.09)
+- Schema evolution tooling (that is E1.04)
+
+---
+
+### Ticket P0.13 — AGENTS.md
+
+```yaml
+id: P0.13
+title: AGENTS.md
+status: planned
+priority: p1-high
+epic: P0.B
+persona: [builder/contributor]
+depends_on: [P0.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor using AI coding agents, I need an AGENTS.md file that gives agents all the context they need to work effectively on flat-white — fixture usage, submodule rules, schema contract, and development workflow.
+
+## Problem Statement
+
+AI coding agents perform significantly better when given project-specific instructions. Without AGENTS.md, an agent working on flat-white might modify the gnaf-loader submodule directly, skip fixture-based testing in favor of downloading 6.5GB of data, or make breaking schema changes without updating the contract documentation. AGENTS.md encodes the project's principles and workflow as machine-readable instructions.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `AGENTS.md` contains instructions for: fixture-first development, submodule rules (never modify gnaf-loader), schema contract (update DOCUMENT-SCHEMA.md + schema.ts + expected-output.ndjson together), Postgres ephemeral principle
+  - `Verify:` An AI agent can execute `build-fixture-only.sh` and run tests from AGENTS.md alone
+  - `Evidence:`
+- [ ] Instructions are actionable and unambiguous — no vague guidance
+  - `Verify:` Review for specificity; every instruction maps to a concrete action
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- AGENTS.md with project-specific instructions for AI coding agents
+
+### Out — Do Not Implement
+
+- HINTS.md (human override hints — future)
+- manifest.json (agent skill routing — future)
+
+---
+
+### Ticket P4.05 — gnaf-loader Tracking
+
+```yaml
+id: P4.05
+title: gnaf-loader Tracking
+status: planned
+priority: p0-critical
+epic: P0.B
+persona: [ops/maintainer]
+depends_on: [P0.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need automated detection of new gnaf-loader releases with a PR to update the submodule pin so that flat-white is never more than one release behind upstream.
+
+## Problem Statement
+
+gnaf-loader is a pinned submodule. If upstream releases a new version with bug fixes or G-NAF schema changes, flat-white should track it promptly. Manual checking is unreliable. Setting this up early (in P0, not P4) means upstream changes are caught from day one rather than after the first production release. An automated workflow that checks for new gnaf-loader releases and opens a PR to update the submodule pin ensures timely tracking.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Automated workflow checks for new gnaf-loader releases (weekly or on schedule)
+  - `Verify:` Workflow runs on schedule and checks upstream release
+  - `Evidence:`
+- [ ] PR opened automatically when new release detected, updating submodule pin
+  - `Verify:` After a mock upstream release, confirm PR created
+  - `Evidence:`
+- [ ] PR includes: old version, new version, upstream changelog link
+  - `Verify:` PR body contains version comparison and changelog link
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Automated release checking workflow
+- Submodule update PR generation
+
+### Out — Do Not Implement
+
+- Automatic merge of submodule updates (human review required)
+
+---
+
+### Ticket P0.14 — Decision Records
+
+```yaml
+id: P0.14
+title: Decision Records
+status: planned
+priority: p1-high
+epic: P0.B
+persona: [builder/contributor]
+depends_on: [P0.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need documented decision records (DEC-001 through DEC-007) so that I understand the reasoning behind key architectural choices and can make informed decisions when extending the project.
+
+## Problem Statement
+
+Architectural decisions without documented context become tribal knowledge. When a future contributor asks "why NDJSON instead of Parquet?" or "why not fork gnaf-loader?", the answer should be in a decision record — not in someone's memory. Each decision record captures the context, the decision, the alternatives considered, and the consequences.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Decision records DEC-001 through DEC-007 are committed in `docs/decisions/`
+  - `Verify:` `ls docs/decisions/DEC-*.md | wc -l` returns 7
+  - `Evidence:`
+- [ ] Each record includes: context, decision, alternatives considered, consequences
+  - `Verify:` Spot-check 3 records for completeness
+  - `Evidence:`
+- [ ] Records cover: NDJSON over Parquet (DEC-001), ephemeral Postgres (DEC-002), submodule not fork (DEC-003), streaming flatten (DEC-004), fixture-first (DEC-005), matrix build on free runners (DEC-006), GitHub Releases distribution (DEC-007)
+  - `Verify:` File names match planned topics
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- 7 decision records in `docs/decisions/`
+
+### Out — Do Not Implement
+
+- Future decision records (added as needed)
 
 **M0 success:** `./scripts/build-fixture-only.sh` → valid NDJSON in <30 seconds. Schema validates. Every field traced.
 
@@ -434,24 +1375,1045 @@ Download your state:
 
 **Target:** Weeks 2-3 · **Status:** Planned
 
-| ID | Feature | Pri | Description | Acceptance Criteria |
-|---|---|---|---|---|
-| P1.01 | Streaming flatten | P0 | Cursor-based streaming from Postgres, line-by-line NDJSON | <500MB memory regardless of dataset size |
-| P1.02 | Alias aggregation | P0 | `aliases[]` array per principal address | All aliases for a principal in one document |
-| P1.03 | Secondary aggregation | P0 | `secondaries[]` array per primary address | All child units/flats in parent document |
-| P1.04 | Multi-geocode aggregation | P0 | `allGeocodes[]` array per address | All geocode types listed |
-| P1.05 | Locality context | P0 | `locality.neighbours[]` and `locality.aliases[]` | Populated from LOCALITY_NEIGHBOUR + LOCALITY_ALIAS |
-| P1.06 | Boundary enrichment | P0 | LGA, electoral, ABS tags from `address_principal_admin_boundaries` | All boundary fields populated |
-| P1.07 | Street context | P0 | `street.class` and `street.aliases[]` | Populated |
-| P1.08 | addressLabelSearch | P0 | Expanded label: full street type, full flat type | Distinct from addressLabel; search-optimised |
-| P1.09 | Schema validation | P0 | Every doc validated against Zod during flatten | Build fails on invalid doc |
-| P1.10 | Row count verification | P0 | Output count vs source count | Within 0.1% |
-| P1.11 | Full VIC build | P0 | End-to-end: download → gnaf-loader → flatten → NDJSON | ~3.8M docs in <45 min; 50 PIDs spot-checked |
-| P1.12 | Output metadata | P0 | `metadata.json`: version, states, per-state counts, schema version, build timestamp | Machine-readable; consumers verify without opening NDJSON |
-| P1.13 | Per-state split | P0 | `--split-states` produces one file per state | 9 state files; counts match source; each has metadata line |
-| P1.14 | Gzip compression | P0 | `--compress` streams gzip output | ~85-90% compression; each `.ndjson.gz` is valid gzip |
-| P1.15 | Regression tests | P0 | Fixture build compared against `expected-output.ndjson` | CI fails on any change without fixture update |
-| P1.16 | Performance baseline | P1 | VIC build time, memory, file sizes, per-state row counts | `docs/PERFORMANCE.md` |
+### Epic P1.1 — Core Flatten Pipeline
+
+> **Parallelism note:** P1.02–P1.08 are independent of each other — they all depend only on P1.01. After P1.01 (Streaming Flatten) is complete, all 7 aggregation/enrichment tickets can be developed in parallel. This is the highest-throughput window in the roadmap.
+
+### Ticket P1.01 — Streaming Flatten
+
+```yaml
+id: P1.01
+title: Streaming Flatten
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor]
+depends_on: [P0.06, P0.12]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need a streaming flattener that reads rows from Postgres via a cursor and writes NDJSON line-by-line so that the pipeline can handle millions of addresses without exceeding memory limits on free GitHub Actions runners.
+
+## Problem Statement
+
+VIC alone has ~3.8M addresses. Loading all rows into memory would require several GB of RAM, exceeding the 7GB limit on free GitHub Actions runners. A cursor-based streaming approach processes one row at a time, composing a document and writing it to the output stream before moving to the next. This keeps memory usage under 500MB regardless of dataset size — the key constraint that makes free-runner execution possible.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `src/flatten.ts` streams rows from Postgres using a cursor, composes documents, writes line-by-line NDJSON
+  - `Verify:` Run against VIC fixture; output is valid NDJSON with one document per line
+  - `Evidence:`
+- [ ] Memory usage stays under 500MB regardless of dataset size
+  - `Verify:` Monitor RSS during VIC full build (P1.11); peak <500MB
+  - `Evidence:`
+- [ ] Each output line is a valid JSON document matching the Zod schema
+  - `Verify:` `cat output.ndjson | head -10 | node -e "..."` validates each line
+  - `Evidence:`
+
+### Performance
+
+- [ ] Throughput sufficient to process VIC (~3.8M addresses) in under 45 minutes
+  - `Verify:` Measure during P1.11 full VIC build
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Cursor-based streaming from Postgres
+- Document composition from flat SQL rows
+- Line-by-line NDJSON output
+
+### Out — Do Not Implement
+
+- Array aggregations (aliases, secondaries, geocodes) → P1.02, P1.03, P1.04
+- Schema validation during flatten → P1.09
+- Per-state split → P1.13
+- Compression → P1.14
+
+---
+
+### Ticket P1.02 — Alias Aggregation
+
+```yaml
+id: P1.02
+title: Alias Aggregation
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need the `aliases[]` array populated on each principal address document so that downstream consumers can match addresses by any of their known alternative names.
+
+## Problem Statement
+
+G-NAF addresses can have multiple aliases — alternative names, synonyms, or historical labels. In the relational model, these are separate rows in address_aliases linked to the principal address. The flatten pipeline must aggregate all aliases for a principal into a single `aliases[]` array in the output document. Missing aliases means downstream search systems won't match valid alternative address formats.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Each principal address document includes an `aliases[]` array with all associated alias addresses
+  - `Verify:` Query fixture for a known address with aliases; confirm all appear in the output document
+  - `Evidence:`
+- [ ] Each alias entry includes `pid`, `label`, and `type` fields
+  - `Verify:` `jq '.aliases[0] | keys' output.ndjson` returns `["label", "pid", "type"]`
+  - `Evidence:`
+- [ ] Addresses with no aliases have an empty array `[]`, not null
+  - `Verify:` `jq 'select(.aliases == null)' output.ndjson` returns 0 results
+  - `Evidence:`
+
+### Testing
+
+- [ ] Fixture includes addresses with 0, 1, and multiple aliases — all correctly aggregated
+  - `Verify:` Regression test compares against `expected-output.ndjson`
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- SQL aggregation or TypeScript-level grouping of aliases per principal address
+- `aliases[]` array population in output documents
+
+### Out — Do Not Implement
+
+- Secondary address aggregation (that is P1.03)
+- addressLabelSearch field (that is P1.08)
+
+---
+
+### Ticket P1.03 — Secondary Aggregation
+
+```yaml
+id: P1.03
+title: Secondary Aggregation
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need the `secondaries[]` array populated on each primary address document so that downstream consumers can see all child units/flats associated with a parent building address.
+
+## Problem Statement
+
+G-NAF models primary-secondary relationships where a primary address (e.g., "1 MCNAB AV") has secondary addresses (e.g., "SHOP 1 1 MCNAB AV", "UNIT G1 1 MCNAB AV"). The flatten pipeline must aggregate all secondaries for a primary into a single `secondaries[]` array. This enables downstream consumers to display all units within a building from a single document lookup.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Each primary address document includes a `secondaries[]` array with all child units/flats
+  - `Verify:` Query fixture for a known primary address with secondaries; confirm all appear
+  - `Evidence:`
+- [ ] Each secondary entry includes `pid` and `label` fields
+  - `Verify:` `jq '.secondaries[0] | keys' output.ndjson` returns `["label", "pid"]`
+  - `Evidence:`
+- [ ] Addresses with no secondaries have an empty array `[]`, not null
+  - `Verify:` `jq 'select(.secondaries == null)' output.ndjson` returns 0 results
+  - `Evidence:`
+
+### Testing
+
+- [ ] Fixture includes addresses with 0, 1, and multiple secondaries — all correctly aggregated
+  - `Verify:` Regression test compares against `expected-output.ndjson`
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- SQL aggregation or TypeScript-level grouping of secondaries per primary address
+- `secondaries[]` array population in output documents
+
+### Out — Do Not Implement
+
+- Alias aggregation (that is P1.02)
+- Recursive secondary-of-secondary relationships (not present in G-NAF)
+
+---
+
+### Ticket P1.04 — Multi-Geocode Aggregation
+
+```yaml
+id: P1.04
+title: Multi-Geocode Aggregation
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need the `allGeocodes[]` array populated with every geocode type for each address so that downstream consumers can choose the most appropriate coordinate (frontage, parcel centroid, property access point) for their use case.
+
+## Problem Statement
+
+A single address can have multiple geocode types in G-NAF — frontage centre setback (FCS), parcel centroid (PC), property access point (PAP), and others. The primary `geocode` field contains the "best" geocode (typically FCS with highest reliability), but consumers doing spatial analysis or routing need access to all available coordinates. The `allGeocodes[]` array provides this.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Each address document includes an `allGeocodes[]` array with all associated geocode types
+  - `Verify:` Query fixture for a known multi-geocode address; confirm all types present
+  - `Evidence:`
+- [ ] Each geocode entry includes `lat`, `lng`, `type`, and `reliability` fields
+  - `Verify:` `jq '.allGeocodes[0] | keys' output.ndjson` returns expected fields
+  - `Evidence:`
+- [ ] Primary `geocode` field contains the best geocode (highest reliability, preferring FCS type)
+  - `Verify:` Spot-check 5 addresses; primary geocode matches expected best selection
+  - `Evidence:`
+- [ ] Addresses with a single geocode have `allGeocodes` with one entry
+  - `Verify:` `jq 'select(.allGeocodes | length == 1)' output.ndjson` returns results
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- SQL aggregation or TypeScript-level grouping of geocodes per address
+- `allGeocodes[]` array population
+- Primary geocode selection logic
+
+### Out — Do Not Implement
+
+- Geocode quality scoring beyond reliability field
+- Custom geocode type filtering
+
+---
+
+### Ticket P1.05 — Locality Context
+
+```yaml
+id: P1.05
+title: Locality Context
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need the `locality` object populated with neighbouring localities and locality aliases so that downstream consumers can offer "did you mean?" suggestions and understand geographic context.
+
+## Problem Statement
+
+G-NAF includes locality neighbour and locality alias tables that provide valuable context for address search and validation. Knowing that FOOTSCRAY neighbours ASCOT VALE and SEDDON helps a search system suggest alternatives when an exact match isn't found. Locality aliases (FOOTSCRAY WEST → FOOTSCRAY) help match addresses that use informal or historical locality names.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Each address document includes a `locality` object with `pid`, `class`, `neighbours[]`, and `aliases[]`
+  - `Verify:` Query fixture for FOOTSCRAY address; confirm neighbours and aliases populated
+  - `Evidence:`
+- [ ] `locality.neighbours[]` populated from LOCALITY_NEIGHBOUR table
+  - `Verify:` Spot-check 3 localities; neighbours match known geography
+  - `Evidence:`
+- [ ] `locality.aliases[]` populated from LOCALITY_ALIAS table
+  - `Verify:` Spot-check a locality with known aliases
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Locality context enrichment: neighbours and aliases
+- `sql/locality_full.sql` query for locality data
+
+### Out — Do Not Implement
+
+- Locality-only output file (that is E1.03)
+- Locality search index (downstream consumer concern)
+
+---
+
+### Ticket P1.06 — Boundary Enrichment
+
+```yaml
+id: P1.06
+title: Boundary Enrichment
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need the `boundaries` object populated with LGA, electoral, and ABS statistical area data so that every address document is pre-enriched with the administrative and statistical boundaries it falls within.
+
+## Problem Statement
+
+Boundary enrichment is one of flat-white's core value propositions. Normally, determining which LGA, electorate, or ABS statistical area an address belongs to requires expensive spatial queries or commercial geocoding services. gnaf-loader performs these spatial joins during loading, storing the results in `address_principal_admin_boundaries`. The flatten pipeline must expose all of these pre-computed boundary tags in the output document.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Each address document includes a `boundaries` object with all boundary fields: lga, ward, stateElectorate, commonwealthElectorate, meshBlock, sa1, sa2, sa3, sa4, gccsa
+  - `Verify:` `jq '.boundaries | keys' output.ndjson | head -1` returns all expected fields
+  - `Evidence:`
+- [ ] All boundary fields populated from `address_principal_admin_boundaries` table
+  - `Verify:` Spot-check 5 addresses; boundary values match known administrative geography
+  - `Evidence:`
+- [ ] Nested objects include both `name` and `code` where applicable (e.g., LGA has both)
+  - `Verify:` `jq '.boundaries.lga | keys' output.ndjson` returns `["code", "name"]`
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Boundary field population from admin boundary join tables
+- All boundary types: LGA, ward, state electorate, commonwealth electorate, mesh block, SA1-SA4, GCCSA
+
+### Out — Do Not Implement
+
+- Custom boundary lookups
+- Boundary geometry (only names and codes, not spatial data)
+
+---
+
+### Ticket P1.07 — Street Context
+
+```yaml
+id: P1.07
+title: Street Context
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need the `street` object populated with street class and street aliases so that downstream consumers can validate street data and match addresses using alternative street names.
+
+## Problem Statement
+
+G-NAF includes street-level metadata: confirmation class (CONFIRMED vs UNCONFIRMED) and street aliases. While less impactful than locality or boundary data, street context helps downstream search systems handle street name changes and alternative spellings. The `street.class` field is useful for data quality assessment.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Each address document includes a `street` object with `pid`, `class`, and `aliases[]`
+  - `Verify:` `jq '.street | keys' output.ndjson | head -1` returns `["aliases", "class", "pid"]`
+  - `Evidence:`
+- [ ] `street.class` populated (CONFIRMED, UNCONFIRMED, etc.)
+  - `Verify:` `jq '.street.class' output.ndjson | sort -u` returns known values
+  - `Evidence:`
+- [ ] `street.aliases[]` populated from street alias tables
+  - `Verify:` If fixture contains a street alias, confirm it appears
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Street context enrichment: class and aliases
+
+### Out — Do Not Implement
+
+- Street geometry
+- Street-level search index
+
+---
+
+### Ticket P1.08 — addressLabelSearch
+
+```yaml
+id: P1.08
+title: addressLabelSearch
+status: planned
+priority: p0-critical
+epic: P1.1
+persona: [builder/contributor, downstream developer]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a downstream developer, I need an `addressLabelSearch` field with the full expanded street type and flat type so that my search index can match user queries like "1 MCNAB AVENUE" against the full expanded form rather than the abbreviated "1 MCNAB AV".
+
+## Problem Statement
+
+The G-NAF `addressLabel` uses abbreviated street types (AV, ST, RD) and flat types. Users searching for addresses typically type the full form ("AVENUE", "STREET", "ROAD"). A search-optimised label with expansions enables better fuzzy matching. The `addressLabelSearch` field is distinct from `addressLabel` — the latter preserves the G-NAF canonical form, the former is optimised for downstream search systems.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Each address document includes an `addressLabelSearch` field with full street type and flat type expansions
+  - `Verify:` An address with "AV" in `addressLabel` has "AVENUE" in `addressLabelSearch`
+  - `Evidence:`
+- [ ] `addressLabelSearch` is distinct from `addressLabel` — different fields serving different purposes
+  - `Verify:` `jq 'select(.addressLabel == .addressLabelSearch)' output.ndjson | wc -l` is significantly less than total
+  - `Evidence:`
+- [ ] Expansion map covers all G-NAF street type and flat type abbreviations
+  - `Verify:` Cross-reference expansion map with G-NAF authority code tables
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Street type and flat type expansion logic
+- `addressLabelSearch` field generation
+
+### Out — Do Not Implement
+
+- Custom search logic (downstream consumer concern)
+- Phonetic matching
+
+---
+
+### Epic P1.2 — Validation & Output
+
+### Ticket P1.09 — Schema Validation
+
+```yaml
+id: P1.09
+title: Schema Validation
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [builder/contributor]
+depends_on: [P0.12, P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need every document validated against the Zod schema during the flatten process so that the build fails immediately if any document is invalid, rather than shipping bad data to consumers.
+
+## Problem Statement
+
+Without runtime validation, a subtle SQL change or data anomaly could produce documents with missing fields, wrong types, or malformed nested objects. These would only be discovered when a downstream consumer's ingestion pipeline breaks. By validating every document during flatten, flat-white guarantees that every line in the NDJSON file conforms to the published schema contract.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Every document is validated against the Zod schema during flatten
+  - `Verify:` Introduce a deliberate schema violation in the SQL; confirm the build fails with a clear error message
+  - `Evidence:`
+- [ ] Build fails on the first invalid document with a clear error: PID, field, expected type, actual value
+  - `Verify:` Error message is actionable — developer can identify and fix the issue
+  - `Evidence:`
+- [ ] Validation does not significantly impact throughput (<10% overhead)
+  - `Verify:` Measure flatten time with and without validation on fixture data
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Runtime Zod validation of every document during flatten
+- Actionable error messages on validation failure
+
+### Out — Do Not Implement
+
+- Sampling-based validation (every document is validated)
+- Custom validation rules beyond the Zod schema
+
+---
+
+### Ticket P1.10 — Row Count Verification
+
+```yaml
+id: P1.10
+title: Row Count Verification
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [builder/contributor, ops/maintainer]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need the output document count verified against the source row count so that I can detect data loss during the flatten process.
+
+## Problem Statement
+
+If the flatten pipeline silently drops rows — due to a SQL JOIN issue, a streaming error, or an unhandled edge case — the output file would be incomplete. Consumers would have a partial dataset without knowing it. Row count verification catches this by comparing the number of output documents against the number of source address_principals rows (within a 0.1% tolerance to account for legitimate filtering).
+
+## Definition of Done
+
+### Functional
+
+- [ ] `src/verify.ts` compares output NDJSON line count against source `address_principals` row count
+  - `Verify:` Run against fixture; counts match exactly
+  - `Evidence:`
+- [ ] Build fails if difference exceeds 0.1%
+  - `Verify:` Artificially drop 1% of rows; confirm build fails with clear error
+  - `Evidence:`
+- [ ] Verification report logs: source count, output count, difference %, pass/fail
+  - `Verify:` Check build logs for verification summary
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Row count comparison between source and output
+- 0.1% tolerance threshold
+- Clear pass/fail reporting
+
+### Out — Do Not Implement
+
+- Content-level verification (that is P1.09 schema validation)
+- Build-over-build comparison (that is P4.03)
+
+---
+
+### Ticket P1.10A — Data Quality Checks
+
+```yaml
+id: P1.10A
+title: Data Quality Checks
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [builder/contributor, ops/maintainer]
+depends_on: [P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need data quality checks beyond row count verification — coordinate sanity, postcode validation, PID uniqueness, and boundary coverage — so that downstream consumers receive clean data and anomalies are caught during the build.
+
+## Problem Statement
+
+Row count verification (P1.10) catches missing rows but not bad data. G-NAF can contain addresses with coordinates outside Australia (data entry errors), impossible state/postcode combinations, duplicate PIDs from merge artefacts, or addresses inside an LGA boundary that are missing LGA tags (spatial join failures). Without data quality checks, these issues propagate silently to every downstream consumer.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Coordinate bounding box check: all geocodes fall within Australian mainland + territories bounding box (-44.0 to -9.0 lat, 112.0 to 154.0 lng)
+  - `Verify:` Introduce a coordinate outside the bounding box; build fails with clear error
+  - `Evidence:`
+- [ ] State/postcode cross-validation: postcode ranges match expected state assignments
+  - `Verify:` A VIC address with a NSW postcode (2000) triggers a warning
+  - `Evidence:`
+- [ ] PID uniqueness assertion: no duplicate `_id` values in the output
+  - `Verify:` `jq '._id' output.ndjson | sort | uniq -d` returns empty
+  - `Evidence:`
+- [ ] Boundary coverage percentage per state: percentage of addresses with all boundary fields populated
+  - `Verify:` Coverage report shows >99% for LGA, >98% for electorates; anomalies flagged
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Coordinate bounding box validation
+- State/postcode cross-validation
+- PID uniqueness check
+- Boundary coverage reporting
+
+### Out — Do Not Implement
+
+- Automated data correction (flag only, don't fix)
+- Address-level geocode accuracy assessment
+
+---
+
+### Ticket P1.11 — Full VIC Build
+
+```yaml
+id: P1.11
+title: Full VIC Build
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [builder/contributor]
+depends_on: [P1.01, P1.02, P1.03, P1.04, P1.05, P1.06, P1.07, P1.08, P1.09, P1.10]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need an end-to-end VIC build (download → gnaf-loader → flatten → NDJSON) to succeed and produce ~3.8M validated documents so that I can confirm the entire pipeline works at production scale before containerizing.
+
+## Problem Statement
+
+Fixture-based development covers correctness but not scale. The full VIC build is the first real test of the pipeline at production volume — 3.8M addresses, all aggregations, all boundary enrichments, schema validation on every document. This build validates memory usage (must stay under 7GB for free runners), throughput (must complete in under 45 minutes), and correctness at scale (spot-check 50 PIDs).
+
+## Definition of Done
+
+### Functional
+
+- [ ] End-to-end pipeline: download → gnaf-loader → flatten → NDJSON produces ~3.8M documents
+  - `Verify:` `wc -l output/flat-white-vic.ndjson` returns ~3.8M
+  - `Evidence:`
+- [ ] 50 diverse PIDs spot-checked for correctness (CBD, rural, unit, alias, boundary edge cases)
+  - `Verify:` Script that extracts 50 PIDs and compares key fields against expected values
+  - `Evidence:`
+- [ ] All aggregations correct (aliases, secondaries, geocodes, locality, boundaries, street)
+  - `Verify:` Spot-check documents with known aggregations
+  - `Evidence:`
+- [ ] Schema validation passes on every document
+  - `Verify:` Build completes without schema validation errors
+  - `Evidence:`
+- [ ] Row count verification passes
+  - `Verify:` Verification report shows source and output counts within 0.1%
+  - `Evidence:`
+
+### Performance
+
+- [ ] Completes in under 45 minutes on a machine with 8GB RAM
+  - `Verify:` `time ./scripts/build-local.sh --states VIC` shows <45 min
+  - `Evidence:`
+- [ ] Peak memory usage under 5GB (leaving headroom for 7GB free runners)
+  - `Verify:` Monitor RSS during build; peak <5GB
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- End-to-end VIC build
+- Scale validation
+- Performance measurement
+
+### Out — Do Not Implement
+
+- Multi-state build (that is P3.01)
+- Container execution (that is P2)
+
+---
+
+### Ticket P1.12 — Output Metadata
+
+```yaml
+id: P1.12
+title: Output Metadata
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [downstream developer, data consumer]
+depends_on: [P1.11]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a downstream developer, I need a machine-readable metadata JSON file alongside the NDJSON output so that I can verify the build version, per-state document counts, and schema version without opening the NDJSON files.
+
+## Problem Statement
+
+Downstream consumers need to verify what they've downloaded without parsing potentially gigabytes of NDJSON. A small metadata file provides version, per-state counts, schema version, build timestamp, and gnaf-loader version — enabling automated verification, changelog generation, and staleness detection.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `src/metadata.ts` generates a `metadata.json` with: version, states, per-state counts, total count, schema version, build timestamp, gnaf-loader version
+  - `Verify:` `cat output/metadata.json | python3 -m json.tool` validates and contains all expected fields
+  - `Evidence:`
+- [ ] Metadata is machine-readable and consumers can verify without opening NDJSON
+  - `Verify:` Write a script that reads metadata.json and confirms per-state counts
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Metadata JSON generation
+- Per-state and total document counts
+- Version and timestamp information
+
+### Out — Do Not Implement
+
+- Release notes generation (that is P3.04)
+- Build-over-build delta (that is P4.03)
+
+---
+
+### Ticket P1.13 — Per-State Split
+
+```yaml
+id: P1.13
+title: Per-State Split
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [data consumer]
+depends_on: [P1.11]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need the output split into per-state files so that I can download only the state(s) I need rather than the entire 15.9M address dataset.
+
+## Problem Statement
+
+The full all-states NDJSON file is ~1.2GB compressed. Most consumers only need one or two states. Per-state splitting allows a Victorian council to download just the VIC file (~112MB) instead of the full dataset. The `--split-states` flag triggers this behavior.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `--split-states` produces one NDJSON file per state (9 files: VIC, NSW, QLD, SA, WA, TAS, NT, ACT, OT)
+  - `Verify:` `ls output/flat-white-*-*.ndjson | wc -l` returns 9
+  - `Evidence:`
+- [ ] Per-state counts match source state counts — no cross-contamination
+  - `Verify:` `wc -l output/flat-white-*-vic.ndjson` matches VIC source count
+  - `Evidence:`
+- [ ] Sum of all per-state counts equals total count
+  - `Verify:` Sum per-state line counts; matches total in metadata.json
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- State-based file splitting from NDJSON stream
+- File naming convention: `flat-white-{version}-{state}.ndjson`
+
+### Out — Do Not Implement
+
+- Gzip compression (that is P1.14)
+- Custom region splitting beyond states
+
+---
+
+### Ticket P1.14 — Gzip Compression
+
+```yaml
+id: P1.14
+title: Gzip Compression
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [data consumer]
+depends_on: [P1.13]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need the per-state NDJSON files gzip compressed so that download sizes are reduced by 85-90% and fit within GitHub Release asset limits.
+
+## Problem Statement
+
+Uncompressed NDJSON for all states is ~10-12GB. GitHub Releases has a 2GB total asset limit. Gzip compression at ~85-90% ratio brings the total to ~1.2GB, well within limits. Streaming compression ensures the pipeline doesn't need to hold the entire file in memory before compressing.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `--compress` flag streams gzip output, producing `.ndjson.gz` files
+  - `Verify:` `file output/*.ndjson.gz` confirms gzip format; `zcat output/*.ndjson.gz | head -1` produces valid JSON
+  - `Evidence:`
+- [ ] Compression ratio ~85-90%
+  - `Verify:` Compare compressed vs uncompressed file sizes
+  - `Evidence:`
+- [ ] Each `.ndjson.gz` is a valid gzip archive
+  - `Verify:` `gzip -t output/*.ndjson.gz` succeeds
+  - `Evidence:`
+
+### Performance
+
+- [ ] Streaming compression — memory usage does not spike during compression
+  - `Verify:` Monitor RSS during compression step
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Streaming gzip compression of NDJSON files
+- `--compress` CLI flag
+
+### Out — Do Not Implement
+
+- Alternative compression formats (zstd, brotli)
+- Selective compression (all-or-nothing)
+
+---
+
+### Ticket P1.15 — Regression Tests
+
+```yaml
+id: P1.15
+title: Regression Tests
+status: planned
+priority: p0-critical
+epic: P1.2
+persona: [builder/contributor]
+depends_on: [P0.09, P1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need regression tests that compare the fixture build output against the committed `expected-output.ndjson` so that any unintended change to the flatten logic is caught before merging.
+
+## Problem Statement
+
+The NDJSON schema is the contract. Any change to the output — even reordering fields or changing null handling — could break downstream consumers. Regression tests provide a byte-for-byte comparison against the committed expected output. If a change is intentional (e.g., adding a new field), the contributor must update the expected output and the schema documentation together.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `test/regression/expected-output.test.ts` compares fixture build output against `fixtures/expected-output.ndjson`
+  - `Verify:` `npx vitest run test/regression/expected-output.test.ts` passes
+  - `Evidence:`
+- [ ] CI fails on any change to output without a corresponding fixture update
+  - `Verify:` Introduce a deliberate output change; confirm CI fails
+  - `Evidence:`
+- [ ] Clear diff output showing exactly which documents and fields changed
+  - `Verify:` Test failure output shows document PID and field-level diff
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Byte-for-byte regression testing against committed fixtures
+- Clear diff output on failure
+
+### Out — Do Not Implement
+
+- Semantic diffing (byte-for-byte is sufficient)
+- Build-over-build comparison across releases (that is P4.03)
+
+---
+
+### Ticket P1.16 — Performance Baseline
+
+```yaml
+id: P1.16
+title: Performance Baseline
+status: planned
+priority: p1-high
+epic: P1.2
+persona: [builder/contributor, ops/maintainer]
+depends_on: [P1.11]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need documented performance baselines (VIC build time, memory usage, file sizes, per-state row counts) so that I can detect performance regressions and capacity issues in future builds.
+
+## Problem Statement
+
+Without a documented baseline, performance regressions are invisible until they cause a build to time out on a free runner. Recording build time, peak memory, output file sizes, and per-state row counts from the first VIC build establishes a reference point for all future builds.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `docs/PERFORMANCE.md` documents: VIC build time, peak memory, output file size (compressed and uncompressed), per-state row counts
+  - `Verify:` Document exists with all metrics from the first full VIC build
+  - `Evidence:`
+
+### Documentation
+
+- [ ] Baseline includes hardware specs used for measurement
+  - `Verify:` Document includes CPU, RAM, disk type
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Performance documentation from VIC full build
+- Baseline metrics for future comparison
+
+### Out — Do Not Implement
+
+- Automated performance regression detection (future enhancement)
+- Benchmark scripts (manual measurement for now)
 
 **M1 success:** 3.8M VIC NDJSON. Per-state split + gzip. All aggregations correct. Schema validated. Regression green.
 
@@ -461,16 +2423,462 @@ Download your state:
 
 **Target:** Week 4 · **Status:** Planned
 
-| ID | Feature | Pri | Description | Acceptance Criteria |
-|---|---|---|---|---|
-| P2.01 | Dockerfile | P0 | Self-contained: Postgres 16 + PostGIS + Python + gnaf-loader + Node + flattener | Image <3GB |
-| P2.02 | Entrypoint | P0 | Start Postgres → download → gnaf-loader → flatten → output → stop Postgres | One `docker run` → valid NDJSON |
-| P2.03 | CLI arguments | P0 | `--states`, `--output`, `--split-states`, `--compress`, `--skip-download`, `--gnaf-path`, `--admin-path`, `--fixture-only` | All flags work; `--help` documents them |
-| P2.04 | Exit codes | P0 | Distinct per failure type | CI distinguishes failures |
-| P2.05 | Volume mount | P0 | `-v $(pwd)/output:/output` | Output on host filesystem |
-| P2.06 | Progress logging | P1 | Structured JSON: stage, progress %, rows, elapsed | Parseable + human-readable |
-| P2.07 | Image publish | P0 | GitHub Actions → Docker Hub on tag | `docker pull flat-white:latest` |
-| P2.08 | Fixture CI | P0 | Every PR runs fixture build + regression | <60 seconds; schema changes caught |
+### Epic P2.1 — Container Build & CLI
+
+### Ticket P2.01 — Dockerfile
+
+```yaml
+id: P2.01
+title: Dockerfile
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [builder/contributor, ops/maintainer]
+depends_on: [P1.11]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need a self-contained Dockerfile that bundles Postgres 16, PostGIS 3.5, Python, gnaf-loader, Node.js, and the flattener so that the entire build pipeline runs with a single `docker run` command.
+
+## Problem Statement
+
+The flat-white build pipeline requires multiple runtimes (Python for gnaf-loader, Node.js for the flattener) and a database (Postgres + PostGIS). Without a self-contained Docker image, every user must install and configure these dependencies manually. The Dockerfile is the embodiment of the "one container, one file" principle — no external dependencies except the data.gov.au download and an output volume mount.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Dockerfile produces a self-contained image with: Postgres 16, PostGIS 3.5, Python 3.x, gnaf-loader, Node.js 22, TypeScript flattener
+  - `Verify:` `docker build -t flat-white . && docker run flat-white --help` shows CLI help
+  - `Evidence:`
+- [ ] Image size under 3GB
+  - `Verify:` `docker images flat-white --format '{{.Size}}'` shows <3GB
+  - `Evidence:`
+- [ ] No external runtime dependencies — everything bundled
+  - `Verify:` `docker run --network none flat-white --fixture-only --output /output/` succeeds (network disabled, fixture mode)
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Multi-stage Dockerfile bundling all dependencies
+- Image size optimisation
+
+### Out — Do Not Implement
+
+- Multi-arch support (that is E1.07)
+- Docker Hub publishing automation (that is P2.07)
+
+---
+
+### Ticket P2.02 — Entrypoint
+
+```yaml
+id: P2.02
+title: Entrypoint
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [data consumer, ops/maintainer]
+depends_on: [P2.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need the Docker entrypoint to orchestrate the full pipeline (start Postgres → download → gnaf-loader → flatten → output → stop Postgres) so that a single `docker run` command produces valid NDJSON.
+
+## Problem Statement
+
+The build pipeline has 6 sequential stages, each depending on the previous one's success. The entrypoint must orchestrate these stages, handle failures at each step (with distinct exit codes), and ensure Postgres is properly started and stopped. This is the "one container, one file" principle in action.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Entrypoint orchestrates: start Postgres → download → gnaf-loader → flatten → output → stop Postgres
+  - `Verify:` `docker run -v $(pwd)/output:/output flat-white --states VIC --compress --output /output/` produces valid gzipped NDJSON
+  - `Evidence:`
+- [ ] Each stage logged with start/end times
+  - `Verify:` Container logs show stage transitions with timestamps
+  - `Evidence:`
+- [ ] Postgres properly started before gnaf-loader and stopped after output
+  - `Verify:` No orphan Postgres processes after container exit
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Pipeline orchestration in entrypoint script
+- Stage logging and error handling
+
+### Out — Do Not Implement
+
+- CLI argument parsing (that is P2.03)
+- Exit codes (that is P2.04)
+
+---
+
+### Ticket P2.03 — CLI Arguments
+
+```yaml
+id: P2.03
+title: CLI Arguments
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [data consumer, ops/maintainer]
+depends_on: [P2.02]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need CLI arguments (`--states`, `--output`, `--split-states`, `--compress`, `--skip-download`, `--gnaf-path`, `--admin-path`, `--fixture-only`) so that I can control the build behavior without modifying the container.
+
+## Problem Statement
+
+Different users need different build configurations: a developer wants `--fixture-only` for fast iteration, an ops engineer wants `--states VIC --compress` for a single-state build, the CI pipeline wants `--states ALL --split-states --compress`. CLI arguments make the container flexible without requiring custom Dockerfiles or environment variable hacks.
+
+## Definition of Done
+
+### Functional
+
+- [ ] All flags documented in the CLI Interface section work as specified: `--states`, `--output`, `--split-states`, `--compress`, `--skip-download`, `--gnaf-path`, `--admin-path`, `--fixture-only`
+  - `Verify:` Test each flag combination; all produce expected behavior
+  - `Evidence:`
+- [ ] `--help` documents all flags with descriptions and examples
+  - `Verify:` `docker run flat-white --help` shows all flags
+  - `Evidence:`
+- [ ] Invalid flag combinations produce helpful error messages
+  - `Verify:` `docker run flat-white --skip-download` (without `--gnaf-path`) shows clear error
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- CLI argument parsing in `src/cli.ts`
+- Argument validation and error messages
+- `--help` output
+
+### Out — Do Not Implement
+
+- New flags beyond what's specified in the CLI Interface section
+
+---
+
+### Ticket P2.04 — Exit Codes
+
+```yaml
+id: P2.04
+title: Exit Codes
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [ops/maintainer]
+depends_on: [P2.02]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need distinct exit codes per failure type so that CI pipelines and monitoring can distinguish between download failures, gnaf-loader errors, flatten errors, verification failures, and output write errors.
+
+## Problem Statement
+
+A generic exit code 1 for all failures makes automated diagnosis impossible. CI pipelines need to know whether to retry (download timeout) or alert (flatten logic error). Distinct exit codes enable automated triage and targeted retry logic.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Exit codes match specification: `0` success, `1` download failed, `2` gnaf-loader failed, `3` flatten failed, `4` verification failed, `5` output write failed
+  - `Verify:` Simulate each failure type; confirm correct exit code
+  - `Evidence:`
+- [ ] CI can distinguish failure types based on exit code
+  - `Verify:` `docker run flat-white ...; echo $?` returns expected code for each failure scenario
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Exit code implementation per failure type
+- Exit code documentation
+
+### Out — Do Not Implement
+
+- Structured error output (JSON error messages — future enhancement)
+
+---
+
+### Ticket P2.05 — Volume Mount
+
+```yaml
+id: P2.05
+title: Volume Mount
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [data consumer]
+depends_on: [P2.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need output files written to a mounted volume so that NDJSON files persist on my host filesystem after the container exits.
+
+## Problem Statement
+
+Docker containers are ephemeral — files written inside the container are lost when it exits. The output NDJSON files must be written to a volume-mounted directory so they persist on the host filesystem. This is the standard Docker pattern for build tools that produce output artifacts.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `-v $(pwd)/output:/output` volume mount works — output files appear on host filesystem
+  - `Verify:` `docker run -v $(pwd)/output:/output flat-white --fixture-only --output /output/ && ls output/*.ndjson`
+  - `Evidence:`
+- [ ] File permissions are correct — host user can read/write output files
+  - `Verify:` Output files are owned by current user (or readable)
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Volume mount support for output directory
+- File permission handling
+
+### Out — Do Not Implement
+
+- Input volume mounts for pre-downloaded data (covered by `--gnaf-path` and `--admin-path` in P2.03)
+
+---
+
+### Ticket P2.06 — Progress Logging
+
+```yaml
+id: P2.06
+title: Progress Logging
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [ops/maintainer]
+depends_on: [P2.02]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need structured JSON progress logs so that I can monitor build progress, estimate completion time, and parse logs programmatically in CI.
+
+## Problem Statement
+
+A 40-minute build with no progress output is operationally painful. Structured JSON logs (stage, progress %, rows processed, elapsed time) enable both human monitoring and programmatic parsing in CI pipelines. GitHub Actions can display progress updates in real-time.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Progress logging in structured JSON format: stage name, progress %, rows processed, elapsed time
+  - `Verify:` `docker run flat-white ... 2>&1 | jq '.'` — each log line is valid JSON
+  - `Evidence:`
+- [ ] Both human-readable and machine-parseable
+  - `Verify:` Logs are meaningful when read in a terminal AND parseable by jq
+  - `Evidence:`
+- [ ] Progress updates at least every 30 seconds during long-running stages
+  - `Verify:` During VIC build, progress updates appear regularly
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Structured JSON progress logging
+- Per-stage progress tracking
+
+### Out — Do Not Implement
+
+- External monitoring integration (Grafana, Datadog — future)
+- Progress bar UI (terminal-specific; JSON is universal)
+
+---
+
+### Ticket P2.07 — Image Publish
+
+```yaml
+id: P2.07
+title: Image Publish
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [data consumer, ops/maintainer]
+depends_on: [P2.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need the Docker image published to Docker Hub so that I can `docker pull flat-white:latest` without building the image locally.
+
+## Problem Statement
+
+Building the Docker image requires cloning the repo, installing dependencies, and running `docker build` — a barrier for non-developer consumers who just want to produce NDJSON files. Publishing to Docker Hub with automatic tagging on release makes the image accessible via a single `docker pull`.
+
+## Definition of Done
+
+### Functional
+
+- [ ] GitHub Actions workflow publishes Docker image to Docker Hub on new tags
+  - `Verify:` After tagging a release, `docker pull flat-white:latest` succeeds
+  - `Evidence:`
+- [ ] Image tagged with both version and `latest`
+  - `Verify:` `docker pull flat-white:v2026.02` and `docker pull flat-white:latest` both succeed
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- GitHub Actions workflow for Docker Hub publishing
+- Version and latest tagging
+
+### Out — Do Not Implement
+
+- Multi-arch images (that is E1.07)
+- GitHub Container Registry (Docker Hub only for now)
+
+---
+
+### Ticket P2.08 — Fixture CI
+
+```yaml
+id: P2.08
+title: Fixture CI
+status: planned
+priority: p0-critical
+epic: P2.1
+persona: [builder/contributor]
+depends_on: [P0.10, P2.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need every PR to run the fixture build and regression tests in under 60 seconds so that schema changes and flatten logic errors are caught before merging.
+
+## Problem Statement
+
+Without CI on every PR, broken changes can be merged and only discovered during the next quarterly build — weeks later. The fixture CI runs the fixture-only build (no download, no gnaf-loader), validates schema, and compares output against the committed regression baseline. At under 60 seconds, it fits comfortably in free GitHub Actions runners and doesn't slow down the development cycle.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `.github/workflows/ci.yml` runs fixture build + regression tests on every PR
+  - `Verify:` Open a PR; CI runs and passes
+  - `Evidence:`
+- [ ] Schema changes caught — modifying flatten logic without updating expected output fails CI
+  - `Verify:` Push a change that alters output; CI fails with clear diff
+  - `Evidence:`
+
+### Performance
+
+- [ ] CI completes in under 60 seconds
+  - `Verify:` Check CI run duration in GitHub Actions
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- GitHub Actions CI workflow for PRs
+- Fixture build + regression test execution
+- Sub-60-second execution
+
+### Out — Do Not Implement
+
+- Full build CI (too slow for PRs; quarterly build handles this)
+- Code linting (add later as needed)
 
 **M2 success:** `docker run flat-white --states VIC --compress --output ./` — one command, valid gzipped NDJSON.
 
@@ -480,25 +2888,417 @@ Download your state:
 
 **Target:** Week 5 · **Status:** Planned
 
-### GitHub Releases (Public)
+### Epic P3.1 — GitHub Releases
 
-| ID | Feature | Pri | Description | Acceptance Criteria |
-|---|---|---|---|---|
-| P3.01 | Matrix build workflow | P0 | `quarterly-build.yml` — 9 parallel jobs (one per state) on free runners, manual trigger + scheduled cron | All 9 states build in parallel; total wall-clock <60 min |
-| P3.02 | All-states concatenation | P0 | Release job concatenates per-state gzips into `flat-white-{version}-all.ndjson.gz` | All-states file valid; doc count = sum of state counts |
-| P3.03 | GitHub Release creation | P0 | Tagged release `v{YYYY.MM}` with per-state `.ndjson.gz` + metadata + schema as assets | Total assets <2GB (GitHub limit); all states present |
-| P3.04 | Release notes | P0 | Auto-generated: total + per-state counts, delta from prior, schema version | Non-technical reader understands the release |
-| P3.05 | Downstream dispatch | P0 | `repository_dispatch` to `geocode-au` serving repo with version + asset URLs | Downstream pipeline auto-triggers |
-| P3.06 | Download docs | P1 | `gh release download v2026.02 --pattern '*-vic.ndjson.gz'` documented | Anyone can script it |
+### Ticket P3.01 — Matrix Build Workflow
 
-### AWS Mirror (Operational)
+```yaml
+id: P3.01
+title: Matrix Build Workflow
+status: planned
+priority: p0-critical
+epic: P3.1
+persona: [ops/maintainer]
+depends_on: [P2.01, P2.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
 
-| ID | Feature | Pri | Description | Acceptance Criteria |
-|---|---|---|---|---|
-| P3.07 | S3 upload | P1 | Workflow uploads artifacts to `s3://flat-white/builds/v{YYYY.MM}/` | S3 matches GitHub Release assets |
-| P3.08 | S3 latest pointer | P1 | `s3://flat-white/builds/latest/` always current | Consumers reference `latest` or pin |
-| P3.09 | OIDC auth | P1 | GitHub Actions OIDC → AWS IAM role, no stored keys | Least privilege |
-| P3.10 | SNS notification | P1 | Success/failure: status, release URL, counts, duration | Team + downstream subscribed |
+## User Story
+
+As an ops/maintainer, I need a GitHub Actions matrix build workflow that runs 9 parallel jobs (one per state) on free runners so that the quarterly build completes in under 60 minutes total wall-clock time at zero cost.
+
+## Problem Statement
+
+Building all 9 Australian states sequentially would take ~4 hours. The GitHub Actions matrix strategy runs each state as an independent parallel job on a free runner, reducing wall-clock time to ~50 minutes (limited by NSW, the largest state). This is the core distribution mechanism — free, automated, quarterly.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `quarterly-build.yml` runs 9 parallel jobs (VIC, NSW, QLD, SA, WA, TAS, NT, ACT, OT) on free runners
+  - `Verify:` Trigger workflow; all 9 jobs start in parallel
+  - `Evidence:`
+- [ ] Manual trigger (`workflow_dispatch`) with `gnaf_version` input AND scheduled cron (15th of Feb/May/Aug/Nov)
+  - `Verify:` Both trigger methods work
+  - `Evidence:`
+- [ ] `fail-fast: false` — individual state failures don't cancel other states
+  - `Verify:` Force one state to fail; other states complete successfully
+  - `Evidence:`
+- [ ] Each job produces a per-state gzipped NDJSON artifact
+  - `Verify:` All 9 artifacts uploaded after build
+  - `Evidence:`
+
+### Performance
+
+- [ ] Total wall-clock time under 60 minutes
+  - `Verify:` Check workflow run duration
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Matrix build workflow with 9 parallel state jobs
+- Manual and scheduled triggers
+- Artifact upload per state
+
+### Out — Do Not Implement
+
+- Release creation (that is P3.03)
+- All-states concatenation (that is P3.02)
+
+---
+
+### Ticket P3.02 — All-States Concatenation
+
+```yaml
+id: P3.02
+title: All-States Concatenation
+status: planned
+priority: p0-critical
+epic: P3.1
+persona: [data consumer]
+depends_on: [P3.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need a single all-states NDJSON file so that I can download the complete Australian address dataset in one file if I need all states.
+
+## Problem Statement
+
+Some consumers need the complete dataset — not per-state files. The release job downloads all 9 per-state artifacts and concatenates them into a single `flat-white-{version}-all.ndjson.gz` file. The all-states file must have a document count equal to the sum of all per-state counts.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Release job concatenates per-state gzips into `flat-white-{version}-all.ndjson.gz`
+  - `Verify:` `zcat flat-white-*-all.ndjson.gz | wc -l` equals sum of per-state counts
+  - `Evidence:`
+- [ ] All-states file is a valid gzip archive containing valid NDJSON
+  - `Verify:` `gzip -t flat-white-*-all.ndjson.gz` succeeds; `zcat ... | head -1 | jq .` validates
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Concatenation of per-state gzipped NDJSON into all-states file
+- Count verification
+
+### Out — Do Not Implement
+
+- De-duplication (per-state files are already disjoint by definition)
+
+---
+
+### Ticket P3.03 — GitHub Release Creation
+
+```yaml
+id: P3.03
+title: GitHub Release Creation
+status: planned
+priority: p0-critical
+epic: P3.1
+persona: [data consumer, downstream developer]
+depends_on: [P3.02, P1.12]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need quarterly GitHub Releases with per-state `.ndjson.gz` files, metadata, and schema documentation as downloadable assets so that I can download Australian address data for free.
+
+## Problem Statement
+
+GitHub Releases is the zero-cost distribution mechanism. Each quarterly release is tagged `v{YYYY.MM}` and includes per-state gzipped NDJSON files, the all-states file, metadata JSON, and the document schema reference. Total assets must stay under 2GB (GitHub limit). This is the moment flat-white delivers on its promise: anyone in Australia can download pre-joined address data in one click.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Tagged release `v{YYYY.MM}` created with per-state `.ndjson.gz` + all-states `.ndjson.gz` + metadata.json + DOCUMENT-SCHEMA.md as assets
+  - `Verify:` `gh release view v2026.02` shows all expected assets
+  - `Evidence:`
+- [ ] Total asset size under 2GB (GitHub limit)
+  - `Verify:` Sum of all asset sizes <2GB
+  - `Evidence:`
+- [ ] All states present — no missing state files
+  - `Verify:` 9 per-state files + 1 all-states file + metadata + schema = 12 assets
+  - `Evidence:`
+- [ ] Programmatic download works: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'`
+  - `Verify:` Command succeeds and downloads the correct file
+  - `Evidence:`
+- [ ] `CHANGELOG.md` updated with release entry: version, date, per-state counts, schema version
+  - `Verify:` CHANGELOG contains entry for this release
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- GitHub Release creation with asset uploads
+- Version tagging (`v{YYYY.MM}`)
+
+### Out — Do Not Implement
+
+- Release notes generation (that is P3.04)
+- Downstream notification (that is P3.05)
+
+---
+
+### Ticket P3.04 — Release Notes
+
+```yaml
+id: P3.04
+title: Release Notes
+status: planned
+priority: p0-critical
+epic: P3.1
+persona: [data consumer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need auto-generated release notes with total and per-state document counts, delta from prior release, and schema version so that I can understand what changed without downloading the data.
+
+## Problem Statement
+
+Release notes serve both technical and non-technical audiences. A council data analyst needs to know how many addresses are in their state and whether the count changed significantly from last quarter. A developer needs the schema version and any breaking changes. Auto-generated release notes from metadata ensure consistency and accuracy.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Release notes include: total count, per-state counts, delta from prior release, schema version, gnaf-loader version
+  - `Verify:` Release notes contain all required fields
+  - `Evidence:`
+- [ ] Non-technical reader can understand the release
+  - `Verify:` Show release notes to a non-developer; they understand what's available
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Auto-generated release notes from metadata
+- Delta calculation from prior release
+
+### Out — Do Not Implement
+
+- Manual release notes editing
+- Changelog maintenance (that is separate)
+
+---
+
+### Ticket P3.05 — Downstream Dispatch
+
+```yaml
+id: P3.05
+title: Downstream Dispatch
+status: planned
+priority: p0-critical
+epic: P3.1
+persona: [downstream developer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a downstream developer, I need flat-white to automatically notify `geocode-au` (and other consuming repos) when a new release is published so that downstream pipelines auto-trigger without polling.
+
+## Problem Statement
+
+Without automated notification, downstream consumers must poll for new releases or rely on manual triggers. The `repository_dispatch` event allows flat-white to push a notification to consuming repos with the release version and asset URLs, enabling fully automated downstream pipelines.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `repository_dispatch` event sent to `geocode-au` repo with version payload after release creation
+  - `Verify:` After release, check geocode-au repo for triggered workflow
+  - `Evidence:`
+- [ ] Payload includes version string and asset URLs
+  - `Verify:` Downstream workflow receives and logs version from payload
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- `repository_dispatch` to downstream consuming repos
+- Version payload
+
+### Out — Do Not Implement
+
+- Downstream pipeline implementation (that is geocode-au's responsibility)
+
+---
+
+### Ticket P3.06 — Download Docs
+
+```yaml
+id: P3.06
+title: Download Docs
+status: planned
+priority: p1-high
+epic: P3.1
+persona: [data consumer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need clear documentation on how to download flat-white data programmatically so that I can script the download into my data pipeline.
+
+## Problem Statement
+
+GitHub Releases has a non-obvious API for programmatic downloads. Documentation showing `gh release download`, `curl`, and API-based download methods ensures consumers can automate data retrieval without trial-and-error.
+
+## Definition of Done
+
+### Functional
+
+- [ ] README documents: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'` and equivalent `curl` command
+  - `Verify:` Commands in documentation actually work
+  - `Evidence:`
+- [ ] API-based download example for CI integration
+  - `Verify:` Example script downloads a file using GitHub API
+  - `Evidence:`
+- [ ] Consumer verification one-liner: decompress, check line count against metadata, validate 3 random documents against schema
+  - `Verify:` One-liner works on a freshly downloaded per-state file
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Download documentation in README
+- gh CLI, curl, and API examples
+- Consumer verification one-liner
+
+### Out — Do Not Implement
+
+- Custom download tooling
+
+---
+
+### Ticket P3.07 — Adoption & Discovery
+
+```yaml
+id: P3.07
+title: Adoption & Discovery
+status: planned
+priority: p1-high
+epic: P3.1
+persona: [data consumer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need to discover that flat-white exists and get from zero to querying addresses in under 5 minutes so that I can evaluate whether it replaces my current address data vendor.
+
+## Problem Statement
+
+flat-white's value proposition is "the entire address validation industry just became optional" — but that only matters if potential users can find it. The distribution strategy is GitHub Releases, which is invisible to the Australian open data community. Without a discovery plan, flat-white is a well-engineered product that nobody knows about. A quick-start guide, data.gov.au listing, and community announcements are cheap to execute and have outsized impact on adoption.
+
+## Definition of Done
+
+### Functional
+
+- [ ] README includes a "Quick Start" section: download a state file → query with DuckDB or jq in under 5 minutes
+  - `Verify:` A new user can follow the quick-start from scratch and get results
+  - `Evidence:`
+- [ ] data.gov.au derivative dataset listing submitted (references source G-NAF + Admin Boundaries datasets)
+  - `Verify:` Listing is live or submission is confirmed
+  - `Evidence:`
+- [ ] Community announcement plan documented: target forums (FOSS4G-Oceania, OSGeo mailing list, Australian Government open data community, GovHack channels)
+  - `Verify:` Plan exists with specific channels and draft messaging
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Quick-start guide in README
+- data.gov.au listing
+- Community announcement plan
+
+### Out — Do Not Implement
+
+- Marketing website (GitHub Pages catalogue is E1.08)
+- Paid promotion
 
 **M3 success:** `v2026.02` release live. Per-state gzipped NDJSON downloadable. Downstream auto-triggered. Anyone in Australia can download pre-joined address data from the release page. Cost: $0.
 
@@ -508,15 +3308,347 @@ Download your state:
 
 **Target:** Week 6 · **Status:** Planned
 
-| ID | Feature | Pri | Description | Acceptance Criteria |
-|---|---|---|---|---|
-| P4.01 | All-states production release | P0 | First real quarterly release via matrix build | All states present; release assets valid |
-| P4.02 | Verification report | P0 | Per-state row counts, boundary coverage %, schema results | Uploaded as release asset |
-| P4.03 | Build-over-build comparison | P0 | Delta from prior: total, per-state, new/retired addresses | >1% anomaly triggers warning |
-| P4.04 | Retry logic | P1 | Auto-retry on transient failures (download timeout, OOM) | Up to 2 retries; distinct alerting |
-| P4.05 | gnaf-loader tracking | P0 | Automated PR when new gnaf-loader release detected | Never >1 release behind |
-| P4.06 | Runbook | P0 | Download failures, gnaf-loader errors, flatten failures, manual re-run | Tested by uninvolved person |
-| P4.07 | NSW memory optimisation | P1 | NSW (~4.5M) is the tightest fit on free runners; optimise gnaf-loader memory | NSW builds reliably on 7GB runner |
+### Epic P4.1 — Production Hardening
+
+### Ticket P4.01 — All-States Production Release
+
+```yaml
+id: P4.01
+title: All-States Production Release
+status: planned
+priority: p0-critical
+epic: P4.1
+persona: [ops/maintainer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need the first real quarterly release via the matrix build to succeed with all 9 states so that flat-white is operational and delivering on its promise.
+
+## Problem Statement
+
+The matrix build has been tested with individual states during development, but the first all-states production release is the real validation. All 9 states must build in parallel on free runners, all artifacts must be valid, and the GitHub Release must be created with all assets. This is the milestone that proves flat-white works end-to-end at scale.
+
+## Definition of Done
+
+### Functional
+
+- [ ] All 9 states build successfully in parallel on free runners
+  - `Verify:` All 9 matrix jobs complete with exit code 0
+  - `Evidence:`
+- [ ] GitHub Release `v2026.02` published with all per-state and all-states assets
+  - `Verify:` `gh release view v2026.02` shows 12 assets (9 states + all + metadata + schema)
+  - `Evidence:`
+- [ ] Release assets are valid — each `.ndjson.gz` decompresses to valid NDJSON
+  - `Verify:` Download and validate each state file
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- First production run of the matrix build
+- Validation of all release assets
+
+### Out — Do Not Implement
+
+- Build-over-build comparison (that is P4.03 — no prior release exists yet)
+
+---
+
+### Ticket P4.02 — Verification Report
+
+```yaml
+id: P4.02
+title: Verification Report
+status: planned
+priority: p0-critical
+epic: P4.1
+persona: [ops/maintainer]
+depends_on: [P4.01, P1.10]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need a verification report with per-state row counts, boundary coverage percentages, and schema validation results so that I can confirm the release is complete and correct before announcing it.
+
+## Problem Statement
+
+A release with missing boundary data or unexpected row count drops could go unnoticed without a formal verification step. The verification report provides a structured summary that can be reviewed by a human and uploaded as a release asset for consumer transparency.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Verification report includes: per-state row counts, boundary coverage % (what fraction of addresses have all boundary fields populated), schema validation results (pass/fail per state)
+  - `Verify:` Report contains all required sections
+  - `Evidence:`
+- [ ] Report uploaded as a release asset
+  - `Verify:` `gh release view v2026.02` shows verification report asset
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Automated verification report generation
+- Per-state metrics
+- Release asset upload
+
+### Out — Do Not Implement
+
+- Automated anomaly alerting (that is P4.03)
+
+---
+
+### Ticket P4.03 — Build-Over-Build Comparison
+
+```yaml
+id: P4.03
+title: Build-Over-Build Comparison
+status: planned
+priority: p0-critical
+epic: P4.1
+persona: [ops/maintainer]
+depends_on: [P4.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need automated comparison against the prior release (total count delta, per-state delta, new/retired address counts) so that anomalies exceeding 1% trigger a warning before the release is published.
+
+## Problem Statement
+
+G-NAF data changes incrementally each quarter — typically <1% total address count change. A sudden 5% drop or 10% spike likely indicates a data issue, a gnaf-loader bug, or a flat-white regression. Automated build-over-build comparison catches these anomalies before bad data reaches consumers.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Comparison against prior release: total delta, per-state delta, new address count, retired address count
+  - `Verify:` After second release, comparison report shows deltas
+  - `Evidence:`
+- [ ] Anomaly warning triggered when any metric exceeds 1% change
+  - `Verify:` Simulate >1% change; confirm warning in build logs
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Metadata comparison between current and prior release
+- Anomaly threshold (>1% triggers warning)
+
+### Out — Do Not Implement
+
+- Automatic release blocking on anomaly (warning only — human decides)
+- Content-level diff (row count comparison only)
+
+---
+
+### Ticket P4.04 — Retry Logic
+
+```yaml
+id: P4.04
+title: Retry Logic
+status: planned
+priority: p1-high
+epic: P4.1
+persona: [ops/maintainer]
+depends_on: [P3.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need auto-retry on transient failures (download timeout, OOM kill) so that the quarterly build self-heals from intermittent infrastructure issues without human intervention.
+
+## Problem Statement
+
+Free GitHub Actions runners occasionally experience transient issues: network timeouts during the 6.5GB download, OOM kills on memory-intensive states (NSW), or disk I/O stalls. Without retry logic, a transient failure requires manual re-trigger — potentially delaying the quarterly release. Up to 2 retries with distinct alerting covers most transient scenarios.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Up to 2 automatic retries on transient failures (download timeout, OOM kill)
+  - `Verify:` Simulate a transient failure; confirm automatic retry
+  - `Evidence:`
+- [ ] Distinct alerting for retried-then-succeeded vs retried-then-failed
+  - `Verify:` Check notification content after retry scenarios
+  - `Evidence:`
+- [ ] Persistent failures (flatten logic error, schema violation) are NOT retried
+  - `Verify:` Force a flatten error; confirm no retry, immediate failure
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Retry logic for transient failures in CI workflow
+- Failure classification (transient vs persistent)
+
+### Out — Do Not Implement
+
+- Automatic rollback
+- Retry across different runner types
+
+---
+
+### Ticket P4.06 — Runbook
+
+```yaml
+id: P4.06
+title: Runbook
+status: planned
+priority: p0-critical
+epic: P4.1
+persona: [ops/maintainer]
+depends_on: [P4.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need a runbook covering download failures, gnaf-loader errors, flatten failures, and manual re-run procedures so that anyone can handle operational issues without deep project knowledge.
+
+## Problem Statement
+
+If the quarterly build fails at 2am on a Saturday, the on-call person needs step-by-step instructions — not a deep understanding of the codebase. The runbook covers common failure scenarios with diagnosis steps, resolution procedures, and manual re-run commands.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Runbook covers: download failures, gnaf-loader errors, flatten failures, verification failures, manual re-run, partial re-run (single state)
+  - `Verify:` Each scenario has: symptoms, diagnosis steps, resolution procedure, manual commands
+  - `Evidence:`
+- [ ] Tested by an uninvolved person — someone who hasn't worked on flat-white can follow it
+  - `Verify:` Hand runbook to a colleague; they can diagnose and re-run from the instructions alone
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Operational runbook in `docs/RUNBOOK.md`
+- Common failure scenarios and resolution procedures
+
+### Out — Do Not Implement
+
+- Automated remediation (runbook is for humans)
+- Monitoring dashboards
+
+---
+
+### Ticket P4.07 — NSW Memory Optimisation
+
+```yaml
+id: P4.07
+title: NSW Memory Optimisation
+status: planned
+priority: p1-high
+epic: P4.1
+persona: [ops/maintainer]
+depends_on: [P4.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need the NSW build optimised to run reliably on 7GB free runners so that the largest state doesn't intermittently OOM and block quarterly releases.
+
+## Problem Statement
+
+NSW has ~4.5M addresses — the largest state, requiring ~5-6GB RAM. Free GitHub Actions runners have 7GB. This is a tight fit. gnaf-loader's PostgreSQL memory usage during the spatial JOIN phase is the bottleneck. Optimisation may involve: tuning PostgreSQL shared_buffers and work_mem, running gnaf-loader with memory-limiting flags, or splitting the NSW load into sub-regions.
+
+## Definition of Done
+
+### Functional
+
+- [ ] NSW builds reliably on 7GB free runners — no OOM kills across 5 consecutive runs
+  - `Verify:` Run NSW build 5 times on free runners; all succeed
+  - `Evidence:`
+- [ ] Peak memory usage documented with margin analysis
+  - `Verify:` Memory profile shows peak usage with sufficient headroom
+  - `Evidence:`
+
+### Performance
+
+- [ ] NSW build time under 60 minutes on free runners
+  - `Verify:` Check workflow run duration for NSW job
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- PostgreSQL memory tuning for NSW
+- gnaf-loader configuration optimisation
+- Memory profiling and documentation
+
+### Out — Do Not Implement
+
+- Self-hosted runner fallback (that is E1.09)
+- Paid runner upgrade (violates zero-cost principle)
 
 **M4 success:** Quarterly autopilot. Verification catches anomalies. No human intervention unless flagged.
 
@@ -524,17 +3656,730 @@ Download your state:
 
 ## Phase E1 — Enhancements (Ongoing)
 
-| ID | Feature | Pri | Description |
-|---|---|---|---|
-| E1.01 | Parquet output | P1 | `--format parquet` for analytics consumers |
-| E1.02 | Delta builds | P2 | Output only changed/new/retired since prior release |
-| E1.03 | Locality-only output | P2 | Separate `localities.ndjson` for locality search index |
-| E1.04 | Schema evolution tooling | P2 | Automated breaking-change detection |
-| E1.05 | Geoparquet output | P2 | `--format geoparquet` for spatial analytics |
-| E1.06 | Build cache | P1 | Cache gnaf-loader dump; skip reload if version unchanged |
-| E1.07 | Multi-arch image | P1 | ARM64 + AMD64 for Graviton |
-| E1.08 | GitHub Pages catalogue | P2 | Static site: per-release stats, schema docs, download links |
-| E1.09 | Self-hosted runner fallback | P1 | Documented setup for orgs where free runners aren't sufficient |
+### Epic E1.A — Output Formats
+
+### Ticket E1.01 — Parquet Output
+
+```yaml
+id: E1.01
+title: Parquet Output
+status: planned
+priority: p1-high
+epic: E1.A
+persona: [data consumer]
+depends_on: [P1.11]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer doing analytics, I need a `--format parquet` option so that I can load address data directly into BigQuery, Athena, or DuckDB without converting from NDJSON.
+
+## Problem Statement
+
+NDJSON is universal but not columnar. Analytics workloads (e.g., "count all addresses per LGA" or "find all addresses in electorate X") are 10-100x faster on columnar formats like Parquet. Offering Parquet as an alternative output format serves analytics consumers without changing the NDJSON contract.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `--format parquet` produces a valid Parquet file with the same fields as the NDJSON output
+  - `Verify:` `duckdb -c "SELECT COUNT(*) FROM 'output.parquet'"` returns expected count
+  - `Evidence:`
+- [ ] Parquet schema matches NDJSON document schema
+  - `Verify:` Compare Parquet schema with Zod schema fields
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Parquet output format via `--format parquet` flag
+
+### Out — Do Not Implement
+
+- Parquet as default format (NDJSON remains the contract — DEC-001)
+- Parquet-specific optimisations (partitioning, dictionary encoding — future)
+
+---
+
+### Epic E1.C — Data Lifecycle & Discovery
+
+### Ticket E1.02 — Delta Builds
+
+```yaml
+id: E1.02
+title: Delta Builds
+status: planned
+priority: p2-medium
+epic: E1.C
+persona: [downstream developer]
+depends_on: [P4.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a downstream developer, I need a delta output containing only changed, new, and retired addresses since the prior release so that I can apply incremental updates instead of re-ingesting the full dataset.
+
+## Problem Statement
+
+Re-ingesting 15.9M addresses each quarter is wasteful when only ~1% change. A delta file enables incremental updates — downstream consumers apply the delta to their existing dataset rather than replacing it entirely. This reduces ingestion time and downstream processing costs.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Delta output contains: new addresses (added since prior release), changed addresses (modified fields), retired addresses (removed since prior release)
+  - `Verify:` Delta file between two consecutive releases contains expected additions/changes/removals
+  - `Evidence:`
+- [ ] Each delta entry includes change type (added/changed/retired) and the full document
+  - `Verify:` Delta NDJSON entries include `_changeType` field
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Delta computation between consecutive releases
+- Delta NDJSON output format
+
+### Out — Do Not Implement
+
+- Streaming incremental updates (batch delta per release)
+- Delta Parquet format
+
+---
+
+### Ticket E1.03 — Locality-Only Output
+
+```yaml
+id: E1.03
+title: Locality-Only Output
+status: planned
+priority: p2-medium
+epic: E1.A
+persona: [downstream developer]
+depends_on: [P1.05]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a downstream developer, I need a separate `localities.ndjson` file containing just locality data (name, state, neighbours, aliases, boundaries) so that I can build a lightweight locality search index without processing the full address dataset.
+
+## Problem Statement
+
+Some use cases only need locality-level data — a suburb search autocomplete, a "service areas" lookup, or a locality-to-electorate mapping. The full address dataset is overkill for these. A separate locality-only output provides a lightweight alternative.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `--locality-only` flag produces a `localities.ndjson` file with one document per locality
+  - `Verify:` `wc -l output/localities.ndjson` returns expected locality count
+  - `Evidence:`
+- [ ] Each locality document includes: name, state, class, neighbours, aliases, boundary context
+  - `Verify:` Spot-check 5 localities for completeness
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Locality-only NDJSON output
+- `--locality-only` CLI flag
+
+### Out — Do Not Implement
+
+- Street-only output
+- Custom aggregation levels
+
+---
+
+### Ticket E1.04 — Schema Evolution Tooling
+
+```yaml
+id: E1.04
+title: Schema Evolution Tooling
+status: planned
+priority: p2-medium
+epic: E1.C
+persona: [builder/contributor]
+depends_on: [P0.12, P4.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a builder/contributor, I need automated breaking-change detection for the NDJSON schema so that PRs that alter the output format are flagged before merge, requiring an explicit version bump decision.
+
+## Problem Statement
+
+The NDJSON schema is the contract. Breaking changes (removing a field, changing a type, renaming a field) must be accompanied by a major version bump and documented in the changelog. Manual review can miss subtle changes. Automated tooling that compares the PR's schema against the current schema catches breaking changes in CI.
+
+## Definition of Done
+
+### Functional
+
+- [ ] CI check compares PR's Zod schema against main branch schema and flags breaking changes
+  - `Verify:` PR that removes a field triggers CI failure with "breaking change detected" message
+  - `Evidence:`
+- [ ] Non-breaking additions (new optional fields) are allowed without version bump
+  - `Verify:` PR that adds a new optional field passes CI
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Schema comparison tooling
+- Breaking change detection in CI
+
+### Out — Do Not Implement
+
+- Automatic version bumping
+- Schema migration scripts
+
+---
+
+### Ticket E1.05 — Geoparquet Output
+
+```yaml
+id: E1.05
+title: Geoparquet Output
+status: planned
+priority: p2-medium
+epic: E1.A
+persona: [data consumer]
+depends_on: [E1.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer doing spatial analytics, I need a `--format geoparquet` option so that I can load address data into spatial analysis tools (QGIS, GeoPandas, DuckDB Spatial) with native geometry support.
+
+## Problem Statement
+
+Standard Parquet (E1.01) stores coordinates as separate columns. Geoparquet embeds proper geometry types (POINT) that spatial tools understand natively — enabling spatial queries, bounding box filters, and coordinate system transformations without preprocessing.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `--format geoparquet` produces a valid Geoparquet file with POINT geometry for each address
+  - `Verify:` `geopandas.read_parquet('output.geoparquet')` loads successfully with geometry column
+  - `Evidence:`
+- [ ] Geoparquet metadata follows the Geoparquet specification
+  - `Verify:` Validate against Geoparquet spec
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Geoparquet output format via `--format geoparquet` flag
+- POINT geometry from geocode coordinates
+
+### Out — Do Not Implement
+
+- Boundary polygons (only point coordinates)
+- Spatial indexing within the file
+
+---
+
+### Epic E1.B — Build & Infrastructure
+
+### Ticket E1.06 — Build Cache
+
+```yaml
+id: E1.06
+title: Build Cache
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [ops/maintainer]
+depends_on: [P2.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need the gnaf-loader database dump cached so that builds can skip the load step when the G-NAF version hasn't changed, reducing build time by ~30 minutes per state.
+
+## Problem Statement
+
+gnaf-loader takes 30-40 minutes per state to load data and perform spatial joins. If the G-NAF version hasn't changed (e.g., re-running a failed build), repeating the load step is wasteful. Caching the Postgres dump after gnaf-loader completes and restoring it on cache hit eliminates this redundancy.
+
+## Definition of Done
+
+### Functional
+
+- [ ] After gnaf-loader completes, Postgres dump is cached (keyed by G-NAF version + state)
+  - `Verify:` Cache hit on second run of same version; gnaf-loader step skipped
+  - `Evidence:`
+- [ ] Cache miss triggers full gnaf-loader load
+  - `Verify:` New G-NAF version triggers full load
+  - `Evidence:`
+- [ ] Build time reduced by ~30 minutes on cache hit
+  - `Verify:` Compare build times with and without cache
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Postgres dump caching after gnaf-loader
+- Cache key: G-NAF version + state
+- GitHub Actions cache integration
+
+### Out — Do Not Implement
+
+- Incremental gnaf-loader updates (full load each time, but cached)
+
+---
+
+### Ticket E1.07 — Multi-Arch Image
+
+```yaml
+id: E1.07
+title: Multi-Arch Image
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [data consumer, ops/maintainer]
+depends_on: [P2.07]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer running on ARM64 (AWS Graviton, Apple Silicon), I need a multi-arch Docker image so that I can run flat-white natively without emulation overhead.
+
+## Problem Statement
+
+ARM64 adoption is growing rapidly — AWS Graviton instances are 20-40% cheaper than x86, and Apple Silicon Macs are standard for developers. Running an amd64 image under QEMU emulation is 3-5x slower. A multi-arch image (ARM64 + AMD64) ensures native performance on both architectures.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Docker image published with both ARM64 and AMD64 manifests
+  - `Verify:` `docker manifest inspect flat-white:latest` shows both architectures
+  - `Evidence:`
+- [ ] Both architectures produce identical output (byte-for-byte NDJSON)
+  - `Verify:` Run fixture build on both architectures; diff output
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Multi-arch Docker image build (ARM64 + AMD64)
+- CI workflow using `docker buildx`
+
+### Out — Do Not Implement
+
+- Other architectures (s390x, ppc64le)
+
+---
+
+### Ticket E1.08 — GitHub Pages Catalogue
+
+```yaml
+id: E1.08
+title: GitHub Pages Catalogue
+status: planned
+priority: p2-medium
+epic: E1.C
+persona: [data consumer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a data consumer, I need a static website with per-release stats, schema documentation, and download links so that I can browse available data without navigating GitHub's release pages.
+
+## Problem Statement
+
+GitHub Releases is functional but not user-friendly for non-technical consumers. A GitHub Pages static site provides a polished interface: per-release statistics, interactive schema documentation, direct download links, and build history. Zero cost (GitHub Pages is free for public repos).
+
+## Definition of Done
+
+### Functional
+
+- [ ] GitHub Pages site at `{username}.github.io/flat-white` with: release history, per-release stats (total and per-state counts), schema documentation, download links
+  - `Verify:` Site loads and displays current release data
+  - `Evidence:`
+- [ ] Automatically updated after each release
+  - `Verify:` After new release, site reflects updated data within minutes
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Static site generation from release metadata
+- GitHub Pages deployment workflow
+
+### Out — Do Not Implement
+
+- Dynamic server-side features
+- Search functionality (static only)
+
+---
+
+### Ticket E1.09 — Self-Hosted Runner Fallback
+
+```yaml
+id: E1.09
+title: Self-Hosted Runner Fallback
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [ops/maintainer]
+depends_on: [P3.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need documented setup for self-hosted runners so that organisations where free runners are insufficient (private repos, larger memory needs) can run flat-white builds on their own infrastructure.
+
+## Problem Statement
+
+Free GitHub Actions runners have 7GB RAM and 2-core CPUs. While sufficient for the current dataset, future G-NAF releases may grow, or organisations running flat-white on private repos won't have access to free runners. A documented self-hosted runner setup provides a fallback that preserves the same workflow with more resources.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Documentation in `docs/SELF-HOSTED-RUNNER.md` covering: hardware requirements, runner setup, workflow configuration changes, cost estimates
+  - `Verify:` A user can follow the guide to set up a self-hosted runner and run the quarterly build
+  - `Evidence:`
+- [ ] Workflow supports both free and self-hosted runners via configuration
+  - `Verify:` Workflow runs on self-hosted runner when configured
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Self-hosted runner setup documentation
+- Workflow configuration for runner selection
+
+### Out — Do Not Implement
+
+- Managed runner infrastructure
+- Automatic runner provisioning
+
+---
+
+## Phase P5 — AWS Mirror (Deferred)
+
+**Target:** Post-M4 · **Status:** Planned · **Rationale:** GitHub Releases is the primary distribution. S3 is redundancy — valuable but not required for the first release. Deferred from Phase P3 to avoid overloading the first release week.
+
+### Epic P5.1 — AWS Mirror
+
+### Ticket P5.01 — S3 Upload
+
+```yaml
+id: P5.01
+title: S3 Upload
+status: planned
+priority: p1-high
+epic: P5.1
+persona: [ops/maintainer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need the build artifacts uploaded to S3 as a mirror so that consumers have an alternative download source and we have redundancy beyond GitHub Releases.
+
+## Problem Statement
+
+GitHub Releases is the primary distribution, but a single distribution point is a single point of failure. An S3 mirror provides redundancy, enables AWS-native consumers to use S3 APIs, and keeps the total annual cost at ~$0.28.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Workflow uploads per-state and all-states artifacts to `s3://flat-white/builds/v{YYYY.MM}/`
+  - `Verify:` `aws s3 ls s3://flat-white/builds/v2026.02/` shows all expected files
+  - `Evidence:`
+- [ ] S3 content matches GitHub Release assets exactly
+  - `Verify:` Checksum comparison between S3 and GitHub Release files
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- S3 upload step in release workflow
+- Versioned S3 path structure
+
+### Out — Do Not Implement
+
+- S3 public access configuration (separate infrastructure concern)
+- CloudFront distribution
+
+---
+
+### Ticket P5.02 — S3 Latest Pointer
+
+```yaml
+id: P5.02
+title: S3 Latest Pointer
+status: planned
+priority: p1-high
+epic: P5.1
+persona: [downstream developer]
+depends_on: [P5.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a downstream developer, I need `s3://flat-white/builds/latest/` to always point to the most recent build so that my pipeline can reference a stable path without tracking version numbers.
+
+## Problem Statement
+
+Consumers that want "always latest" shouldn't need to discover the current version. A `latest/` pointer (either S3 copy or redirect) provides a stable reference that always resolves to the newest build.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `s3://flat-white/builds/latest/` always contains the most recent build's files
+  - `Verify:` After a new release, `latest/` matches the new version
+  - `Evidence:`
+- [ ] Consumers can reference `latest` or pin to a specific version
+  - `Verify:` Both `latest/` and `v2026.02/` paths work
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- S3 latest pointer maintenance after each release
+
+### Out — Do Not Implement
+
+- Version negotiation API
+- Multiple latest pointers (e.g., latest-stable vs latest-preview)
+
+---
+
+### Ticket P5.03 — OIDC Auth
+
+```yaml
+id: P5.03
+title: OIDC Auth
+status: planned
+priority: p1-high
+epic: P5.1
+persona: [ops/maintainer]
+depends_on: [P5.01]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need GitHub Actions OIDC federation to AWS IAM so that the S3 upload uses short-lived credentials with no stored secrets.
+
+## Problem Statement
+
+Stored AWS access keys are a security risk — if leaked, they provide persistent access. OIDC federation allows GitHub Actions to assume an IAM role with short-lived credentials scoped to the specific workflow run. No secrets stored in GitHub, no key rotation required.
+
+## Definition of Done
+
+### Functional
+
+- [ ] GitHub Actions uses OIDC to assume AWS IAM role — no stored access keys
+  - `Verify:` No AWS access key secrets in GitHub repo settings; OIDC provider configured
+  - `Evidence:`
+- [ ] IAM role has least-privilege permissions (S3 PutObject to specific bucket only)
+  - `Verify:` Review IAM policy for minimal permissions
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- GitHub Actions OIDC provider configuration
+- AWS IAM role with least-privilege S3 permissions
+
+### Out — Do Not Implement
+
+- AWS account setup (prerequisite)
+- Multi-account federation
+
+---
+
+### Ticket P5.04 — SNS Notification
+
+```yaml
+id: P5.04
+title: SNS Notification
+status: planned
+priority: p1-high
+epic: P5.1
+persona: [ops/maintainer]
+depends_on: [P3.03]
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As an ops/maintainer, I need SNS notifications on build success/failure so that the team and downstream subscribers are alerted without checking GitHub manually.
+
+## Problem Statement
+
+Quarterly builds run on a schedule. Without notifications, failures go undetected until someone manually checks. SNS notifications provide push-based alerting for both success (with release URL and counts) and failure (with error details and failed stage).
+
+## Definition of Done
+
+### Functional
+
+- [ ] SNS notification sent on build success: status, release URL, per-state counts, build duration
+  - `Verify:` Subscribe to SNS topic; confirm message on successful build
+  - `Evidence:`
+- [ ] SNS notification sent on build failure: status, failed stage, error details
+  - `Verify:` Force a failure; confirm SNS notification with failure details
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- SNS publish step in release workflow
+- Success and failure notification payloads
+
+### Out — Do Not Implement
+
+- Slack/email integration (subscribe to SNS topic)
+- Custom notification routing
 
 ---
 
@@ -576,6 +4421,14 @@ Download your state:
 - [ ] GitHub Release `v2026.02` with per-state assets
 - [ ] Downstream `geocode-au` auto-notified
 - [ ] Programmatic download documented
+
+### M3.5: First Consumer
+
+**Target:** Week 5-6
+
+- [ ] At least 1 external download of a per-state file (GitHub Release download count > 0)
+- [ ] Quick-start guide tested by someone who isn't the builder
+- [ ] 1 downstream integration (geocode-au) successfully ingests the data
 
 ### M4: Autopilot
 
@@ -627,3 +4480,5 @@ Twenty-eight cents a year. To distribute every address in Australia with full bo
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 1.0.0 | 2026-04-02 | John Bejenar | Initial roadmap: flat-white with matrix build on free runners, GitHub Releases, per-state split |
+| 1.1.0 | 2026-04-02 | John Bejenar | Expanded phase tables to full ticket format with YAML metadata, epics, dependency chains, user stories, and definition of done |
+| 1.2.0 | 2026-04-02 | John Bejenar | CPO review: added data quality checks (P1.10A), adoption ticket (P3.07), deferred AWS Mirror to P5, split E1 into 3 epics, moved P4.05 to P0-B, expanded personas, added M3.5 milestone |
