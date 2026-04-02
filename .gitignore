@@ -1,0 +1,8 @@
+node_modules/
+dist/
+output/
+data/
+*.ndjson
+*.ndjson.gz
+.env
+.DS_Store
