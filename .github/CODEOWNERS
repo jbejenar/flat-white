@@ -4,5 +4,8 @@
 # Schema contract — changes require explicit review
 src/schema.ts @jbejenar
 docs/DOCUMENT-SCHEMA.md @jbejenar
-fixtures/expected-output.ndjson @jbejenar
 sql/ @jbejenar
+
+# Fixture data — changes affect all downstream tests
+fixtures/seed-postgres.sql @jbejenar
+fixtures/expected-output.ndjson @jbejenar
