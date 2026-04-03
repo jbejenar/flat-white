@@ -34,7 +34,7 @@ export interface FlattenOptions {
  * Compose an AddressDocument from a flat SQL row.
  * Maps column names to the document schema fields.
  */
-function composeDocument(row: Record<string, unknown>, version: string): AddressDocument {
+export function composeDocument(row: Record<string, unknown>, version: string): AddressDocument {
   const bestGeocode = row.best_geocode as Record<string, unknown> | null;
   const allGeocodes = row.all_geocodes as Array<Record<string, unknown>> | null;
 
@@ -104,7 +104,7 @@ function composeDocument(row: Record<string, unknown>, version: string): Address
  * Compose the search-optimised address label.
  * Expands abbreviations: street type (AV → AVENUE), flat type, level type.
  */
-function composeSearchLabel(row: Record<string, unknown>): string {
+export function composeSearchLabel(row: Record<string, unknown>): string {
   const parts: string[] = [];
 
   // Flat type + number
@@ -161,7 +161,7 @@ function composeSearchLabel(row: Record<string, unknown>): string {
 /**
  * Compose the boundaries nested object from SQL row columns.
  */
-function composeBoundaries(row: Record<string, unknown>) {
+export function composeBoundaries(row: Record<string, unknown>) {
   const lgaName = row.lga_name as string | null;
   const lgaPid = row.lga_pid as string | null;
   const wardName = row.ward_name as string | null;
