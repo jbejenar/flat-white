@@ -5,7 +5,7 @@ set -e
 
 # 1. Reject empty (0-byte) staged files (new or modified).
 #    Uses git cat-file on the staged blob, not the working tree file.
-for f in $(git diff --cached --name-only --diff-filter=ACM); do
+for f in $(git diff --cached --name-only --diff-filter=ACMR); do
   staged_size=$(git cat-file -s ":$f" 2>/dev/null || echo "0")
   if [ "$staged_size" = "0" ]; then
     echo "ERROR: Empty (0-byte) file staged for commit: $f"
@@ -17,7 +17,7 @@ done
 # 2. Reject sql.unsafe() without .cursor() on the same chain in staged TypeScript files.
 #    Checks each occurrence using the staged blob content (not the working tree).
 #    Uses a 4-line window heuristic — not AST parsing.
-for f in $(git diff --cached --name-only --diff-filter=ACM -- '*.ts'); do
+for f in $(git diff --cached --name-only --diff-filter=ACMR -- '*.ts'); do
   staged=$(git show ":$f" 2>/dev/null) || continue
   # Find line numbers with sql.unsafe(
   lines=$(echo "$staged" | grep -n 'sql\.unsafe(' 2>/dev/null | cut -d: -f1) || true
