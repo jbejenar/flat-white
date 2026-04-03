@@ -1,56 +1,43 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-04. Active phase: P0.
+> Updated: 2026-04-04. Active phase: P1 (P0 blocked on P0.04).
 
 ## Completed This Session
 
-### P0.03 — G-NAF Download Script (done)
+### P1.01–P1.09 — Core Flatten Pipeline (recognized as done)
 
-- [x] `src/download.ts` with data.gov.au URLs, sentinel validation, atomic extraction
-- [x] Progress reporting (% complete, MB/s)
-- [x] Retry logic (3 retries, exponential backoff, 60s stall timeout)
-- [x] `--skip-download` flag with `isExtractionComplete()` validation
-- [x] `DATA_DIR` env var and `resolveOutputDir()` for path configuration
-- [x] 24 unit tests passing
+All core flatten features were already implemented during P0.09/P0.10 work:
 
-### Geocode Sentinel Fix (P0 correctness)
+- Streaming cursor-based flatten (P1.01)
+- Alias, secondary, multi-geocode aggregation (P1.02–P1.04)
+- Locality, boundary, street enrichment (P1.05–P1.07)
+- addressLabelSearch with expanded types (P1.08)
+- Zod schema validation during flatten (P1.09)
 
-- [x] `geocode` field now nullable — returns `null` instead of `{latitude: 0, longitude: 0}`
-- [x] Schema triple-update: `schema.ts` + `DOCUMENT-SCHEMA.md` + tests
+### P1.10 + P1.10A — Verification & Data Quality (new code)
 
-## Active Tickets
+- [x] `src/verify.ts` — row count verification + data quality checks
+- [x] Coordinate bounding box, PID uniqueness, state/postcode, boundary coverage
+- [x] 22 unit tests + fixture integration tests passing
 
-### P0.09 — Expected Output (in-progress)
+### P1.15 — Regression Tests (enhanced)
 
-Generate regression baseline files from the fixture build.
+- [x] Enhanced with coordinate bounds check and full verify() suite
 
-- [ ] `fixtures/expected-output.ndjson` committed (~451 lines, one per address)
-- [ ] `fixtures/expected-output-sample.json` committed (first document, prettified)
-- [ ] Line count matches `address_principals` row count in seed-postgres.sql
-- **Requires**: running `./scripts/build-fixture-only.sh` against Postgres (docker required)
+## Remaining Tickets
 
-### P0.10 — Fixture-Only Build (in-progress, depends on P0.09)
+### P0.04 — gnaf-loader VIC Load (planned, blocked)
 
-- [x] `scripts/build-fixture-only.sh` seeds Postgres, runs flatten, outputs NDJSON
-- [x] No download required — works from committed fixture data
-- [x] No gnaf-loader required — seeds via psql
-- [x] Completes in <30 seconds
-- [ ] Regression check against `expected-output.ndjson` (pending P0.09)
+- Requires 6.5GB download + Python gnaf-loader. Cannot be done in sandbox.
+- Blocks: P1.11 (Full VIC Build), P1.12–P1.14, P1.16
 
-### P0.12 — Zod Schema (in-progress, depends on P0.09)
+### P1.11 — Full VIC Build (blocked on P0.04)
 
-- [ ] Validate every document in `fixtures/expected-output.ndjson` against schema
+- End-to-end pipeline at production scale (~3.8M addresses)
 
-## Blockers
+### P1.12–P1.14, P1.16 — Output pipeline (blocked on P1.11)
 
-- **Docker/psql commands** may be unavailable in sandbox. If blocked: write code and unit tests only, document the blocker, move on.
-- **`fixtures/expected-output.ndjson`** requires running the full fixture pipeline. Cannot be generated without docker + Postgres.
-
-## Do NOT Touch
-
-- `ROADMAP.md` checkboxes — update only after verification evidence exists
-- `gnaf-loader/` — submodule, never modify
-- `fixtures/seed-postgres.sql` — use `fixtures/SCHEMA-REFERENCE.md` for table info
+- Output metadata, per-state split, gzip compression, performance baseline
 
 ## Reference Files
 
@@ -60,4 +47,5 @@ Generate regression baseline files from the fixture build.
 | Field provenance | `docs/FIELD-PROVENANCE.md`     | —                            |
 | Document schema  | `docs/DOCUMENT-SCHEMA.md`      | —                            |
 | Flatten SQL      | `sql/address_full.sql`         | —                            |
+| Verification     | `src/verify.ts`                | —                            |
 | Agent rules      | `CLAUDE.md` (auto-loaded)      | —                            |

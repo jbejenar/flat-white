@@ -17,11 +17,18 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- `src/verify.ts` — row count verification + data quality checks: coordinate bounds, PID uniqueness, state/postcode cross-validation, boundary coverage reporting (P1.10, P1.10A)
+- `test/unit/verify.test.ts` — 22 unit tests for verify module including fixture validation
+- Enhanced `test/regression/expected-output.test.ts` — geocode bounds check, full verify suite integration (P1.15)
 - `src/download.ts` — G-NAF + Admin Boundaries downloader with progress, retry, skip-download (P0.03)
 - `sql/address_full.sql` — master 9+ table JOIN query for flatten pipeline (P0.06)
 - `src/flatten.ts` — streaming Postgres → NDJSON flattener with Zod validation (P0.06)
 - `scripts/build-fixture-only.sh` — fixture-only build script: docker → seed → flatten (P0.10)
 - Unit tests for document composition: composeDocument, composeSearchLabel, composeBoundaries
+
+### Changed
+
+- Recognized P1.01–P1.09 as already implemented during P0 work — updated ROADMAP.md with evidence
 
 ### Changed
 
