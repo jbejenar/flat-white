@@ -3,6 +3,8 @@ dist/
 output/
 data/
 *.ndjson
+!fixtures/expected-output.ndjson
 *.ndjson.gz
 .env
 .DS_Store
+.claude-loop/
