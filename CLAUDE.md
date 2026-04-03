@@ -6,14 +6,18 @@ These rules address observed failure patterns in autonomous sessions. They suppl
 
 ## Sandbox Boundaries (claude-loop)
 
-When running under `claude-loop`, your allowed bash commands are limited. You **CANNOT** run:
+When running under `claude-loop`, you **CANNOT** run:
 
-- `docker`, `docker compose`, `docker exec`
-- `psql`
-- `rm`, `git rm`, `kill`, `chmod`
-- `bash scripts/*.sh` (direct script execution)
+- `rm`, `git rm` (destructive — note blockers in build-notes for manual cleanup)
+- `kill`, `chmod` (rarely needed, risky in autonomous mode)
 
-Do NOT attempt workarounds (Node.js scripts, background processes, etc.). If you need docker or psql, write code and unit tests only — document the blocker in `.claude-loop/build-notes.md` and move on. **Max 2 retries** on any blocked command, then stop.
+You **CAN** run:
+
+- `docker`, `docker compose`, `docker exec` (core workflow — ephemeral DB)
+- `psql` (fixture seeds, query testing)
+- `bash scripts/*.sh` (e.g. `build-fixture-only.sh` dev loop)
+
+Do NOT attempt workarounds for blocked commands (Node.js scripts, background processes, etc.). **Max 2 retries** on any blocked command, then document in `.claude-loop/build-notes.md` and move on.
 
 ## Read Discipline
 
