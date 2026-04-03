@@ -47,9 +47,8 @@ echo "[fixture-build] Output: $OUTPUT_FILE ($LINE_COUNT documents)"
 
 # 7. Validate each line is valid JSON
 if command -v jq &>/dev/null; then
-  INVALID=$(jq -e '.' "$OUTPUT_FILE" 2>&1 | grep -c "parse error" || true)
-  if [ "$INVALID" -gt 0 ]; then
-    echo "[fixture-build] ERROR: $INVALID lines are not valid JSON"
+  if ! jq -c -e '.' "$OUTPUT_FILE" > /dev/null 2>&1; then
+    echo "[fixture-build] ERROR: Output contains invalid JSON lines"
     exit 3
   fi
 fi
