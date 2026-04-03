@@ -63,6 +63,8 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
     postcode: (row.postcode as string) ?? null,
     legalParcelId: (row.legal_parcel_id as string) ?? null,
     confidence: Number(row.confidence),
+    // P0 scope: query only joins address_principals, so all rows are PRINCIPAL.
+    // Alias addresses would require a separate join on address_aliases.
     aliasPrincipal: "PRINCIPAL",
     primarySecondary: (row.primary_secondary as "PRIMARY" | "SECONDARY") ?? null,
     geocode: bestGeocode
