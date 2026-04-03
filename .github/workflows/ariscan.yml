@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
@@ -26,7 +27,18 @@ jobs:
       - name: Run ariscan
         id: scan
         run: |
-          npx @prontiq/ariscan-cli . --json > /tmp/ariscan.json 2>/dev/null || true
+          if ! npx @prontiq/ariscan-cli . --json > /tmp/ariscan.json 2>/dev/null; then
+            echo "ariscan failed — skipping README update"
+            echo "score=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! jq -e '.score' /tmp/ariscan.json > /dev/null 2>&1; then
+            echo "ariscan output invalid — skipping README update"
+            echo "score=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           SCORE=$(jq -r '.score' /tmp/ariscan.json)
           LEVEL=$(jq -r '.level' /tmp/ariscan.json)
           echo "score=$SCORE" >> "$GITHUB_OUTPUT"
@@ -34,14 +46,10 @@ jobs:
           echo "ARI Score: $SCORE/100 ($LEVEL)"
 
       - name: Update README badge and score
+        if: steps.scan.outputs.score != ''
         run: |
           SCORE="${{ steps.scan.outputs.score }}"
           LEVEL="${{ steps.scan.outputs.level }}"
-
-          if [ -z "$SCORE" ] || [ "$SCORE" = "null" ]; then
-            echo "No score detected, skipping README update"
-            exit 0
-          fi
 
           # Pick badge colour based on score
           if [ "$SCORE" -ge 80 ]; then
@@ -61,6 +69,7 @@ jobs:
           sed -i "s|<h3>[0-9]*/100</h3><sub>ARI Score ([^)]*)</sub>|<h3>${SCORE}/100</h3><sub>ARI Score (${LEVEL})</sub>|g" README.md
 
       - name: Commit if changed
+        if: steps.scan.outputs.score != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -69,5 +78,5 @@ jobs:
           else
             git add README.md
             git commit -m "chore: update ARI score badge to ${{ steps.scan.outputs.score }}/100"
-            git push
+            git push origin main
           fi
