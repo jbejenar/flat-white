@@ -112,7 +112,7 @@ Full schema: [DOCUMENT-SCHEMA.md](docs/DOCUMENT-SCHEMA.md)
 | Use Case | How |
 |---|---|
 | **Self-host address validation** | Pipe into OpenSearch/Elasticsearch, add a Lambda, done |
-| **Replace Experian/Geoscape** | Same data, richer output, zero licence cost |
+| **Drop-in address data** | Pre-joined, boundary-enriched — no commercial licence required |
 | **Data science** | 15.9M geocoded, boundary-enriched records ready for analysis |
 | **Government** | Every department gets the same data without separate vendor contracts |
 
