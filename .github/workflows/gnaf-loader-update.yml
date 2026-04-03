@@ -41,10 +41,11 @@ jobs:
             echo "No upstream releases or tags found"
             exit 0
           fi
-          LATEST_SHA=$(gh api "repos/minus34/gnaf-loader/git/ref/tags/$LATEST" --jq '.object.sha' 2>/dev/null || echo "")
-          # Handle annotated tags (dereference)
+          # Use git ls-remote with ^{} to dereference annotated tags to commit SHA
+          LATEST_SHA=$(git ls-remote --tags https://github.com/minus34/gnaf-loader.git "refs/tags/$LATEST^{}" | awk '{print $1}')
+          # If ^{} returned nothing, it's a lightweight tag — get SHA directly
           if [ -z "$LATEST_SHA" ]; then
-            LATEST_SHA=$(gh api "repos/minus34/gnaf-loader/git/refs/tags/$LATEST" --jq '.object.sha' 2>/dev/null || echo "")
+            LATEST_SHA=$(git ls-remote --tags https://github.com/minus34/gnaf-loader.git "refs/tags/$LATEST" | awk '{print $1}')
           fi
           echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
           echo "sha=$LATEST_SHA" >> "$GITHUB_OUTPUT"
