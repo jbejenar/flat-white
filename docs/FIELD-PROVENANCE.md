@@ -7,32 +7,37 @@
 
 ## Table Inventory
 
-All tables referenced by `sql/address_full.sql`. Row counts are from the committed fixture (`fixtures/seed-postgres.sql`).
+All tables joined by `sql/address_full.sql` and its CTEs. Row counts are from the committed fixture (`fixtures/seed-postgres.sql`).
 
-| Schema              | Table                                | Alias in SQL | Fixture Rows | Role                                                                            |
-| ------------------- | ------------------------------------ | ------------ | ------------ | ------------------------------------------------------------------------------- |
-| `gnaf_202602`       | `address_principals`                 | `ap`         | 451          | Driving table — one row per principal address                                   |
-| `gnaf_202602`       | `address_aliases`                    | `aa`         | 75           | Alternative address names (joined via lookup)                                   |
-| `gnaf_202602`       | `address_alias_lookup`               | `aal`        | 75           | Maps principal_pid → alias_pid + alias_type                                     |
-| `gnaf_202602`       | `address_secondary_lookup`           | `asl`        | 1,161        | Maps primary_pid → secondary_pid                                                |
-| `gnaf_202602`       | `localities`                         | `loc`        | 267          | Locality (suburb) metadata                                                      |
-| `gnaf_202602`       | `locality_aliases`                   | `la`         | 500          | Alternative locality names                                                      |
-| `gnaf_202602`       | `locality_neighbour_lookup`          | `ln` (CTE)   | 1,709        | Adjacent locality pairs                                                         |
-| `gnaf_202602`       | `streets`                            | `st`         | 405          | Street metadata                                                                 |
-| `gnaf_202602`       | `street_aliases`                     | `sa`         | 32           | Alternative street names                                                        |
-| `gnaf_202602`       | `address_principal_admin_boundaries` | `ab`         | 451          | Spatially-joined admin boundaries per address                                   |
-| `raw_gnaf_202602`   | `address_detail`                     | `ad`         | 451          | Raw address detail (flat/level type codes, address_site_pid)                    |
-| `raw_gnaf_202602`   | `address_site`                       | `site`       | 451          | Site names (shopping centres, hospitals)                                        |
-| `raw_gnaf_202602`   | `address_site_geocode`               | `asg`        | 828          | All geocode types per address site                                              |
-| `raw_gnaf_202602`   | `address_default_geocode`            | —            | 451          | Default geocode (not directly used; best_geocode CTE uses address_site_geocode) |
-| `raw_gnaf_202602`   | `flat_type_aut`                      | `ft`         | 54           | Code → name expansion (e.g. `UNIT` → `UNIT`)                                    |
-| `raw_gnaf_202602`   | `level_type_aut`                     | `lt`         | 16           | Code → name expansion (e.g. `L` → `LEVEL`)                                      |
-| `raw_gnaf_202602`   | `street_type_aut`                    | `st_aut`     | 276          | Code → name expansion (e.g. `AV` → `AVENUE`)                                    |
-| `raw_gnaf_202602`   | `street_suffix_aut`                  | `ss_aut`     | 19           | Code → name expansion (e.g. `N` → `NORTH`)                                      |
-| `raw_gnaf_202602`   | `geocode_type_aut`                   | `gt`         | 30           | Code → name expansion (e.g. `FCS` → `FRONTAGE CENTRE SETBACK`)                  |
-| `raw_gnaf_202602`   | `locality_class_aut`                 | `lc_aut`     | 9            | Name-based join for locality class                                              |
-| `raw_gnaf_202602`   | `street_class_aut`                   | `sc_aut`     | 2            | Name-based join for street class                                                |
-| `admin_bdys_202602` | `abs_2021_mb_lookup`                 | `mb`         | 430          | Mesh block → SA1/SA2/SA3/SA4/GCCSA mapping                                      |
+| Schema              | Table                                | Alias in SQL | Fixture Rows | Role                                                           |
+| ------------------- | ------------------------------------ | ------------ | ------------ | -------------------------------------------------------------- |
+| `gnaf_202602`       | `address_principals`                 | `ap`         | 451          | Driving table — one row per principal address                  |
+| `gnaf_202602`       | `address_aliases`                    | `aa`         | 75           | Alternative address names (joined via lookup)                  |
+| `gnaf_202602`       | `address_alias_lookup`               | `aal`        | 75           | Maps principal_pid → alias_pid + alias_type                    |
+| `gnaf_202602`       | `address_secondary_lookup`           | `asl`        | 1,161        | Maps primary_pid → secondary_pid                               |
+| `gnaf_202602`       | `localities`                         | `loc`        | 267          | Locality (suburb) metadata                                     |
+| `gnaf_202602`       | `locality_aliases`                   | `la`         | 500          | Alternative locality names                                     |
+| `gnaf_202602`       | `locality_neighbour_lookup`          | `ln` (CTE)   | 1,709        | Adjacent locality pairs                                        |
+| `gnaf_202602`       | `streets`                            | `st`         | 405          | Street metadata                                                |
+| `gnaf_202602`       | `street_aliases`                     | `sa`         | 32           | Alternative street names                                       |
+| `gnaf_202602`       | `address_principal_admin_boundaries` | `ab`         | 451          | Spatially-joined admin boundaries per address                  |
+| `raw_gnaf_202602`   | `address_detail`                     | `ad`         | 451          | Raw address detail (flat/level type codes, address_site_pid)   |
+| `raw_gnaf_202602`   | `address_site`                       | `site`       | 451          | Site names (shopping centres, hospitals)                       |
+| `raw_gnaf_202602`   | `address_site_geocode`               | `asg`        | 828          | All geocode types per address site                             |
+| `raw_gnaf_202602`   | `flat_type_aut`                      | `ft`         | 54           | Code → name expansion (e.g. `UNIT` → `UNIT`)                   |
+| `raw_gnaf_202602`   | `level_type_aut`                     | `lt`         | 16           | Code → name expansion (e.g. `L` → `LEVEL`)                     |
+| `raw_gnaf_202602`   | `street_type_aut`                    | `st_aut`     | 276          | Code → name expansion (e.g. `AV` → `AVENUE`)                   |
+| `raw_gnaf_202602`   | `street_suffix_aut`                  | `ss_aut`     | 19           | Code → name expansion (e.g. `N` → `NORTH`)                     |
+| `raw_gnaf_202602`   | `geocode_type_aut`                   | `gt`         | 30           | Code → name expansion (e.g. `FCS` → `FRONTAGE CENTRE SETBACK`) |
+| `raw_gnaf_202602`   | `locality_class_aut`                 | `lc_aut`     | 9            | Name-based join for locality class                             |
+| `raw_gnaf_202602`   | `street_class_aut`                   | `sc_aut`     | 2            | Name-based join for street class                               |
+| `admin_bdys_202602` | `abs_2021_mb_lookup`                 | `mb`         | 430          | Mesh block → SA1/SA2/SA3/SA4/GCCSA mapping                     |
+
+**Related but not referenced by `address_full.sql`:**
+
+| Schema            | Table                     | Fixture Rows | Note                                                                                                                            |
+| ----------------- | ------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `raw_gnaf_202602` | `address_default_geocode` | 451          | Contains default geocodes, but the flatten SQL sources geocodes from `address_site_geocode` via the `best_geocode` CTE instead. |
 
 ---
 
@@ -124,6 +129,8 @@ Best geocode selected per address. Determined inside the `address_geocodes` CTE.
 **Selection logic (SQL):** `ORDER BY reliability_code ASC, CASE geocode_type_code WHEN 'FCS' THEN 1 WHEN 'PC' THEN 2 WHEN 'PAP' THEN 3 ELSE 4 END ASC LIMIT 1`. Only non-retired geocodes (`date_retired IS NULL`).
 
 **Join path:** `address_principals.gnaf_pid` → `address_detail.address_detail_pid` → `address_detail.address_site_pid` → `address_site_geocode.address_site_pid`
+
+> **⚠️ Known technical debt:** The fallback values (`latitude: 0`, `longitude: 0`, `type: "UNKNOWN"`, `reliability: 6`) when no geocode exists violate the repo's "no silent sentinel values" rule (see AGENTS.md, Immutable Rule 3). Coordinates of `0,0` place the address in the Atlantic Ocean. This fallback exists in the current `src/flatten.ts` implementation but **must not be copied into new code**. The intended fix is to either make the `geocode` field nullable across the schema (`src/schema.ts`, `docs/DOCUMENT-SCHEMA.md`, fixtures, and tests) or fail validation when no geocode is present.
 
 ---
 
