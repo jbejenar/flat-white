@@ -213,12 +213,14 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
   let errors = 0;
 
   try {
-    const rows = await sql.unsafe(flattenSql);
+    const cursor = sql.unsafe(flattenSql).cursor(500);
 
     const source = Readable.from(
       (async function* () {
-        for (const row of rows) {
-          yield row;
+        for await (const batch of cursor) {
+          for (const row of batch) {
+            yield row;
+          }
         }
       })(),
     );
