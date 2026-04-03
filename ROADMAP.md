@@ -1021,7 +1021,7 @@ Without a committed expected output, there is no regression baseline. Any change
 ```yaml
 id: P0.10
 title: Fixture-Only Build
-status: done
+status: in-progress
 priority: p0-critical
 epic: P0.B
 persona: [builder/contributor]
@@ -1035,7 +1035,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: 2026-04-03
+completed: null
 ```
 
 ## User Story
