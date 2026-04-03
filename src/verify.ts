@@ -61,8 +61,11 @@ export interface VerifyResult {
   expectedCount: number;
   difference: number;
   differencePercent: number;
+  tolerancePercent: number;
   passed: boolean;
   qualityIssues: QualityIssue[];
+  qualityErrors: QualityIssue[];
+  qualityWarnings: QualityIssue[];
   boundaryCoverage: BoundaryCoverage;
   duplicatePids: string[];
 }
@@ -190,15 +193,27 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
 
   const difference = Math.abs(outputCount - expectedCount);
   const differencePercent = expectedCount > 0 ? (difference / expectedCount) * 100 : 0;
-  const passed = differencePercent <= tolerance * 100 && duplicatePids.length === 0;
+  const tolerancePercent = tolerance * 100;
+
+  // Partition quality issues: coordinate-bounds are hard errors, state-postcode are warnings
+  const qualityErrors = qualityIssues.filter((i) => i.check === "coordinate-bounds");
+  const qualityWarnings = qualityIssues.filter((i) => i.check !== "coordinate-bounds");
+
+  const passed =
+    differencePercent <= tolerancePercent &&
+    duplicatePids.length === 0 &&
+    qualityErrors.length === 0;
 
   return {
     outputCount,
     expectedCount,
     difference,
     differencePercent,
+    tolerancePercent,
     passed,
     qualityIssues,
+    qualityErrors,
+    qualityWarnings,
     boundaryCoverage: coverage,
     duplicatePids,
   };
@@ -214,7 +229,7 @@ export function formatReport(result: VerifyResult): string {
   lines.push(`Output count:  ${result.outputCount}`);
   lines.push(`Difference:    ${result.difference} (${result.differencePercent.toFixed(3)}%)`);
   lines.push(
-    `Row count:     ${result.difference === 0 ? "PASS" : result.differencePercent <= 0.1 ? "PASS (within tolerance)" : "FAIL"}`,
+    `Row count:     ${result.difference === 0 ? "PASS" : result.differencePercent <= result.tolerancePercent ? "PASS (within tolerance)" : "FAIL"}`,
   );
 
   if (result.duplicatePids.length > 0) {
@@ -239,16 +254,26 @@ export function formatReport(result: VerifyResult): string {
     lines.push(`  SA2:                   ${pct(cov.sa2)}%`);
   }
 
-  if (result.qualityIssues.length > 0) {
-    lines.push(`Quality issues: ${result.qualityIssues.length}`);
-    for (const issue of result.qualityIssues.slice(0, 10)) {
+  if (result.qualityErrors.length > 0) {
+    lines.push(`Quality errors: FAIL (${result.qualityErrors.length})`);
+    for (const issue of result.qualityErrors.slice(0, 10)) {
       lines.push(`  [${issue.check}] ${issue.pid}: ${issue.message}`);
     }
-    if (result.qualityIssues.length > 10) {
-      lines.push(`  ... and ${result.qualityIssues.length - 10} more`);
+    if (result.qualityErrors.length > 10) {
+      lines.push(`  ... and ${result.qualityErrors.length - 10} more`);
     }
   } else {
-    lines.push("Quality issues: PASS (none found)");
+    lines.push("Quality errors: PASS (none found)");
+  }
+
+  if (result.qualityWarnings.length > 0) {
+    lines.push(`Quality warnings: ${result.qualityWarnings.length}`);
+    for (const issue of result.qualityWarnings.slice(0, 5)) {
+      lines.push(`  [${issue.check}] ${issue.pid}: ${issue.message}`);
+    }
+    if (result.qualityWarnings.length > 5) {
+      lines.push(`  ... and ${result.qualityWarnings.length - 5} more`);
+    }
   }
 
   lines.push(`Overall: ${result.passed ? "PASS" : "FAIL"}`);

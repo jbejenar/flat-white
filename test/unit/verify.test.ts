@@ -150,9 +150,10 @@ describe("verify", () => {
     writeNdjson(path, docs);
 
     const result = await verify({ outputPath: path, expectedCount: 1 });
-    const geoIssues = result.qualityIssues.filter((i) => i.check === "coordinate-bounds");
-    expect(geoIssues.length).toBeGreaterThan(0);
-    expect(geoIssues[0].pid).toBe("BAD_GEO");
+    expect(result.passed).toBe(false);
+    expect(result.qualityErrors.length).toBeGreaterThan(0);
+    expect(result.qualityErrors[0].pid).toBe("BAD_GEO");
+    expect(result.qualityErrors[0].check).toBe("coordinate-bounds");
   });
 
   it("flags state/postcode mismatches", async () => {
@@ -161,8 +162,9 @@ describe("verify", () => {
     writeNdjson(path, docs);
 
     const result = await verify({ outputPath: path, expectedCount: 1 });
-    const pcIssues = result.qualityIssues.filter((i) => i.check === "state-postcode");
-    expect(pcIssues.length).toBe(1);
+    expect(result.passed).toBe(true); // state-postcode is a warning, not an error
+    expect(result.qualityWarnings.length).toBe(1);
+    expect(result.qualityWarnings[0].check).toBe("state-postcode");
   });
 
   it("reports boundary coverage", async () => {
@@ -207,7 +209,8 @@ describe("verify against fixture expected-output.ndjson", () => {
     expect(result.outputCount).toBe(451);
     expect(result.difference).toBe(0);
     expect(result.duplicatePids.length).toBe(0);
-    expect(result.qualityIssues.length).toBe(0);
+    expect(result.qualityErrors.length).toBe(0);
+    expect(result.qualityWarnings.length).toBe(0);
   });
 
   it("reports high boundary coverage", async () => {
