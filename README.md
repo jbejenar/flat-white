@@ -232,6 +232,33 @@ curl -LO "https://github.com/jbejenar/flat-white/releases/download/v2026.02/flat
 
 ---
 
+## AI-Ready Development
+
+<a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-75%2F100_L4-97ca00" alt="ARI Score"></a> &ensp; Measured by [ariscan](https://github.com/prontiq/ariscan-cli) — the Agent Readiness Index.
+
+This repo is built for **autonomous AI coding agents**. Every push to `main` runs [ariscan](https://github.com/prontiq/ariscan-cli) to measure and track agent readiness across 8 pillars:
+
+| Pillar                  | Score | What it measures                              |
+| ----------------------- | ----- | --------------------------------------------- |
+| Agent Context Quality   | 100   | CLAUDE.md, AGENTS.md, .agentignore            |
+| Feedback Loop Speed     | 100   | Tests, lint, CI turnaround                    |
+| Security & Governance   | 100   | Dependabot, SAST, branch protection           |
+| Dev Environment         | 97    | Devcontainer, setup scripts, versions         |
+| Build Determinism       | 70    | TypeScript strict, lockfile, pre-commit hooks |
+| Code Navigability       | 69    | File structure, naming, imports               |
+| Doc Machine-Readability | 50    | API specs, structured docs                    |
+| Test Isolation          | 35    | Test-to-source ratio, anti-patterns           |
+
+**Key guardrails:**
+
+- [`CLAUDE.md`](CLAUDE.md) — auto-loaded rules for Claude Code sessions (sandbox boundaries, read discipline, streaming rules)
+- [`NEXT-WORK.md`](NEXT-WORK.md) — active tickets for agents (avoids scanning the 4,490-line roadmap)
+- [`fixtures/SCHEMA-REFERENCE.md`](fixtures/SCHEMA-REFERENCE.md) — table schemas (~220 lines vs 10k-line SQL fixture)
+- Pre-commit hooks reject empty files and `sql.unsafe()` without `.cursor()`
+- [CodeQL SAST](.github/workflows/sast.yml) on every push and PR
+
+---
+
 ## Project Status
 
 ```mermaid
