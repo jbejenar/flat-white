@@ -1,0 +1,94 @@
+{
+  "_id": "GAVIC411087566",
+  "_version": "2026.02",
+  "addressLabel": "FLAT 14, 5 DUKE STREET",
+  "addressLabelSearch": "FLAT FLAT 14 5 DUKE ST CAULFIELD SOUTH VIC 3162",
+  "addressSiteName": null,
+  "buildingName": null,
+  "flatType": "FLAT",
+  "flatNumber": "FLAT 14",
+  "levelType": null,
+  "levelNumber": null,
+  "numberFirst": "5",
+  "numberLast": null,
+  "lotNumber": null,
+  "streetName": "DUKE",
+  "streetType": "ST",
+  "streetSuffix": null,
+  "localityName": "CAULFIELD SOUTH",
+  "state": "VIC",
+  "postcode": "3162",
+  "legalParcelId": "14\\PS349838",
+  "confidence": 2,
+  "aliasPrincipal": "PRINCIPAL",
+  "primarySecondary": "SECONDARY",
+  "geocode": {
+    "latitude": -37.89180933,
+    "longitude": 145.01510717,
+    "type": "FRONTAGE CENTRE SETBACK",
+    "reliability": 2
+  },
+  "allGeocodes": [
+    {
+      "lat": -37.89180933,
+      "lng": 145.01510717,
+      "type": "FCS",
+      "reliability": 2
+    },
+    {
+      "lat": -37.89180905,
+      "lng": 145.01490263,
+      "type": "PC",
+      "reliability": 2
+    }
+  ],
+  "locality": {
+    "pid": "loc1b5a0e70afd4",
+    "class": "GAZETTED LOCALITY",
+    "neighbours": ["ELSTERNWICK", "GARDENVALE", "ORMOND"],
+    "aliases": []
+  },
+  "street": {
+    "pid": "VIC1953679",
+    "class": "CONFIRMED",
+    "aliases": []
+  },
+  "boundaries": {
+    "lga": {
+      "name": "Glen Eira",
+      "code": "lga9bd137c30d17"
+    },
+    "ward": {
+      "name": "Bambra Ward"
+    },
+    "stateElectorate": {
+      "name": "CAULFIELD"
+    },
+    "commonwealthElectorate": {
+      "name": "GOLDSTEIN"
+    },
+    "meshBlock": {
+      "code": "20192490000",
+      "category": "Residential"
+    },
+    "sa1": "20802117831",
+    "sa2": {
+      "name": "Caulfield - South",
+      "code": "208021178"
+    },
+    "sa3": {
+      "name": "Glen Eira",
+      "code": "20802"
+    },
+    "sa4": {
+      "name": "Melbourne - Inner South",
+      "code": "208"
+    },
+    "gccsa": {
+      "name": "Greater Melbourne",
+      "code": "2GMEL"
+    }
+  },
+  "aliases": [],
+  "secondaries": []
+}
