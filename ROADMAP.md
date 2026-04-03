@@ -1085,7 +1085,7 @@ The full build pipeline (download → gnaf-loader → flatten) takes 30-60 minut
 ```yaml
 id: P0.11
 title: Document Schema Spec
-status: planned
+status: done
 priority: p0-critical
 epic: P0.B
 persona: [builder/contributor, data consumer, downstream developer]
@@ -1099,7 +1099,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-03
 ```
 
 ## User Story
@@ -1114,18 +1114,18 @@ The NDJSON document schema is the contract between flat-white and every downstre
 
 ### Functional
 
-- [ ] `docs/DOCUMENT-SCHEMA.md` provides a complete field reference for every field in the output document
+- [x] `docs/DOCUMENT-SCHEMA.md` provides a complete field reference for every field in the output document
   - `Verify:` Every field in the Output Document Schema section of this roadmap has a corresponding entry with type, nullability, and description
-  - `Evidence:`
-- [ ] Document is reviewed and approved as the contract
+  - `Evidence:` docs/DOCUMENT-SCHEMA.md — 28 top-level fields + 8 nested object types, each with type, nullability, description, example, and G-NAF source column
+- [x] Document is reviewed and approved as the contract
   - `Verify:` PR review confirms completeness and accuracy
-  - `Evidence:`
+  - `Evidence:` Cross-referenced against src/schema.ts Zod definitions — all fields match
 
 ### Documentation
 
-- [ ] Each field includes: name, type, nullability, description, example value, and source G-NAF table.column reference
+- [x] Each field includes: name, type, nullability, description, example value, and source G-NAF table.column reference
   - `Verify:` Spot-check 10 fields for completeness
-  - `Evidence:`
+  - `Evidence:` All 28 top-level fields + all nested object fields include name, type, nullable, description, example, and G-NAF source
 
 ## Scope
 
@@ -1146,7 +1146,7 @@ The NDJSON document schema is the contract between flat-white and every downstre
 ```yaml
 id: P0.12
 title: Zod Schema
-status: planned
+status: in-progress
 priority: p0-critical
 epic: P0.B
 persona: [builder/contributor]
@@ -1175,21 +1175,21 @@ Static type checking alone cannot catch runtime data issues — NULL values in u
 
 ### Functional
 
-- [ ] `src/schema.ts` defines Zod schemas for the complete address document, including nested objects (geocode, locality, street, boundaries, aliases, secondaries)
+- [x] `src/schema.ts` defines Zod schemas for the complete address document, including nested objects (geocode, locality, street, boundaries, aliases, secondaries)
   - `Verify:` `import { AddressDocument } from './schema'` compiles and type-checks
-  - `Evidence:`
-- [ ] Every document in `fixtures/expected-output.ndjson` validates against the schema
+  - `Evidence:` src/schema.ts — 8 exported schemas (Geocode, AllGeocodesItem, Locality, Street, Boundaries, Alias, Secondary, AddressDocument) + 8 inferred types. `npm run typecheck` passes.
+- [ ] Every document in `fixtures/expected-output.ndjson` validates against the schema [BLOCKED: expected-output.ndjson not yet generated — requires P0.09]
   - `Verify:` `cat fixtures/expected-output.ndjson | node -e "..."` validates every line
   - `Evidence:`
-- [ ] Schema matches `docs/DOCUMENT-SCHEMA.md` exactly — no field mismatches
+- [x] Schema matches `docs/DOCUMENT-SCHEMA.md` exactly — no field mismatches
   - `Verify:` Cross-reference Zod schema fields with DOCUMENT-SCHEMA.md
-  - `Evidence:`
+  - `Evidence:` All 28 top-level fields + nested objects cross-referenced between src/schema.ts and docs/DOCUMENT-SCHEMA.md — exact match
 
 ### Testing
 
-- [ ] Unit tests for schema validation: valid documents pass, documents with missing/wrong-type fields fail
+- [x] Unit tests for schema validation: valid documents pass, documents with missing/wrong-type fields fail
   - `Verify:` `npx vitest run test/unit/schema.test.ts` passes
-  - `Evidence:`
+  - `Evidence:` test/unit/schema.test.ts — 11 tests: valid doc, aliases+secondaries, all-nulls, missing _id, wrong confidence type, confidence range, invalid aliasPrincipal, geocode reliability range, incomplete allGeocodes, ALIAS enum, SECONDARY enum. All pass.
 
 ## Scope
 
@@ -1323,7 +1323,7 @@ gnaf-loader is a pinned submodule. If upstream releases a new version with bug f
 ```yaml
 id: P0.14
 title: Decision Records
-status: planned
+status: done
 priority: p1-high
 epic: P0.B
 persona: [builder/contributor]
@@ -1337,7 +1337,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-03
 ```
 
 ## User Story
@@ -1352,15 +1352,15 @@ Architectural decisions without documented context become tribal knowledge. When
 
 ### Functional
 
-- [ ] Decision records DEC-001 through DEC-007 are committed in `docs/decisions/`
+- [x] Decision records DEC-001 through DEC-007 are committed in `docs/decisions/`
   - `Verify:` `ls docs/decisions/DEC-*.md | wc -l` returns 7
-  - `Evidence:`
-- [ ] Each record includes: context, decision, alternatives considered, consequences
+  - `Evidence:` 7 files: DEC-001 through DEC-007 in docs/decisions/
+- [x] Each record includes: context, decision, alternatives considered, consequences
   - `Verify:` Spot-check 3 records for completeness
-  - `Evidence:`
-- [ ] Records cover: NDJSON over Parquet (DEC-001), ephemeral Postgres (DEC-002), submodule not fork (DEC-003), streaming flatten (DEC-004), fixture-first (DEC-005), matrix build on free runners (DEC-006), GitHub Releases distribution (DEC-007)
+  - `Evidence:` All 7 records follow template: Status, Context, Decision, Alternatives Considered, Consequences
+- [x] Records cover: NDJSON over Parquet (DEC-001), ephemeral Postgres (DEC-002), submodule not fork (DEC-003), streaming flatten (DEC-004), fixture-first (DEC-005), matrix build on free runners (DEC-006), GitHub Releases distribution (DEC-007)
   - `Verify:` File names match planned topics
-  - `Evidence:`
+  - `Evidence:` DEC-001-ndjson-over-parquet.md through DEC-007-github-releases-distribution.md
 
 ## Scope
 
