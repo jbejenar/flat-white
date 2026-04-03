@@ -217,6 +217,20 @@ describe("composeDocument", () => {
     expect(doc.primarySecondary).toBe("PRIMARY");
   });
 
+  it("maps single-letter primary_secondary codes to full words", () => {
+    const rowP = { ...baseRow, primary_secondary: "P" };
+    const docP = composeDocument(rowP, "2026.02");
+    expect(docP.primarySecondary).toBe("PRIMARY");
+    const resultP = AddressDocumentSchema.safeParse(docP);
+    expect(resultP.success).toBe(true);
+
+    const rowS = { ...baseRow, primary_secondary: "S" };
+    const docS = composeDocument(rowS, "2026.02");
+    expect(docS.primarySecondary).toBe("SECONDARY");
+    const resultS = AddressDocumentSchema.safeParse(docS);
+    expect(resultS.success).toBe(true);
+  });
+
   it("falls back to zero geocode when best_geocode is null", () => {
     const row = { ...baseRow, best_geocode: null, all_geocodes: null };
     const doc = composeDocument(row, "2026.02");

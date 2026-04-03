@@ -30,6 +30,12 @@ export interface FlattenOptions {
   version: string;
 }
 
+function mapPrimarySecondary(value: unknown): "PRIMARY" | "SECONDARY" | null {
+  if (value === "P" || value === "PRIMARY") return "PRIMARY";
+  if (value === "S" || value === "SECONDARY") return "SECONDARY";
+  return null;
+}
+
 /**
  * Compose an AddressDocument from a flat SQL row.
  * Maps column names to the document schema fields.
@@ -66,7 +72,7 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
     // P0 scope: query only joins address_principals, so all rows are PRINCIPAL.
     // Alias addresses would require a separate join on address_aliases.
     aliasPrincipal: "PRINCIPAL",
-    primarySecondary: (row.primary_secondary as "PRIMARY" | "SECONDARY") ?? null,
+    primarySecondary: mapPrimarySecondary(row.primary_secondary),
     geocode: bestGeocode
       ? {
           latitude: Number(bestGeocode.latitude),

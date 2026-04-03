@@ -218,7 +218,7 @@ LEFT JOIN address_geocodes ag
 JOIN gnaf_202602.localities loc
   ON loc.locality_pid = ap.locality_pid
 LEFT JOIN raw_gnaf_202602.locality_class_aut lc_aut
-  ON lc_aut.code = loc.locality_class
+  ON lc_aut.name = loc.locality_class
 LEFT JOIN locality_neighbours ln
   ON ln.locality_pid = ap.locality_pid
 LEFT JOIN locality_alias_agg laa
@@ -228,7 +228,7 @@ LEFT JOIN locality_alias_agg laa
 JOIN gnaf_202602.streets st
   ON st.street_locality_pid = ap.street_locality_pid
 LEFT JOIN raw_gnaf_202602.street_class_aut sc_aut
-  ON sc_aut.code = st.street_class
+  ON sc_aut.name = st.street_class
 LEFT JOIN street_alias_agg saa
   ON saa.street_locality_pid = ap.street_locality_pid
 
