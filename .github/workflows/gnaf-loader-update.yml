@@ -1,0 +1,118 @@
+name: gnaf-loader Update Check
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Every Monday at 09:00 UTC
+  workflow_dispatch: # Manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Get current submodule version
+        id: current
+        run: |
+          CURRENT_SHA=$(git submodule status gnaf-loader | awk '{print $1}' | tr -d '+')
+          CURRENT_DESC=$(cd gnaf-loader && git describe --tags --always 2>/dev/null || echo "$CURRENT_SHA")
+          echo "sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+          echo "desc=$CURRENT_DESC" >> "$GITHUB_OUTPUT"
+
+      - name: Check latest upstream release
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST=$(gh api repos/minus34/gnaf-loader/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+          if [ -z "$LATEST" ]; then
+            # Fall back to latest tag if no releases
+            LATEST=$(gh api repos/minus34/gnaf-loader/tags --jq '.[0].name' 2>/dev/null || echo "")
+          fi
+          if [ -z "$LATEST" ]; then
+            echo "No upstream releases or tags found"
+            exit 0
+          fi
+          LATEST_SHA=$(gh api "repos/minus34/gnaf-loader/git/ref/tags/$LATEST" --jq '.object.sha' 2>/dev/null || echo "")
+          # Handle annotated tags (dereference)
+          if [ -z "$LATEST_SHA" ]; then
+            LATEST_SHA=$(gh api "repos/minus34/gnaf-loader/git/refs/tags/$LATEST" --jq '.object.sha' 2>/dev/null || echo "")
+          fi
+          echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "sha=$LATEST_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          if [ -z "${{ steps.latest.outputs.tag }}" ]; then
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ steps.current.outputs.sha }}" = "${{ steps.latest.outputs.sha }}" ]; then
+            echo "gnaf-loader is already at latest (${{ steps.latest.outputs.tag }})"
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Update available: ${{ steps.current.outputs.desc }} → ${{ steps.latest.outputs.tag }}"
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update submodule and create PR
+        if: steps.compare.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OLD_VERSION="${{ steps.current.outputs.desc }}"
+          NEW_VERSION="${{ steps.latest.outputs.tag }}"
+          BRANCH="chore/gnaf-loader-${NEW_VERSION}"
+
+          # Check if PR already exists
+          EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists for this update"
+            exit 0
+          fi
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Create branch and update submodule
+          git checkout -b "$BRANCH"
+          cd gnaf-loader
+          git fetch --tags origin
+          git checkout "$NEW_VERSION"
+          cd ..
+          git add gnaf-loader
+          CHANGELOG_URL="https://github.com/minus34/gnaf-loader/releases/tag/${NEW_VERSION}"
+          git commit -m "chore: update gnaf-loader submodule to ${NEW_VERSION}
+
+          Old version: ${OLD_VERSION}
+          New version: ${NEW_VERSION}
+          Upstream: ${CHANGELOG_URL}"
+
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: update gnaf-loader to ${NEW_VERSION}" \
+            --body "## Summary
+
+          Updates the gnaf-loader submodule from ${OLD_VERSION} to ${NEW_VERSION}.
+
+          - **Old version:** ${OLD_VERSION}
+          - **New version:** ${NEW_VERSION}
+          - **Upstream changelog:** ${CHANGELOG_URL}
+
+          ## Test plan
+
+          - [ ] CI passes (fixture build uses committed seed data, not affected by gnaf-loader version)
+          - [ ] Review upstream changelog for breaking changes
+          - [ ] If schema changes detected, update fixtures/seed-postgres.sql and fixtures/expected-output.ndjson" \
+            --label "dependencies"
