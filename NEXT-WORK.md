@@ -1,14 +1,22 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-03. Active phase: P0.
+> Updated: 2026-04-04. Active phase: P0.
 
 ## Completed This Session
 
-### P0.05 — Schema Exploration (done)
+### P0.03 — G-NAF Download Script (done)
 
-- [x] `docs/FIELD-PROVENANCE.md` maps every output field to source G-NAF table.column
-- [x] Table inventory, join map, and per-section provenance for all nested objects
-- [x] All 22 tables documented with row counts, SQL aliases, and join relationships
+- [x] `src/download.ts` with data.gov.au URLs, sentinel validation, atomic extraction
+- [x] Progress reporting (% complete, MB/s)
+- [x] Retry logic (3 retries, exponential backoff, 60s stall timeout)
+- [x] `--skip-download` flag with `isExtractionComplete()` validation
+- [x] `DATA_DIR` env var and `resolveOutputDir()` for path configuration
+- [x] 24 unit tests passing
+
+### Geocode Sentinel Fix (P0 correctness)
+
+- [x] `geocode` field now nullable — returns `null` instead of `{latitude: 0, longitude: 0}`
+- [x] Schema triple-update: `schema.ts` + `DOCUMENT-SCHEMA.md` + tests
 
 ## Active Tickets
 
@@ -23,13 +31,15 @@ Generate regression baseline files from the fixture build.
 
 ### P0.10 — Fixture-Only Build (in-progress, depends on P0.09)
 
-The build script exists and works. Marked in-progress because P0.09 artifacts are missing.
-
 - [x] `scripts/build-fixture-only.sh` seeds Postgres, runs flatten, outputs NDJSON
 - [x] No download required — works from committed fixture data
 - [x] No gnaf-loader required — seeds via psql
 - [x] Completes in <30 seconds
 - [ ] Regression check against `expected-output.ndjson` (pending P0.09)
+
+### P0.12 — Zod Schema (in-progress, depends on P0.09)
+
+- [ ] Validate every document in `fixtures/expected-output.ndjson` against schema
 
 ## Blockers
 
