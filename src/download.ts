@@ -96,6 +96,8 @@ export function formatProgress(downloaded: number, total: number | null, elapsed
 
 const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+/** Default inactivity timeout per attempt — abort if no data received for this long. */
+export const DEFAULT_STALL_TIMEOUT_MS = 60_000;
 
 export function retryDelay(attempt: number): number {
   return BASE_DELAY_MS * Math.pow(2, attempt);
@@ -112,6 +114,7 @@ async function downloadFile(
   destPath: string,
   name: string,
   maxRetries: number = DEFAULT_MAX_RETRIES,
+  stallTimeoutMs: number = DEFAULT_STALL_TIMEOUT_MS,
 ): Promise<number> {
   let lastError: Error | null = null;
 
@@ -122,8 +125,24 @@ async function downloadFile(
       await sleep(delay);
     }
 
+    const controller = new AbortController();
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const resetStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        console.error(
+          `[download] ${name}: stalled for ${stallTimeoutMs / 1000}s — aborting attempt ${attempt + 1}`,
+        );
+        controller.abort(
+          new Error(`Download stalled: no data received for ${stallTimeoutMs / 1000}s`),
+        );
+      }, stallTimeoutMs);
+    };
+
     try {
-      const response = await fetch(url, { redirect: "follow" });
+      resetStallTimer();
+      const response = await fetch(url, { redirect: "follow", signal: controller.signal });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -147,6 +166,7 @@ async function downloadFile(
       const progressStream = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
           downloaded += chunk.byteLength;
+          resetStallTimer();
           const elapsed = (Date.now() - startTime) / 1000;
 
           // Report progress every 2 seconds
@@ -165,11 +185,14 @@ async function downloadFile(
 
       await pipeline(nodeStream, dest);
 
+      if (stallTimer) clearTimeout(stallTimer);
+
       const elapsed = (Date.now() - startTime) / 1000;
       console.error(`[download] ${name}: complete — ${formatProgress(downloaded, total, elapsed)}`);
 
       return downloaded;
     } catch (err) {
+      if (stallTimer) clearTimeout(stallTimer);
       lastError = err instanceof Error ? err : new Error(String(err));
       console.error(`[download] ${name}: attempt ${attempt + 1} failed — ${lastError.message}`);
 
@@ -246,7 +269,12 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
     // Extract
     console.error(`[download] ${source.name}: extracting to ${outputDir}...`);
     await extractZip(zipPath, outputDir);
-    console.error(`[download] ${source.name}: extraction complete`);
+
+    // Verify extracted directory exists
+    if (!existsSync(extractedPath) || !statSync(extractedPath).isDirectory()) {
+      throw new Error(`Extraction succeeded but expected directory not found: ${extractedPath}`);
+    }
+    console.error(`[download] ${source.name}: extraction complete — verified ${extractedPath}`);
 
     // Clean up zip
     try {

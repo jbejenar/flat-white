@@ -12,6 +12,7 @@ import {
   formatProgress,
   retryDelay,
   DATA_SOURCES,
+  DEFAULT_STALL_TIMEOUT_MS,
 } from "../../src/download.js";
 
 describe("formatBytes", () => {
@@ -86,10 +87,16 @@ describe("DATA_SOURCES", () => {
     expect(gnaf!.extractedDir).toBe("G-NAF");
   });
 
-  it("has Admin Boundaries source", () => {
+  it("has Admin Boundaries source with path matching .env.example", () => {
     const admin = DATA_SOURCES.find((s) => s.name.includes("Administrative"));
     expect(admin).toBeDefined();
     expect(admin!.url).toContain("data.gov.au");
-    expect(admin!.extractedDir).toContain("AdminBounds");
+    expect(admin!.extractedDir).toBe("FEB26_AdminBounds_GDA_2020_SHP");
+  });
+});
+
+describe("DEFAULT_STALL_TIMEOUT_MS", () => {
+  it("is a positive number suitable for multi-GB downloads", () => {
+    expect(DEFAULT_STALL_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
   });
 });
