@@ -12,7 +12,14 @@
  *   await download({ version: '2026.02', outputDir: './data' });
  */
 
-import { createWriteStream, existsSync, mkdirSync, statSync, unlinkSync } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
@@ -241,11 +248,12 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
   for (const source of DATA_SOURCES) {
     const extractedPath = resolve(outputDir, source.extractedDir);
 
-    // Skip if extracted directory exists and --skip-download is set
+    // Skip if extracted directory exists, is non-empty, and --skip-download is set.
+    // An empty directory (e.g. from a failed extraction) is NOT treated as complete.
     if (skipIfExists && existsSync(extractedPath)) {
       try {
         const stat = statSync(extractedPath);
-        if (stat.isDirectory()) {
+        if (stat.isDirectory() && readdirSync(extractedPath).length > 0) {
           console.error(`[download] ${source.name}: skipped (${extractedPath} already exists)`);
           results.push({
             source: source.name,
@@ -254,6 +262,11 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
             extractedTo: extractedPath,
           });
           continue;
+        }
+        if (stat.isDirectory()) {
+          console.error(
+            `[download] ${source.name}: empty directory found at ${extractedPath} — re-downloading`,
+          );
         }
       } catch {
         // stat failed, proceed with download
