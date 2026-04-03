@@ -6,3 +6,4 @@ data/
 *.ndjson.gz
 .env
 .DS_Store
+.claude-loop/

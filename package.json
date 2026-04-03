@@ -38,6 +38,7 @@
     "open-data"
   ],
   "dependencies": {
+    "postgres": "^3.4.8",
     "zod": "^3.23.0"
   },
   "devDependencies": {
