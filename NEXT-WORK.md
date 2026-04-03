@@ -2,6 +2,14 @@
 
 > Updated: 2026-04-03. Active phase: P0.
 
+## Completed This Session
+
+### P0.05 — Schema Exploration (done)
+
+- [x] `docs/FIELD-PROVENANCE.md` maps every output field to source G-NAF table.column
+- [x] Table inventory, join map, and per-section provenance for all nested objects
+- [x] All 22 tables documented with row counts, SQL aliases, and join relationships
+
 ## Active Tickets
 
 ### P0.09 — Expected Output (in-progress)
@@ -36,9 +44,10 @@ The build script exists and works. Marked in-progress because P0.09 artifacts ar
 
 ## Reference Files
 
-| Need            | Read this                      | NOT this                     |
-| --------------- | ------------------------------ | ---------------------------- |
-| Table schemas   | `fixtures/SCHEMA-REFERENCE.md` | `fixtures/seed-postgres.sql` |
-| Document schema | `docs/DOCUMENT-SCHEMA.md`      | —                            |
-| Flatten SQL     | `sql/address_full.sql`         | —                            |
-| Agent rules     | `CLAUDE.md` (auto-loaded)      | —                            |
+| Need             | Read this                      | NOT this                     |
+| ---------------- | ------------------------------ | ---------------------------- |
+| Table schemas    | `fixtures/SCHEMA-REFERENCE.md` | `fixtures/seed-postgres.sql` |
+| Field provenance | `docs/FIELD-PROVENANCE.md`     | —                            |
+| Document schema  | `docs/DOCUMENT-SCHEMA.md`      | —                            |
+| Flatten SQL      | `sql/address_full.sql`         | —                            |
+| Agent rules      | `CLAUDE.md` (auto-loaded)      | —                            |
