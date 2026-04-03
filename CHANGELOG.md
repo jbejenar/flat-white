@@ -17,6 +17,20 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- `sql/address_full.sql` — master 9+ table JOIN query for flatten pipeline (P0.06)
+- `src/flatten.ts` — streaming Postgres → NDJSON flattener with Zod validation (P0.06)
+- `scripts/build-fixture-only.sh` — fixture-only build script: docker → seed → flatten (P0.10)
+- Unit tests for document composition: composeDocument, composeSearchLabel, composeBoundaries
+
+### Fixed
+
+- Use cursor-based streaming (.cursor(500)) instead of loading all rows into memory
+- Add .gitignore exception for `fixtures/expected-output.ndjson` (unblocks P0.09)
+- Export composition helpers from flatten.ts; tests now import real code instead of duplicating it
+- Robust jq NDJSON validation in build-fixture-only.sh
+
+### Added (prior)
+
 - Project scaffold: ROADMAP.md, AGENTS.md, package.json, tsconfig.json, CI workflow
 - docker-compose.yml with PostgreSQL 16 + PostGIS 3.5
 - gnaf-loader pinned as Git submodule
