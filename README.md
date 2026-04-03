@@ -176,18 +176,20 @@ docker run -v $(pwd)/output:/output flat-white \
 
 ### State Sizes
 
-| State | Addresses | Compressed |
-|:---:|---:|---:|
-| NSW | ~4.5M | ~134 MB |
-| VIC | ~3.8M | ~112 MB |
-| QLD | ~2.9M | ~118 MB |
-| WA | ~1.3M | ~68 MB |
-| SA | ~1.1M | ~52 MB |
-| TAS | ~310K | ~18 MB |
-| ACT | ~220K | ~12 MB |
-| NT | ~98K | ~6 MB |
-| OT | ~3K | ~1 MB |
-| **Total** | **~15.9M** | **~1.2 GB** |
+| State | Est. Addresses |
+|:---:|---:|
+| NSW | ~4.5M |
+| VIC | ~3.9M |
+| QLD | ~2.9M |
+| WA | ~1.3M |
+| SA | ~1.1M |
+| TAS | ~310K |
+| ACT | ~220K |
+| NT | ~98K |
+| OT | ~3K |
+| **Total** | **~15.9M** |
+
+> Per-state sizes are estimates. Exact counts and compressed sizes will be published with the first release.
 
 ---
 
