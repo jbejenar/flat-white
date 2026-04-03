@@ -7,4 +7,5 @@ data/
 *.ndjson.gz
 .env
 .DS_Store
+.claude/worktrees/
 .claude-loop/
