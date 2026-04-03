@@ -16,17 +16,16 @@ const baseRow: Record<string, unknown> = {
   address_label: "1 MCNAB AV, FOOTSCRAY VIC 3011",
   address_site_name: null,
   building_name: null,
-  flat_number: null,
+  flat_number_composed: null,
   flat_type_name: null,
-  level_number: null,
+  level_number_composed: null,
   level_type_name: null,
   number_first: "1",
   number_last: null,
   lot_number: null,
   street_name: "MCNAB",
-  street_type: "AV",
   street_type_name: "AVENUE",
-  street_suffix: null,
+  street_suffix_code: null,
   street_suffix_name: null,
   locality_name: "FOOTSCRAY",
   state: "VIC",
@@ -80,13 +79,13 @@ describe("composeSearchLabel", () => {
   });
 
   it("includes flat type and number when present", () => {
-    const row = { ...baseRow, flat_type_name: "UNIT", flat_number: "3A" };
+    const row = { ...baseRow, flat_type_name: "UNIT", flat_number_composed: "3A" };
     const label = composeSearchLabel(row);
     expect(label).toBe("UNIT 3A 1 MCNAB AVENUE FOOTSCRAY VIC 3011");
   });
 
   it("includes level type and number when present", () => {
-    const row = { ...baseRow, level_type_name: "LEVEL", level_number: "2" };
+    const row = { ...baseRow, level_type_name: "LEVEL", level_number_composed: "2" };
     const label = composeSearchLabel(row);
     expect(label).toBe("LEVEL 2 1 MCNAB AVENUE FOOTSCRAY VIC 3011");
   });
@@ -95,9 +94,9 @@ describe("composeSearchLabel", () => {
     const row = {
       ...baseRow,
       flat_type_name: "UNIT",
-      flat_number: "5",
+      flat_number_composed: "5",
       level_type_name: "LEVEL",
-      level_number: "1",
+      level_number_composed: "1",
     };
     const label = composeSearchLabel(row);
     expect(label).toBe("UNIT 5 LEVEL 1 1 MCNAB AVENUE FOOTSCRAY VIC 3011");
@@ -115,7 +114,7 @@ describe("composeSearchLabel", () => {
     expect(label).toBe("LOT 3 MCNAB AVENUE FOOTSCRAY VIC 3011");
   });
 
-  it("handles street suffix", () => {
+  it("handles street suffix (expanded in search label)", () => {
     const row = { ...baseRow, street_suffix_name: "NORTH" };
     const label = composeSearchLabel(row);
     expect(label).toBe("1 MCNAB AVENUE NORTH FOOTSCRAY VIC 3011");
