@@ -1,0 +1,73 @@
+name: ARI Score
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  ariscan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run ariscan
+        id: scan
+        run: |
+          npx @prontiq/ariscan-cli . --json > /tmp/ariscan.json 2>/dev/null || true
+          SCORE=$(jq -r '.score' /tmp/ariscan.json)
+          LEVEL=$(jq -r '.level' /tmp/ariscan.json)
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+          echo "level=$LEVEL" >> "$GITHUB_OUTPUT"
+          echo "ARI Score: $SCORE/100 ($LEVEL)"
+
+      - name: Update README badge and score
+        run: |
+          SCORE="${{ steps.scan.outputs.score }}"
+          LEVEL="${{ steps.scan.outputs.level }}"
+
+          if [ -z "$SCORE" ] || [ "$SCORE" = "null" ]; then
+            echo "No score detected, skipping README update"
+            exit 0
+          fi
+
+          # Pick badge colour based on score
+          if [ "$SCORE" -ge 80 ]; then
+            COLOR="brightgreen"
+          elif [ "$SCORE" -ge 60 ]; then
+            COLOR="97ca00"
+          elif [ "$SCORE" -ge 40 ]; then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+
+          # Update the shields.io badge in the badges section
+          sed -i "s|img.shields.io/badge/ARI-[^\"]*|img.shields.io/badge/ARI-${SCORE}%2F100_${LEVEL}-${COLOR}|g" README.md
+
+          # Update the score in the Project Status table
+          sed -i "s|<h3>[0-9]*/100</h3><sub>ARI Score ([^)]*)</sub>|<h3>${SCORE}/100</h3><sub>ARI Score (${LEVEL})</sub>|g" README.md
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet README.md; then
+            echo "No changes to commit"
+          else
+            git add README.md
+            git commit -m "chore: update ARI score badge to ${{ steps.scan.outputs.score }}/100"
+            git push
+          fi

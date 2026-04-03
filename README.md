@@ -9,7 +9,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-Apache_2.0-blue" alt="Licence"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/ARI-72%2F100_L4-97ca00" alt="ARI Score">
+  <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-75%2F100_L4-97ca00" alt="ARI Score"></a>
 </p>
 
 <p align="center">
@@ -109,12 +109,12 @@ Full schema: [DOCUMENT-SCHEMA.md](docs/DOCUMENT-SCHEMA.md)
 
 ## Use Cases
 
-| Use Case | How |
-|---|---|
-| **Self-host address validation** | Pipe into OpenSearch/Elasticsearch, add a Lambda, done |
-| **Drop-in address data** | Pre-joined, boundary-enriched — no commercial licence required |
-| **Data science** | 15.9M geocoded, boundary-enriched records ready for analysis |
-| **Government** | Every department gets the same data without separate vendor contracts |
+| Use Case                         | How                                                                   |
+| -------------------------------- | --------------------------------------------------------------------- |
+| **Self-host address validation** | Pipe into OpenSearch/Elasticsearch, add a Lambda, done                |
+| **Drop-in address data**         | Pre-joined, boundary-enriched — no commercial licence required        |
+| **Data science**                 | 15.9M geocoded, boundary-enriched records ready for analysis          |
+| **Government**                   | Every department gets the same data without separate vendor contracts |
 
 ---
 
@@ -176,18 +176,18 @@ docker run -v $(pwd)/output:/output flat-white \
 
 ### State Sizes
 
-| State | Est. Addresses |
-|:---:|---:|
-| NSW | ~4.5M |
-| VIC | ~3.9M |
-| QLD | ~2.9M |
-| WA | ~1.3M |
-| SA | ~1.1M |
-| TAS | ~310K |
-| ACT | ~220K |
-| NT | ~98K |
-| OT | ~3K |
-| **Total** | **~15.9M** |
+|   State   | Est. Addresses |
+| :-------: | -------------: |
+|    NSW    |          ~4.5M |
+|    VIC    |          ~3.9M |
+|    QLD    |          ~2.9M |
+|    WA     |          ~1.3M |
+|    SA     |          ~1.1M |
+|    TAS    |          ~310K |
+|    ACT    |          ~220K |
+|    NT     |           ~98K |
+|    OT     |            ~3K |
+| **Total** |     **~15.9M** |
 
 > Estimates based on G-NAF Feb 2026 principal addresses. The 15.9M total includes aliases and secondaries. Exact counts will be published with the first release.
 
@@ -211,24 +211,24 @@ curl -LO "https://github.com/jbejenar/flat-white/releases/download/v2026.02/flat
 
 ## Data Sources
 
-| Dataset | Source | Licence | Updated |
-|---|---|---|---|
-| G-NAF | [data.gov.au](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf) | CC BY 4.0 | Quarterly |
-| Admin Boundaries | [data.gov.au](https://data.gov.au/data/dataset/geoscape-administrative-boundaries) | CC BY 4.0 | Quarterly |
+| Dataset          | Source                                                                               | Licence   | Updated   |
+| ---------------- | ------------------------------------------------------------------------------------ | --------- | --------- |
+| G-NAF            | [data.gov.au](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf) | CC BY 4.0 | Quarterly |
+| Admin Boundaries | [data.gov.au](https://data.gov.au/data/dataset/geoscape-administrative-boundaries)   | CC BY 4.0 | Quarterly |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Database | PostgreSQL 16 + PostGIS 3.5 (ephemeral) |
-| Data loader | [minus34/gnaf-loader](https://github.com/minus34/gnaf-loader) (Python) |
-| Flattener | Node.js 22 / TypeScript (streaming) |
-| Container | Docker (Debian Bookworm) |
-| CI/CD | GitHub Actions (free tier, matrix build) |
-| Output | NDJSON (per-state, gzipped) |
-| Distribution | GitHub Releases |
+| Layer        | Technology                                                             |
+| ------------ | ---------------------------------------------------------------------- |
+| Database     | PostgreSQL 16 + PostGIS 3.5 (ephemeral)                                |
+| Data loader  | [minus34/gnaf-loader](https://github.com/minus34/gnaf-loader) (Python) |
+| Flattener    | Node.js 22 / TypeScript (streaming)                                    |
+| Container    | Docker (Debian Bookworm)                                               |
+| CI/CD        | GitHub Actions (free tier, matrix build)                               |
+| Output       | NDJSON (per-state, gzipped)                                            |
+| Distribution | GitHub Releases                                                        |
 
 ---
 
@@ -255,7 +255,7 @@ gantt
 
 <table>
 <tr>
-<td align="center"><h3>72/100</h3><sub>ARI Score (L4)</sub></td>
+<td align="center"><h3>75/100</h3><sub>ARI Score (L4)</sub></td>
 <td align="center"><h3>5 / 66</h3><sub>Tickets Done</sub></td>
 <td align="center"><h3>451</h3><sub>Fixture Addresses</sub></td>
 <td align="center"><h3>P0</h3><sub>Current Phase</sub></td>
