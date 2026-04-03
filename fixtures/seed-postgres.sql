@@ -20,6 +20,7 @@
 -- Clean slate — drop if exists
 DROP SCHEMA IF EXISTS gnaf_202602 CASCADE;
 DROP SCHEMA IF EXISTS raw_gnaf_202602 CASCADE;
+DROP SCHEMA IF EXISTS admin_bdys_202602 CASCADE;
 
 -- ============================================
 -- PART 1: Schema + table creation
