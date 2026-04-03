@@ -236,7 +236,7 @@ curl -LO "https://github.com/jbejenar/flat-white/releases/download/v2026.02/flat
 
 <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-75%2F100_L4-97ca00" alt="ARI Score"></a> &ensp; Measured by [ariscan](https://github.com/prontiq/ariscan-cli) — the Agent Readiness Index.
 
-This repo is built for **autonomous AI coding agents**. Every push to `main` runs [ariscan](https://github.com/prontiq/ariscan-cli) to measure and track agent readiness across 8 pillars:
+This repo is built for **autonomous AI coding agents**. Every push to `main` runs [ariscan](https://github.com/prontiq/ariscan-cli) to measure and track agent readiness across 8 pillars. The badge above updates automatically; pillar breakdown as of last audit:
 
 | Pillar                  | Score | What it measures                              |
 | ----------------------- | ----- | --------------------------------------------- |
