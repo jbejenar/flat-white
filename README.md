@@ -189,7 +189,7 @@ docker run -v $(pwd)/output:/output flat-white \
 | OT | ~3K |
 | **Total** | **~15.9M** |
 
-> Per-state sizes are estimates. Exact counts and compressed sizes will be published with the first release.
+> Estimates based on G-NAF Feb 2026 principal addresses. The 15.9M total includes aliases and secondaries. Exact counts will be published with the first release.
 
 ---
 
