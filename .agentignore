@@ -34,3 +34,11 @@ data/
 output/
 *.ndjson
 *.ndjson.gz
+
+# Large fixture SQL — use fixtures/SCHEMA-REFERENCE.md instead (~200 lines vs ~10k)
+fixtures/seed-postgres.sql
+
+# Claude-loop internal state (injected via system prompt, no need to read as files)
+.claude-loop/logs/
+.claude-loop/.check-failure-logs
+.claude-loop/.review-comments

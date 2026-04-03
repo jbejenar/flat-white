@@ -9,7 +9,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-Apache_2.0-blue" alt="Licence"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/ARI-72%2F100_L4-97ca00" alt="ARI Score">
+  <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-75%2F100_L4-97ca00" alt="ARI Score"></a>
 </p>
 
 <p align="center">
@@ -109,12 +109,12 @@ Full schema: [DOCUMENT-SCHEMA.md](docs/DOCUMENT-SCHEMA.md)
 
 ## Use Cases
 
-| Use Case | How |
-|---|---|
-| **Self-host address validation** | Pipe into OpenSearch/Elasticsearch, add a Lambda, done |
-| **Drop-in address data** | Pre-joined, boundary-enriched — no commercial licence required |
-| **Data science** | 15.9M geocoded, boundary-enriched records ready for analysis |
-| **Government** | Every department gets the same data without separate vendor contracts |
+| Use Case                         | How                                                                   |
+| -------------------------------- | --------------------------------------------------------------------- |
+| **Self-host address validation** | Pipe into OpenSearch/Elasticsearch, add a Lambda, done                |
+| **Drop-in address data**         | Pre-joined, boundary-enriched — no commercial licence required        |
+| **Data science**                 | 15.9M geocoded, boundary-enriched records ready for analysis          |
+| **Government**                   | Every department gets the same data without separate vendor contracts |
 
 ---
 
@@ -176,18 +176,18 @@ docker run -v $(pwd)/output:/output flat-white \
 
 ### State Sizes
 
-| State | Est. Addresses |
-|:---:|---:|
-| NSW | ~4.5M |
-| VIC | ~3.9M |
-| QLD | ~2.9M |
-| WA | ~1.3M |
-| SA | ~1.1M |
-| TAS | ~310K |
-| ACT | ~220K |
-| NT | ~98K |
-| OT | ~3K |
-| **Total** | **~15.9M** |
+|   State   | Est. Addresses |
+| :-------: | -------------: |
+|    NSW    |          ~4.5M |
+|    VIC    |          ~3.9M |
+|    QLD    |          ~2.9M |
+|    WA     |          ~1.3M |
+|    SA     |          ~1.1M |
+|    TAS    |          ~310K |
+|    ACT    |          ~220K |
+|    NT     |           ~98K |
+|    OT     |            ~3K |
+| **Total** |     **~15.9M** |
 
 > Estimates based on G-NAF Feb 2026 principal addresses. The 15.9M total includes aliases and secondaries. Exact counts will be published with the first release.
 
@@ -211,24 +211,51 @@ curl -LO "https://github.com/jbejenar/flat-white/releases/download/v2026.02/flat
 
 ## Data Sources
 
-| Dataset | Source | Licence | Updated |
-|---|---|---|---|
-| G-NAF | [data.gov.au](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf) | CC BY 4.0 | Quarterly |
-| Admin Boundaries | [data.gov.au](https://data.gov.au/data/dataset/geoscape-administrative-boundaries) | CC BY 4.0 | Quarterly |
+| Dataset          | Source                                                                               | Licence   | Updated   |
+| ---------------- | ------------------------------------------------------------------------------------ | --------- | --------- |
+| G-NAF            | [data.gov.au](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf) | CC BY 4.0 | Quarterly |
+| Admin Boundaries | [data.gov.au](https://data.gov.au/data/dataset/geoscape-administrative-boundaries)   | CC BY 4.0 | Quarterly |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Database | PostgreSQL 16 + PostGIS 3.5 (ephemeral) |
-| Data loader | [minus34/gnaf-loader](https://github.com/minus34/gnaf-loader) (Python) |
-| Flattener | Node.js 22 / TypeScript (streaming) |
-| Container | Docker (Debian Bookworm) |
-| CI/CD | GitHub Actions (free tier, matrix build) |
-| Output | NDJSON (per-state, gzipped) |
-| Distribution | GitHub Releases |
+| Layer        | Technology                                                             |
+| ------------ | ---------------------------------------------------------------------- |
+| Database     | PostgreSQL 16 + PostGIS 3.5 (ephemeral)                                |
+| Data loader  | [minus34/gnaf-loader](https://github.com/minus34/gnaf-loader) (Python) |
+| Flattener    | Node.js 22 / TypeScript (streaming)                                    |
+| Container    | Docker (Debian Bookworm)                                               |
+| CI/CD        | GitHub Actions (free tier, matrix build)                               |
+| Output       | NDJSON (per-state, gzipped)                                            |
+| Distribution | GitHub Releases                                                        |
+
+---
+
+## AI-Ready Development
+
+<a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-75%2F100_L4-97ca00" alt="ARI Score"></a> &ensp; Measured by [ariscan](https://github.com/prontiq/ariscan-cli) — the Agent Readiness Index.
+
+This repo is built for **autonomous AI coding agents**. Every push to `main` runs [ariscan](https://github.com/prontiq/ariscan-cli) to measure and track agent readiness across 8 pillars. The badge above updates automatically; pillar breakdown as of last audit:
+
+| Pillar                  | Score | What it measures                              |
+| ----------------------- | ----- | --------------------------------------------- |
+| Agent Context Quality   | 100   | CLAUDE.md, AGENTS.md, .agentignore            |
+| Feedback Loop Speed     | 100   | Tests, lint, CI turnaround                    |
+| Security & Governance   | 100   | Dependabot, SAST, branch protection           |
+| Dev Environment         | 97    | Devcontainer, setup scripts, versions         |
+| Build Determinism       | 70    | TypeScript strict, lockfile, pre-commit hooks |
+| Code Navigability       | 69    | File structure, naming, imports               |
+| Doc Machine-Readability | 50    | API specs, structured docs                    |
+| Test Isolation          | 35    | Test-to-source ratio, anti-patterns           |
+
+**Key guardrails:**
+
+- [`CLAUDE.md`](CLAUDE.md) — auto-loaded rules for Claude Code sessions (sandbox boundaries, read discipline, streaming rules)
+- [`NEXT-WORK.md`](NEXT-WORK.md) — active tickets for agents (avoids scanning the 4,490-line roadmap)
+- [`fixtures/SCHEMA-REFERENCE.md`](fixtures/SCHEMA-REFERENCE.md) — table schemas (~220 lines vs 10k-line SQL fixture)
+- Pre-commit hooks reject empty files and `sql.unsafe()` without `.cursor()`
+- [CodeQL SAST](.github/workflows/sast.yml) on every push and PR
 
 ---
 
@@ -255,7 +282,7 @@ gantt
 
 <table>
 <tr>
-<td align="center"><h3>72/100</h3><sub>ARI Score (L4)</sub></td>
+<td align="center"><h3>75/100</h3><sub>ARI Score (L4)</sub></td>
 <td align="center"><h3>5 / 66</h3><sub>Tickets Done</sub></td>
 <td align="center"><h3>451</h3><sub>Fixture Addresses</sub></td>
 <td align="center"><h3>P0</h3><sub>Current Phase</sub></td>
