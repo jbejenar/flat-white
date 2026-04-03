@@ -16,7 +16,8 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
-  readdirSync,
+  renameSync,
+  rmSync,
   statSync,
   unlinkSync,
 } from "node:fs";
@@ -32,22 +33,29 @@ export interface DataSource {
   name: string;
   url: string;
   extractedDir: string;
+  /** Paths relative to extractedDir that must exist for the extraction to be considered complete. */
+  sentinelPaths: string[];
 }
 
 /**
  * Data sources for the Feb 2026 G-NAF release.
  * URLs verified via HEAD request — see memory/project_data_sources.md.
+ *
+ * sentinelPaths are well-known files/dirs within each extracted dataset.
+ * Their presence confirms a complete extraction vs. a partial/interrupted one.
  */
 export const DATA_SOURCES: DataSource[] = [
   {
     name: "G-NAF GDA2020",
     url: "https://data.gov.au/data/dataset/19432f89-dc3a-4ef3-b943-5326ef1dbecc/resource/5be5278c-fe66-459e-845a-bea553f46b4b/download/g-naf_feb26_allstates_gda2020_psv_1022.zip",
     extractedDir: "G-NAF",
+    sentinelPaths: ["G-NAF FEBRUARY 2026/Standard", "G-NAF FEBRUARY 2026/Authority Code"],
   },
   {
     name: "Administrative Boundaries GDA2020",
     url: "https://data.gov.au/data/dataset/bdcf5b09-89bc-47ec-9281-6b8e9ee147aa/resource/36cc98bd-df9b-4454-9a05-c2756ee1249e/download/feb26_adminbounds_gda_2020_shp.zip",
     extractedDir: "FEB26_AdminBounds_GDA_2020_SHP",
+    sentinelPaths: ["commonwealth", "state"],
   },
 ];
 
@@ -97,6 +105,24 @@ export function formatProgress(downloaded: number, total: number | null, elapsed
     return `${downloadedStr} / ${totalStr} (${pct}%) ${speedStr}`;
   }
   return `${downloadedStr} ${speedStr}`;
+}
+
+// --- Extraction validation ---
+
+/**
+ * Check whether an extracted directory contains all expected sentinel paths.
+ * Returns true only if every sentinel file/directory exists, indicating a
+ * complete extraction. Returns false for empty, partial, or missing directories.
+ */
+export function isExtractionComplete(extractedPath: string, sentinelPaths: string[]): boolean {
+  if (!existsSync(extractedPath)) return false;
+  try {
+    if (!statSync(extractedPath).isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  if (sentinelPaths.length === 0) return false;
+  return sentinelPaths.every((sentinel) => existsSync(resolve(extractedPath, sentinel)));
 }
 
 // --- Retry logic ---
@@ -248,29 +274,23 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
   for (const source of DATA_SOURCES) {
     const extractedPath = resolve(outputDir, source.extractedDir);
 
-    // Skip if extracted directory exists, is non-empty, and --skip-download is set.
-    // An empty directory (e.g. from a failed extraction) is NOT treated as complete.
+    // Skip only if all sentinel paths are present — a partial/interrupted extraction
+    // will fail this check and trigger a re-download.
+    if (skipIfExists && isExtractionComplete(extractedPath, source.sentinelPaths)) {
+      console.error(`[download] ${source.name}: skipped (${extractedPath} validated)`);
+      results.push({
+        source: source.name,
+        skipped: true,
+        bytesDownloaded: 0,
+        extractedTo: extractedPath,
+      });
+      continue;
+    }
+
     if (skipIfExists && existsSync(extractedPath)) {
-      try {
-        const stat = statSync(extractedPath);
-        if (stat.isDirectory() && readdirSync(extractedPath).length > 0) {
-          console.error(`[download] ${source.name}: skipped (${extractedPath} already exists)`);
-          results.push({
-            source: source.name,
-            skipped: true,
-            bytesDownloaded: 0,
-            extractedTo: extractedPath,
-          });
-          continue;
-        }
-        if (stat.isDirectory()) {
-          console.error(
-            `[download] ${source.name}: empty directory found at ${extractedPath} — re-downloading`,
-          );
-        }
-      } catch {
-        // stat failed, proceed with download
-      }
+      console.error(
+        `[download] ${source.name}: directory exists but failed sentinel validation — re-downloading`,
+      );
     }
 
     const zipFilename = source.url.split("/").pop() ?? `${source.extractedDir}.zip`;
@@ -279,15 +299,51 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
     // Download
     const bytesDownloaded = await downloadFile(source.url, zipPath, source.name);
 
-    // Extract
-    console.error(`[download] ${source.name}: extracting to ${outputDir}...`);
-    await extractZip(zipPath, outputDir);
+    // Extract to a temporary directory, then atomically rename into place.
+    // This prevents partial extractions from being mistaken for complete ones.
+    const tmpExtractDir = resolve(outputDir, `${source.extractedDir}.extracting`);
 
-    // Verify extracted directory exists
-    if (!existsSync(extractedPath) || !statSync(extractedPath).isDirectory()) {
-      throw new Error(`Extraction succeeded but expected directory not found: ${extractedPath}`);
+    // Clean up any leftover temp dir from a previous failed attempt
+    if (existsSync(tmpExtractDir)) {
+      rmSync(tmpExtractDir, { recursive: true, force: true });
     }
-    console.error(`[download] ${source.name}: extraction complete — verified ${extractedPath}`);
+
+    console.error(`[download] ${source.name}: extracting to temporary directory...`);
+    await extractZip(zipPath, tmpExtractDir);
+
+    // The zip may extract with the directory name inside tmpExtractDir,
+    // e.g. tmpExtractDir/G-NAF/... — detect and handle both cases.
+    const innerPath = resolve(tmpExtractDir, source.extractedDir);
+    const sourceDir = existsSync(innerPath) ? innerPath : tmpExtractDir;
+
+    // Validate sentinel paths before promoting
+    if (!isExtractionComplete(sourceDir, source.sentinelPaths)) {
+      // Clean up failed extraction
+      rmSync(tmpExtractDir, { recursive: true, force: true });
+      try {
+        unlinkSync(zipPath);
+      } catch {
+        // ignore
+      }
+      throw new Error(
+        `Extraction of ${source.name} failed sentinel validation — expected paths not found: ${source.sentinelPaths.join(", ")}`,
+      );
+    }
+
+    // Remove any existing incomplete directory at the final location
+    if (existsSync(extractedPath)) {
+      rmSync(extractedPath, { recursive: true, force: true });
+    }
+
+    // Atomic rename into final location
+    renameSync(sourceDir, extractedPath);
+
+    // Clean up temp dir shell (if inner dir was moved out of it)
+    if (existsSync(tmpExtractDir)) {
+      rmSync(tmpExtractDir, { recursive: true, force: true });
+    }
+
+    console.error(`[download] ${source.name}: extraction complete — validated ${extractedPath}`);
 
     // Clean up zip
     try {

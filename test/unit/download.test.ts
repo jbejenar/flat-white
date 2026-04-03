@@ -5,7 +5,10 @@
  * Does NOT test actual HTTP downloads (requires network).
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import {
   formatBytes,
   formatSpeed,
@@ -13,6 +16,7 @@ import {
   retryDelay,
   DATA_SOURCES,
   DEFAULT_STALL_TIMEOUT_MS,
+  isExtractionComplete,
 } from "../../src/download.js";
 
 describe("formatBytes", () => {
@@ -80,23 +84,70 @@ describe("DATA_SOURCES", () => {
     expect(DATA_SOURCES).toHaveLength(2);
   });
 
-  it("has G-NAF source", () => {
+  it("has G-NAF source with sentinel paths", () => {
     const gnaf = DATA_SOURCES.find((s) => s.name.includes("G-NAF"));
     expect(gnaf).toBeDefined();
     expect(gnaf!.url).toContain("data.gov.au");
     expect(gnaf!.extractedDir).toBe("G-NAF");
+    expect(gnaf!.sentinelPaths.length).toBeGreaterThan(0);
   });
 
-  it("has Admin Boundaries source with path matching .env.example", () => {
+  it("has Admin Boundaries source with sentinel paths", () => {
     const admin = DATA_SOURCES.find((s) => s.name.includes("Administrative"));
     expect(admin).toBeDefined();
     expect(admin!.url).toContain("data.gov.au");
     expect(admin!.extractedDir).toBe("FEB26_AdminBounds_GDA_2020_SHP");
+    expect(admin!.sentinelPaths.length).toBeGreaterThan(0);
   });
 });
 
 describe("DEFAULT_STALL_TIMEOUT_MS", () => {
   it("is a positive number suitable for multi-GB downloads", () => {
     expect(DEFAULT_STALL_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
+describe("isExtractionComplete", () => {
+  const testDir = resolve(tmpdir(), "flat-white-test-extraction");
+
+  beforeEach(() => {
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it("returns false for non-existent directory", () => {
+    expect(isExtractionComplete("/no/such/path", ["file.txt"])).toBe(false);
+  });
+
+  it("returns false for empty directory", () => {
+    expect(isExtractionComplete(testDir, ["Standard"])).toBe(false);
+  });
+
+  it("returns false for empty sentinel list", () => {
+    expect(isExtractionComplete(testDir, [])).toBe(false);
+  });
+
+  it("returns false when only some sentinels are present (partial extraction)", () => {
+    mkdirSync(resolve(testDir, "Standard"), { recursive: true });
+    expect(isExtractionComplete(testDir, ["Standard", "Authority Code"])).toBe(false);
+  });
+
+  it("returns false for directory with unrelated files but missing sentinels", () => {
+    writeFileSync(resolve(testDir, "random.txt"), "junk");
+    expect(isExtractionComplete(testDir, ["Standard", "Authority Code"])).toBe(false);
+  });
+
+  it("returns true when all sentinels are present", () => {
+    mkdirSync(resolve(testDir, "Standard"), { recursive: true });
+    mkdirSync(resolve(testDir, "Authority Code"), { recursive: true });
+    expect(isExtractionComplete(testDir, ["Standard", "Authority Code"])).toBe(true);
+  });
+
+  it("supports nested sentinel paths", () => {
+    mkdirSync(resolve(testDir, "G-NAF FEBRUARY 2026/Standard"), { recursive: true });
+    expect(isExtractionComplete(testDir, ["G-NAF FEBRUARY 2026/Standard"])).toBe(true);
   });
 });
