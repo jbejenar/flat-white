@@ -151,7 +151,7 @@ export function composeSearchLabel(row: Record<string, unknown>): string {
   // Street name + expanded type + suffix
   const streetName = row.street_name as string;
   const streetType = row.street_type_name as string | null;
-  const streetSuffix = row.street_suffix_name as string | null;
+  const streetSuffix = row.street_suffix_code as string | null;
   const streetParts = [streetName, streetType, streetSuffix].filter(Boolean).join(" ");
   parts.push(streetParts);
 

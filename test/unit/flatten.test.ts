@@ -115,7 +115,7 @@ describe("composeSearchLabel", () => {
   });
 
   it("handles street suffix (expanded in search label)", () => {
-    const row = { ...baseRow, street_suffix_name: "NORTH" };
+    const row = { ...baseRow, street_suffix_code: "NORTH", street_suffix_name: "NORTH" };
     const label = composeSearchLabel(row);
     expect(label).toBe("1 MCNAB AVENUE NORTH FOOTSCRAY VIC 3011");
   });
