@@ -758,7 +758,7 @@ gnaf-loader creates a complex relational schema with 30+ tables, multiple addres
   - `Verify:` Every field in the Output Document Schema section has a corresponding entry in FIELD-PROVENANCE.md
   - `Evidence:` All 23 top-level fields + all nested fields (geocode 4, allGeocodes 4, locality 4, street 3, boundaries 19, aliases 3, secondaries 2) mapped with SQL alias, source table.column, and transform notes.
 - [x] Table names, row counts, join paths, and boundary tag columns are documented
-  - `Verify:` Document includes table-level summary with row counts from VIC load
+  - `Verify:` Document includes table-level summary with row counts from committed fixture (VIC-load counts deferred to P0.04)
   - `Evidence:` Table Inventory section lists 22 tables with fixture row counts. Join Map section shows full join tree.
 - [x] Join paths between tables are documented (e.g., address_principals → address_geocodes via address_detail_pid)
   - `Verify:` A reader can trace any output field back to its source table without database access
@@ -774,7 +774,7 @@ gnaf-loader creates a complex relational schema with 30+ tables, multiple addres
 
 ### In
 
-- Schema documentation from live VIC-loaded database
+- Schema documentation from committed fixture and existing SQL/TypeScript code (VIC-load exploration deferred to P0.04)
 - Field provenance mapping for all output document fields
 - Table relationship documentation
 
