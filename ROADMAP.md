@@ -976,7 +976,7 @@ Australian address data has numerous edge cases that are not obvious from the sc
 ```yaml
 id: P0.09
 title: Expected Output
-status: in-progress
+status: done
 priority: p0-critical
 epic: P0.B
 persona: [builder/contributor]
@@ -990,7 +990,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -1005,15 +1005,15 @@ Without a committed expected output, there is no regression baseline. Any change
 
 ### Functional
 
-- [ ] `fixtures/expected-output.ndjson` contains the known-good flatten output for the fixture data
+- [x] `fixtures/expected-output.ndjson` contains the known-good flatten output for the fixture data
   - `Verify:` `wc -l fixtures/expected-output.ndjson` matches the number of address_principals in `seed-postgres.sql`
-  - `Evidence:`
-- [ ] `fixtures/expected-output-sample.json` contains a single prettified document for human reference
+  - `Evidence:` 451 lines matching 451 address_principals. Regenerated after fixing streetType/flatNumber/addressLabelSearch bugs.
+- [x] `fixtures/expected-output-sample.json` contains a single prettified document for human reference
   - `Verify:` `cat fixtures/expected-output-sample.json | python3 -m json.tool` validates as JSON
-  - `Evidence:`
-- [ ] Output matches the document schema defined in this roadmap
+  - `Evidence:` Valid JSON, first document prettified. Fields match DOCUMENT-SCHEMA.md.
+- [x] Output matches the document schema defined in this roadmap
   - `Verify:` Every field in the sample matches the Output Document Schema section
-  - `Evidence:`
+  - `Evidence:` Fixed streetType (full name "STREET" not abbreviation "ST"), flatNumber (just number "14" not "FLAT 14"), addressLabelSearch (no duplication). All 451 docs pass Zod validation.
 
 ## Scope
 
@@ -1034,7 +1034,7 @@ Without a committed expected output, there is no regression baseline. Any change
 ```yaml
 id: P0.10
 title: Fixture-Only Build
-status: in-progress
+status: done
 priority: p0-critical
 epic: P0.B
 persona: [builder/contributor]
@@ -1048,7 +1048,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -1159,7 +1159,7 @@ The NDJSON document schema is the contract between flat-white and every downstre
 ```yaml
 id: P0.12
 title: Zod Schema
-status: in-progress
+status: done
 priority: p0-critical
 epic: P0.B
 persona: [builder/contributor]
@@ -1173,7 +1173,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -1191,9 +1191,9 @@ Static type checking alone cannot catch runtime data issues — NULL values in u
 - [x] `src/schema.ts` defines Zod schemas for the complete address document, including nested objects (geocode, locality, street, boundaries, aliases, secondaries)
   - `Verify:` `import { AddressDocument } from './schema'` compiles and type-checks
   - `Evidence:` src/schema.ts — 8 exported schemas (Geocode, AllGeocodesItem, Locality, Street, Boundaries, Alias, Secondary, AddressDocument) + 8 inferred types. `npm run typecheck` passes.
-- [ ] Every document in `fixtures/expected-output.ndjson` validates against the schema [BLOCKED: expected-output.ndjson not yet generated — requires P0.09]
+- [x] Every document in `fixtures/expected-output.ndjson` validates against the schema
   - `Verify:` `cat fixtures/expected-output.ndjson | node -e "..."` validates every line
-  - `Evidence:`
+  - `Evidence:` test/regression/expected-output.test.ts validates all 451 documents against AddressDocumentSchema — 0 failures. Previously BLOCKED on P0.09; unblocked now that expected-output.ndjson exists.
 - [x] Schema matches `docs/DOCUMENT-SCHEMA.md` exactly — no field mismatches
   - `Verify:` Cross-reference Zod schema fields with DOCUMENT-SCHEMA.md
   - `Evidence:` All 28 top-level fields + nested objects cross-referenced between src/schema.ts and docs/DOCUMENT-SCHEMA.md — exact match

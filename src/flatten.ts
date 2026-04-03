@@ -55,15 +55,15 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
     addressSiteName: (row.address_site_name as string) ?? null,
     buildingName: (row.building_name as string) ?? null,
     flatType: (row.flat_type_name as string) ?? null,
-    flatNumber: (row.flat_number as string) ?? null,
+    flatNumber: (row.flat_number_composed as string) ?? null,
     levelType: (row.level_type_name as string) ?? null,
-    levelNumber: (row.level_number as string) ?? null,
+    levelNumber: (row.level_number_composed as string) ?? null,
     numberFirst: (row.number_first as string) ?? null,
     numberLast: (row.number_last as string) ?? null,
     lotNumber: (row.lot_number as string) ?? null,
     streetName: row.street_name as string,
     streetType: (row.street_type_name as string) ?? null,
-    streetSuffix: (row.street_suffix_name as string) ?? null,
+    streetSuffix: (row.street_suffix_code as string) ?? null,
     localityName: row.locality_name as string,
     state: row.state as string,
     postcode: (row.postcode as string) ?? null,
@@ -115,18 +115,18 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
 export function composeSearchLabel(row: Record<string, unknown>): string {
   const parts: string[] = [];
 
-  // Flat type + number
+  // Flat type + number (use composed number from raw address_detail fields)
   const flatType = row.flat_type_name as string | null;
-  const flatNumber = row.flat_number as string | null;
+  const flatNumber = row.flat_number_composed as string | null;
   if (flatType && flatNumber) {
     parts.push(`${flatType} ${flatNumber}`);
   } else if (flatNumber) {
     parts.push(flatNumber);
   }
 
-  // Level type + number
+  // Level type + number (use composed number from raw address_detail fields)
   const levelType = row.level_type_name as string | null;
-  const levelNumber = row.level_number as string | null;
+  const levelNumber = row.level_number_composed as string | null;
   if (levelType && levelNumber) {
     parts.push(`${levelType} ${levelNumber}`);
   } else if (levelNumber) {
@@ -151,7 +151,7 @@ export function composeSearchLabel(row: Record<string, unknown>): string {
   // Street name + expanded type + suffix
   const streetName = row.street_name as string;
   const streetType = row.street_type_name as string | null;
-  const streetSuffix = row.street_suffix_name as string | null;
+  const streetSuffix = row.street_suffix_code as string | null;
   const streetParts = [streetName, streetType, streetSuffix].filter(Boolean).join(" ");
   parts.push(streetParts);
 

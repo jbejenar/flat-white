@@ -130,14 +130,12 @@ SELECT
   -- Address components
   site.address_site_name                                AS address_site_name,
   ap.building_name,
-  ap.flat_number,
-  ap.level_number,
   ap.number_first,
   ap.number_last,
   ap.lot_number,
   ap.street_name,
-  ap.street_type,
-  ap.street_suffix,
+  ap.street_type                                        AS street_type_name,
+  ap.street_suffix                                      AS street_suffix_code,
   ap.locality_name,
   ap.state,
   ap.postcode,
@@ -145,11 +143,20 @@ SELECT
   ap.confidence,
   ap.primary_secondary,
 
-  -- Expanded type names (for addressLabelSearch)
+  -- Expanded type names
   ft.name                                               AS flat_type_name,
   lt.name                                               AS level_type_name,
-  st_aut.name                                           AS street_type_name,
   ss_aut.name                                           AS street_suffix_name,
+
+  -- Raw flat/level number components (without type prefix)
+  CASE WHEN ad.flat_number IS NOT NULL
+    THEN CONCAT(COALESCE(ad.flat_number_prefix, ''), ad.flat_number::text, COALESCE(ad.flat_number_suffix, ''))
+    ELSE NULL
+  END                                                   AS flat_number_composed,
+  CASE WHEN ad.level_number IS NOT NULL
+    THEN CONCAT(COALESCE(ad.level_number_prefix, ''), ad.level_number::text, COALESCE(ad.level_number_suffix, ''))
+    ELSE NULL
+  END                                                   AS level_number_composed,
 
   -- Geocodes
   ag.best_geocode,
@@ -205,8 +212,6 @@ LEFT JOIN raw_gnaf_202602.flat_type_aut ft
   ON ft.code = ad.flat_type_code
 LEFT JOIN raw_gnaf_202602.level_type_aut lt
   ON lt.code = ad.level_type_code
-LEFT JOIN raw_gnaf_202602.street_type_aut st_aut
-  ON st_aut.code = ap.street_type
 LEFT JOIN raw_gnaf_202602.street_suffix_aut ss_aut
   ON ss_aut.code = ap.street_suffix
 
