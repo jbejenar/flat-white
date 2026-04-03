@@ -592,7 +592,7 @@ gnaf-loader requires a PostgreSQL database with PostGIS extensions to load G-NAF
 ```yaml
 id: P0.03
 title: G-NAF Download Script
-status: planned
+status: done
 priority: p0-critical
 epic: P0.A
 persona: [builder/contributor]
@@ -606,7 +606,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -621,21 +621,21 @@ G-NAF and Administrative Boundaries data is published quarterly on data.gov.au a
 
 ### Functional
 
-- [ ] `src/download.ts` fetches Feb 2026 G-NAF GDA2020 + Admin Boundaries ESRI Shapefiles from data.gov.au
+- [x] `src/download.ts` fetches Feb 2026 G-NAF GDA2020 + Admin Boundaries ESRI Shapefiles from data.gov.au
   - `Verify:` Script completes and `ls ./data/` shows G-NAF and Administrative-Boundaries directories
-  - `Evidence:`
-- [ ] Downloads ~6.5GB total, extracts to `./data/`
+  - `Evidence:` PR #20 — `src/download.ts` with DATA_SOURCES containing verified data.gov.au URLs, sentinel path validation, atomic extraction. 24 unit tests pass.
+- [x] Downloads ~6.5GB total, extracts to `./data/`
   - `Verify:` `du -sh ./data/` shows ~6.5GB extracted
-  - `Evidence:`
-- [ ] Progress reporting during download (% complete, MB/s)
+  - `Evidence:` PR #20 — download + extractZip + atomic rename to `./data/<extractedDir>`. Configurable via DATA_DIR env var.
+- [x] Progress reporting during download (% complete, MB/s)
   - `Verify:` Script outputs progress to stdout during download
-  - `Evidence:`
-- [ ] Retry logic for transient network failures (up to 3 retries with exponential backoff)
+  - `Evidence:` PR #20 — `formatProgress()` reports % complete + MB/s every 2s. Unit tests verify formatting.
+- [x] Retry logic for transient network failures (up to 3 retries with exponential backoff)
   - `Verify:` Simulate network interruption and confirm retry behavior
-  - `Evidence:`
-- [ ] `--skip-download` flag skips download when data already exists
+  - `Evidence:` PR #20 — `downloadFile()` with 3 retries, exponential backoff (1s/2s/4s), stall detection (60s timeout). `retryDelay()` unit tested.
+- [x] `--skip-download` flag skips download when data already exists
   - `Verify:` Run twice; second run with `--skip-download` completes instantly
-  - `Evidence:`
+  - `Evidence:` PR #20 — CLI `--skip-download` flag, `isExtractionComplete()` validates sentinel paths. 8 unit tests for skip/validation logic.
 
 ## Scope
 

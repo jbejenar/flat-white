@@ -80,7 +80,7 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
           type: bestGeocode.type as string,
           reliability: Number(bestGeocode.reliability),
         }
-      : { latitude: 0, longitude: 0, type: "UNKNOWN", reliability: 6 },
+      : null,
     allGeocodes: allGeocodes
       ? allGeocodes.map((g) => ({
           lat: Number(g.lat),

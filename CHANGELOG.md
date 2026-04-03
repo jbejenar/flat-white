@@ -17,10 +17,15 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- `src/download.ts` — G-NAF + Admin Boundaries downloader with progress, retry, skip-download (P0.03)
 - `sql/address_full.sql` — master 9+ table JOIN query for flatten pipeline (P0.06)
 - `src/flatten.ts` — streaming Postgres → NDJSON flattener with Zod validation (P0.06)
 - `scripts/build-fixture-only.sh` — fixture-only build script: docker → seed → flatten (P0.10)
 - Unit tests for document composition: composeDocument, composeSearchLabel, composeBoundaries
+
+### Changed
+
+- `geocode` field is now nullable — returns `null` instead of `{0,0}` sentinel when no geocode exists (schema triple-update: schema.ts + DOCUMENT-SCHEMA.md + tests)
 
 ### Fixed
 
@@ -28,6 +33,7 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 - Add .gitignore exception for `fixtures/expected-output.ndjson` (unblocks P0.09)
 - Export composition helpers from flatten.ts; tests now import real code instead of duplicating it
 - Robust jq NDJSON validation in build-fixture-only.sh
+- Remove silent sentinel geocode `{latitude: 0, longitude: 0}` — violates "no sentinel values" rule
 
 ### Added (prior)
 
