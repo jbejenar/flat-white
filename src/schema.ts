@@ -100,7 +100,7 @@ export const AddressDocumentSchema = z.object({
   confidence: z.number().int().min(0).max(2),
   aliasPrincipal: z.enum(["PRINCIPAL", "ALIAS"]),
   primarySecondary: z.enum(["PRIMARY", "SECONDARY"]).nullable(),
-  geocode: GeocodeSchema,
+  geocode: GeocodeSchema.nullable(),
   allGeocodes: z.array(AllGeocodesItemSchema),
   locality: LocalitySchema,
   street: StreetSchema,

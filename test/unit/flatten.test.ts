@@ -205,9 +205,7 @@ describe("composeDocument", () => {
       address_aliases: [
         { pid: "MA001", label: "1 MCNAB AVENUE, FOOTSCRAY VIC 3011", type: "SYNONYM" },
       ],
-      address_secondaries: [
-        { pid: "GAVIC002", label: "UNIT 1 1 MCNAB AV, FOOTSCRAY VIC 3011" },
-      ],
+      address_secondaries: [{ pid: "GAVIC002", label: "UNIT 1 1 MCNAB AV, FOOTSCRAY VIC 3011" }],
     };
     const doc = composeDocument(row, "2026.02");
     const result = AddressDocumentSchema.safeParse(doc);
@@ -231,12 +229,13 @@ describe("composeDocument", () => {
     expect(resultS.success).toBe(true);
   });
 
-  it("falls back to zero geocode when best_geocode is null", () => {
+  it("returns null geocode when best_geocode is null", () => {
     const row = { ...baseRow, best_geocode: null, all_geocodes: null };
     const doc = composeDocument(row, "2026.02");
-    expect(doc.geocode.latitude).toBe(0);
-    expect(doc.geocode.type).toBe("UNKNOWN");
+    expect(doc.geocode).toBeNull();
     expect(doc.allGeocodes).toEqual([]);
+    const result = AddressDocumentSchema.safeParse(doc);
+    expect(result.success).toBe(true);
   });
 });
 
