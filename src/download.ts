@@ -21,7 +21,7 @@ import {
   statSync,
   unlinkSync,
 } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { execFile } from "node:child_process";
@@ -364,15 +364,97 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
   return results;
 }
 
+// --- Path resolution ---
+
+/**
+ * Resolve the download output directory from environment variables.
+ *
+ * Priority:
+ * 1. DATA_DIR — explicit download root (e.g. "./data")
+ * 2. Derived from GNAF_DATA_PATH and/or ADMIN_BDYS_PATH — takes the parent dir,
+ *    but validates that both env vars are consistent (same parent, correct child names).
+ * 3. Default: "./data"
+ *
+ * Throws if GNAF_DATA_PATH and ADMIN_BDYS_PATH point to different parent directories,
+ * or if their final directory names don't match the expected extractedDir values.
+ */
+export function resolveOutputDir(): string {
+  // Explicit download root takes priority
+  if (process.env.DATA_DIR) {
+    return resolve(process.env.DATA_DIR);
+  }
+
+  const gnafPath = process.env.GNAF_DATA_PATH;
+  const adminPath = process.env.ADMIN_BDYS_PATH;
+
+  if (!gnafPath && !adminPath) {
+    return resolve("./data");
+  }
+
+  const gnafSource = DATA_SOURCES.find((s) => s.name.includes("G-NAF"));
+  const adminSource = DATA_SOURCES.find((s) => s.name.includes("Administrative"));
+
+  if (!gnafSource || !adminSource) {
+    throw new Error("DATA_SOURCES is missing expected G-NAF or Administrative Boundaries entry");
+  }
+
+  /** Get the final path segment (basename) from a resolved path. */
+  function baseName(p: string): string {
+    const segments = resolve(p).split("/");
+    return segments[segments.length - 1] ?? "";
+  }
+
+  /** Validate that a path's basename matches the expected extractedDir. */
+  function validateDirName(envVar: string, envValue: string, expected: string): void {
+    const actual = baseName(envValue);
+    if (actual !== expected) {
+      const parent = dirname(resolve(envValue));
+      throw new Error(
+        `${envVar} final directory "${actual}" does not match expected "${expected}".\n` +
+          `The downloader extracts to: <DATA_DIR>/${expected}\n` +
+          `Either set ${envVar}=${parent}/${expected} or set DATA_DIR explicitly.`,
+      );
+    }
+  }
+
+  if (gnafPath && adminPath) {
+    const gnafParent = dirname(resolve(gnafPath));
+    const adminParent = dirname(resolve(adminPath));
+
+    if (gnafParent !== adminParent) {
+      throw new Error(
+        `GNAF_DATA_PATH and ADMIN_BDYS_PATH must share the same parent directory.\n` +
+          `  GNAF_DATA_PATH parent:       ${gnafParent}\n` +
+          `  ADMIN_BDYS_PATH parent:      ${adminParent}\n` +
+          `Set DATA_DIR explicitly if you need different roots.`,
+      );
+    }
+
+    validateDirName("GNAF_DATA_PATH", gnafPath, gnafSource.extractedDir);
+    validateDirName("ADMIN_BDYS_PATH", adminPath, adminSource.extractedDir);
+
+    return gnafParent;
+  }
+
+  // Only one path set — derive parent from it
+  if (gnafPath) {
+    validateDirName("GNAF_DATA_PATH", gnafPath, gnafSource.extractedDir);
+    return dirname(resolve(gnafPath));
+  }
+
+  // adminPath is guaranteed non-null here (we returned early if both were falsy)
+  const adminPathValue = adminPath as string;
+  validateDirName("ADMIN_BDYS_PATH", adminPathValue, adminSource.extractedDir);
+  return dirname(resolve(adminPathValue));
+}
+
 // --- CLI entry point ---
 
 async function main() {
   const args = process.argv.slice(2);
   const skipIfExists = args.includes("--skip-download");
   const version = process.env.GNAF_VERSION ?? "2026.02";
-  const outputDir = process.env.GNAF_DATA_PATH
-    ? resolve(process.env.GNAF_DATA_PATH, "..")
-    : "./data";
+  const outputDir = resolveOutputDir();
 
   const results = await download({ outputDir, skipIfExists, version });
 

@@ -17,6 +17,7 @@ import {
   DATA_SOURCES,
   DEFAULT_STALL_TIMEOUT_MS,
   isExtractionComplete,
+  resolveOutputDir,
 } from "../../src/download.js";
 
 describe("formatBytes", () => {
@@ -104,6 +105,75 @@ describe("DATA_SOURCES", () => {
 describe("DEFAULT_STALL_TIMEOUT_MS", () => {
   it("is a positive number suitable for multi-GB downloads", () => {
     expect(DEFAULT_STALL_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
+describe("resolveOutputDir", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    // Restore original env
+    delete process.env.DATA_DIR;
+    delete process.env.GNAF_DATA_PATH;
+    delete process.env.ADMIN_BDYS_PATH;
+    Object.assign(process.env, originalEnv);
+  });
+
+  it("defaults to ./data when no env vars are set", () => {
+    delete process.env.DATA_DIR;
+    delete process.env.GNAF_DATA_PATH;
+    delete process.env.ADMIN_BDYS_PATH;
+    expect(resolveOutputDir()).toBe(resolve("./data"));
+  });
+
+  it("uses DATA_DIR when set (takes priority over path vars)", () => {
+    process.env.DATA_DIR = "/custom/root";
+    process.env.GNAF_DATA_PATH = "/other/G-NAF";
+    expect(resolveOutputDir()).toBe("/custom/root");
+  });
+
+  it("derives parent from consistent GNAF_DATA_PATH and ADMIN_BDYS_PATH", () => {
+    process.env.GNAF_DATA_PATH = "/mydata/G-NAF";
+    process.env.ADMIN_BDYS_PATH = "/mydata/FEB26_AdminBounds_GDA_2020_SHP";
+    expect(resolveOutputDir()).toBe("/mydata");
+  });
+
+  it("throws when GNAF_DATA_PATH and ADMIN_BDYS_PATH have different parents", () => {
+    process.env.GNAF_DATA_PATH = "/path-a/G-NAF";
+    process.env.ADMIN_BDYS_PATH = "/path-b/FEB26_AdminBounds_GDA_2020_SHP";
+    expect(() => resolveOutputDir()).toThrow("must share the same parent directory");
+  });
+
+  it("throws when GNAF_DATA_PATH directory name doesn't match expected extractedDir", () => {
+    process.env.GNAF_DATA_PATH = "/mydata/wrong-name";
+    process.env.ADMIN_BDYS_PATH = "/mydata/FEB26_AdminBounds_GDA_2020_SHP";
+    expect(() => resolveOutputDir()).toThrow('does not match expected "G-NAF"');
+  });
+
+  it("throws when ADMIN_BDYS_PATH directory name doesn't match expected extractedDir", () => {
+    process.env.GNAF_DATA_PATH = "/mydata/G-NAF";
+    process.env.ADMIN_BDYS_PATH = "/mydata/wrong-admin-name";
+    expect(() => resolveOutputDir()).toThrow(
+      'does not match expected "FEB26_AdminBounds_GDA_2020_SHP"',
+    );
+  });
+
+  it("derives parent from GNAF_DATA_PATH alone when ADMIN_BDYS_PATH is not set", () => {
+    process.env.GNAF_DATA_PATH = "/solo/G-NAF";
+    delete process.env.ADMIN_BDYS_PATH;
+    expect(resolveOutputDir()).toBe("/solo");
+  });
+
+  it("derives parent from ADMIN_BDYS_PATH alone when GNAF_DATA_PATH is not set", () => {
+    delete process.env.GNAF_DATA_PATH;
+    process.env.ADMIN_BDYS_PATH = "/solo/FEB26_AdminBounds_GDA_2020_SHP";
+    expect(resolveOutputDir()).toBe("/solo");
+  });
+
+  it("throws when only GNAF_DATA_PATH is set with wrong directory name", () => {
+    process.env.GNAF_DATA_PATH = "/solo/custom-gnaf";
+    delete process.env.ADMIN_BDYS_PATH;
+    expect(() => resolveOutputDir()).toThrow('does not match expected "G-NAF"');
   });
 });
 
