@@ -2,33 +2,35 @@
 
 ## Project Overview
 
-flat-white transforms Australian Government G-NAF address data into pre-joined, boundary-enriched NDJSON files. It spins up ephemeral Postgres + PostGIS, runs `minus34/gnaf-loader` to load and spatially join 15.9M addresses with administrative boundaries, flattens the relational model via a 9+ table SQL JOIN, and outputs one document per address. Then it dies.
+flat-white transforms Australian Government G-NAF address data into pre-joined, boundary-enriched NDJSON files. It spins up ephemeral Postgres + PostGIS, runs the gnaf-loader submodule (`gnaf-loader/`) to load and spatially join 15.9M addresses with administrative boundaries, flattens the relational model via a 9+ table SQL JOIN, and outputs one document per address. Then it dies.
 
 ## Architecture
 
 ```
 src/
-  build.ts              — orchestrator: download → load → flatten → output
-  download.ts           — fetch G-NAF + Admin Bdys from data.gov.au
-  load.ts               — invoke gnaf-loader against local Postgres
-  flatten.ts            — stream Postgres → compose docs → write NDJSON
-  split.ts              — split all-states NDJSON into per-state files
-  compress.ts           — streaming gzip (~85-90% ratio)
+  index.ts              — package entry point, version export
   schema.ts             — TypeScript types + Zod validation
-  verify.ts             — row count, schema validation, completeness
-  metadata.ts           — generate build metadata JSON
-  cli.ts                — CLI: --states, --output, --split-states, --compress
+  # Planned (not yet on main):
+  # build.ts            — orchestrator: download → load → flatten → output
+  # download.ts         — fetch G-NAF + Admin Bdys from data.gov.au
+  # load.ts             — invoke gnaf-loader against local Postgres
+  # flatten.ts          — stream Postgres → compose docs → write NDJSON
+  # split.ts            — split all-states NDJSON into per-state files
+  # compress.ts         — streaming gzip (~85-90% ratio)
+  # verify.ts           — row count, schema validation, completeness
+  # metadata.ts         — generate build metadata JSON
+  # cli.ts              — CLI: --states, --output, --split-states, --compress
 
-sql/
-  address_full.sql              — master 9+ table JOIN
-  address_full_with_arrays.sql  — with aggregated aliases + secondaries
-  locality_full.sql             — locality with neighbours + aliases
-  create_views.sql              — materialised views for fast export
+# sql/ (not yet on main):
+  # address_full.sql              — master 9+ table JOIN
+  # address_full_with_arrays.sql  — with aggregated aliases + secondaries
+  # locality_full.sql             — locality with neighbours + aliases
+  # create_views.sql              — materialised views for fast export
 
 fixtures/
   seed-postgres.sql             — schema DDL + ~451 edge-case addresses (loads via psql <30s)
   edge-cases.md                 — catalogue of edge cases with PIDs
-  expected-output.ndjson        — regression baseline (once flatten SQL exists)
+  # expected-output.ndjson      — regression baseline (pending P0.09)
 ```
 
 ## Key Commands
