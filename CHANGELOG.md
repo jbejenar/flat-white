@@ -17,6 +17,12 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- `src/metadata.ts` — build metadata generator: per-state counts, version, schema version, build timestamp, gnaf-loader version (P1.12)
+- `src/split.ts` — streaming per-state NDJSON splitter with backpressure support (P1.13)
+- `src/compress.ts` — streaming gzip compression using Node.js pipeline (P1.14)
+- `test/unit/metadata.test.ts` — 7 unit tests for metadata generation
+- `test/unit/split.test.ts` — 4 unit tests for per-state splitting
+- `test/unit/compress.test.ts` — 5 unit tests for gzip compression
 - `src/verify.ts` — row count verification + data quality checks: coordinate bounds, PID uniqueness, state/postcode cross-validation, boundary coverage reporting (P1.10, P1.10A)
 - `test/unit/verify.test.ts` — 22 unit tests for verify module including fixture validation
 - Enhanced `test/regression/expected-output.test.ts` — geocode bounds check, full verify suite integration (P1.15)
