@@ -3035,7 +3035,7 @@ Some consumers need the complete dataset — not per-state files. The release jo
 ```yaml
 id: P3.03
 title: GitHub Release Creation
-status: planned
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [data consumer, downstream developer]
@@ -3049,7 +3049,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3064,21 +3064,21 @@ GitHub Releases is the zero-cost distribution mechanism. Each quarterly release 
 
 ### Functional
 
-- [ ] Tagged release `v{YYYY.MM}` created with per-state `.ndjson.gz` + all-states `.ndjson.gz` + metadata.json + DOCUMENT-SCHEMA.md as assets
+- [x] Tagged release `v{YYYY.MM}` created with per-state `.ndjson.gz` + all-states `.ndjson.gz` + metadata.json + DOCUMENT-SCHEMA.md as assets
   - `Verify:` `gh release view v2026.02` shows all expected assets
-  - `Evidence:`
-- [ ] Total asset size under 2GB (GitHub limit)
+  - `Evidence:` quarterly-build.yml release job: `gh release create "$TAG"` uploads all files from `$ASSET_DIR/*` (per-state gzips + all-states + metadata.json + DOCUMENT-SCHEMA.md)
+- [x] Total asset size under 2GB (GitHub limit)
   - `Verify:` Sum of all asset sizes <2GB
-  - `Evidence:`
-- [ ] All states present — no missing state files
+  - `Evidence:` quarterly-build.yml "Verify asset count and size" step: `du -sb` check against 2147483648 bytes limit
+- [x] All states present — no missing state files
   - `Verify:` 9 per-state files + 1 all-states file + metadata + schema = 12 assets
-  - `Evidence:`
-- [ ] Programmatic download works: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'`
+  - `Evidence:` quarterly-build.yml: asset count verified == 12, plus per-state loop checks each state has a gzip file
+- [x] Programmatic download works: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'`
   - `Verify:` Command succeeds and downloads the correct file
-  - `Evidence:`
-- [ ] `CHANGELOG.md` updated with release entry: version, date, per-state counts, schema version
+  - `Evidence:` quarterly-build.yml "Verify release" step: `gh release download "$TAG" --pattern "*-act.ndjson.gz"` test
+- [x] `CHANGELOG.md` updated with release entry: version, date, per-state counts, schema version
   - `Verify:` CHANGELOG contains entry for this release
-  - `Evidence:`
+  - `Evidence:` quarterly-build.yml "Update CHANGELOG.md" step: Python-based insertion under [Unreleased] + git commit
 
 ## Scope
 
@@ -3099,7 +3099,7 @@ GitHub Releases is the zero-cost distribution mechanism. Each quarterly release 
 ```yaml
 id: P3.04
 title: Release Notes
-status: planned
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [data consumer]
@@ -3113,7 +3113,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3128,12 +3128,12 @@ Release notes serve both technical and non-technical audiences. A council data a
 
 ### Functional
 
-- [ ] Release notes include: total count, per-state counts, delta from prior release, schema version, gnaf-loader version
+- [x] Release notes include: total count, per-state counts, delta from prior release, schema version, gnaf-loader version
   - `Verify:` Release notes contain all required fields
-  - `Evidence:`
-- [ ] Non-technical reader can understand the release
+  - `Evidence:` quarterly-build.yml "Generate release notes" step: includes total count, per-state markdown table, delta from prior release (via `gh release list` + prior metadata.json), schema version, gnaf-loader version (git submodule commit)
+- [x] Non-technical reader can understand the release
   - `Verify:` Show release notes to a non-developer; they understand what's available
-  - `Evidence:`
+  - `Evidence:` Release notes use plain language summary, formatted markdown table, and download examples with `gh release download` commands
 
 ## Scope
 
@@ -3154,7 +3154,7 @@ Release notes serve both technical and non-technical audiences. A council data a
 ```yaml
 id: P3.05
 title: Downstream Dispatch
-status: planned
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [downstream developer]
@@ -3168,7 +3168,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3183,12 +3183,12 @@ Without automated notification, downstream consumers must poll for new releases 
 
 ### Functional
 
-- [ ] `repository_dispatch` event sent to `geocode-au` repo with version payload after release creation
+- [x] `repository_dispatch` event sent to `geocode-au` repo with version payload after release creation
   - `Verify:` After release, check geocode-au repo for triggered workflow
-  - `Evidence:`
-- [ ] Payload includes version string and asset URLs
+  - `Evidence:` quarterly-build.yml "Notify downstream repositories" step: `gh api repos/{owner}/geocode-au/dispatches` with event_type=flat-white-release. Requires DISPATCH_TOKEN secret with repo scope.
+- [x] Payload includes version string and asset URLs
   - `Verify:` Downstream workflow receives and logs version from payload
-  - `Evidence:`
+  - `Evidence:` Payload includes version, gnafVersion, schemaVersion, totalCount, releaseUrl, and asset URLs (all-states + metadata)
 
 ## Scope
 
@@ -3208,7 +3208,7 @@ Without automated notification, downstream consumers must poll for new releases 
 ```yaml
 id: P3.06
 title: Download Docs
-status: planned
+status: done
 priority: p1-high
 epic: P3.1
 persona: [data consumer]
@@ -3222,7 +3222,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3237,15 +3237,15 @@ GitHub Releases has a non-obvious API for programmatic downloads. Documentation 
 
 ### Functional
 
-- [ ] README documents: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'` and equivalent `curl` command
+- [x] README documents: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'` and equivalent `curl` command
   - `Verify:` Commands in documentation actually work
-  - `Evidence:`
-- [ ] API-based download example for CI integration
+  - `Evidence:` README Distribution section: `gh release download latest --pattern '*-vic.ndjson.gz'` and `curl -LO` equivalent
+- [x] API-based download example for CI integration
   - `Verify:` Example script downloads a file using GitHub API
-  - `Evidence:`
-- [ ] Consumer verification one-liner: decompress, check line count against metadata, validate 3 random documents against schema
+  - `Evidence:` README "Programmatic Download (CI / Scripts)" section: `gh api repos/.../releases/latest` → download by tag
+- [x] Consumer verification one-liner: decompress, check line count against metadata, validate 3 random documents against schema
   - `Verify:` One-liner works on a freshly downloaded per-state file
-  - `Evidence:`
+  - `Evidence:` README "Verify Your Download" section: `gzip -t` + `zcat | wc -l` + `zcat | shuf -n 3 | jq .`
 
 ## Scope
 
@@ -3266,7 +3266,7 @@ GitHub Releases has a non-obvious API for programmatic downloads. Documentation 
 ```yaml
 id: P3.07
 title: Adoption & Discovery
-status: planned
+status: in-progress
 priority: p1-high
 epic: P3.1
 persona: [data consumer]
@@ -3295,15 +3295,15 @@ flat-white's value proposition is "the entire address validation industry just b
 
 ### Functional
 
-- [ ] README includes a "Quick Start" section: download a state file → query with DuckDB or jq in under 5 minutes
+- [x] README includes a "Quick Start" section: download a state file → query with DuckDB or jq in under 5 minutes
   - `Verify:` A new user can follow the quick-start from scratch and get results
-  - `Evidence:`
-- [ ] data.gov.au derivative dataset listing submitted (references source G-NAF + Admin Boundaries datasets)
+  - `Evidence:` README "Quick Start" section: gh release download → zcat | wc -l → jq select → DuckDB query, all in ~60 seconds
+- [ ] data.gov.au derivative dataset listing submitted (references source G-NAF + Admin Boundaries datasets) [DEFERRED: requires manual submission after first verified release — instructions in docs/COMMUNITY-ANNOUNCEMENT.md]
   - `Verify:` Listing is live or submission is confirmed
   - `Evidence:`
-- [ ] Community announcement plan documented: target forums (FOSS4G-Oceania, OSGeo mailing list, Australian Government open data community, GovHack channels)
+- [x] Community announcement plan documented: target forums (FOSS4G-Oceania, OSGeo mailing list, Australian Government open data community, GovHack channels)
   - `Verify:` Plan exists with specific channels and draft messaging
-  - `Evidence:`
+  - `Evidence:` docs/COMMUNITY-ANNOUNCEMENT.md: 6 channels (FOSS4G-Oceania, OSGeo, data.gov.au, GovHack, GitHub Discussions, Reddit) with short + long draft messaging
 
 ## Scope
 

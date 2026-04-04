@@ -498,3 +498,48 @@ jobs:
           echo "✓ Programmatic download works"
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Notify downstream repositories
+        if: ${{ success() }}
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          TAG="v${VERSION}"
+          TOTAL="${{ steps.collect.outputs.total }}"
+          SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+
+          # Build asset URLs for downstream consumers
+          PAYLOAD=$(cat <<PAYLOADEOF
+          {
+            "version": "${TAG}",
+            "gnafVersion": "${VERSION}",
+            "schemaVersion": "${SCHEMA_VERSION}",
+            "totalCount": ${TOTAL},
+            "releaseUrl": "${REPO_URL}/releases/tag/${TAG}",
+            "assets": {
+              "all": "${REPO_URL}/releases/download/${TAG}/flat-white-${VERSION}-all.ndjson.gz",
+              "metadata": "${REPO_URL}/releases/download/${TAG}/metadata.json"
+            }
+          }
+          PAYLOADEOF
+          )
+          # Remove leading whitespace from heredoc
+          PAYLOAD=$(echo "$PAYLOAD" | sed 's/^          //')
+
+          echo "--- Dispatch Payload ---"
+          echo "$PAYLOAD" | jq .
+
+          # Dispatch to each downstream repo
+          # Requires DISPATCH_TOKEN secret with repo scope on target repos
+          for REPO in "geocode-au"; do
+            echo "Dispatching to ${REPO}..."
+            BODY=$(jq -n --argjson payload "$PAYLOAD" '{"event_type":"flat-white-release","client_payload":$payload}')
+            echo "$BODY" | gh api \
+              --method POST \
+              "repos/${{ github.repository_owner }}/${REPO}/dispatches" \
+              --input - \
+              && echo "✓ Dispatched to ${REPO}" \
+              || echo "::warning::Failed to dispatch to ${REPO} (may need DISPATCH_TOKEN secret with repo scope)"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
