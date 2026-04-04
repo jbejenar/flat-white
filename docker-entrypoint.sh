@@ -257,7 +257,7 @@ if [[ "$SPLIT_STATES" == "true" && "$MODE" != "fixture" ]]; then
   SPLIT_INPUT="$FLATTEN_OUTPUT" \
   SPLIT_OUTPUT_DIR="$OUTPUT_DIR" \
   SPLIT_VERSION="${GNAF_VERSION:-2026.02}" \
-  node -e "
+  node --input-type=module -e "
     import { split } from '/app/dist/split.js';
     const r = await split({
       inputPath: process.env.SPLIT_INPUT,
@@ -284,7 +284,7 @@ if [[ "$COMPRESS" == "true" ]]; then
       [[ -f "$f" ]] || continue
       COMPRESS_INPUT="$f" \
       COMPRESS_OUTPUT="${f}.gz" \
-      node -e "
+      node --input-type=module -e "
         import { compress } from '/app/dist/compress.js';
         const r = await compress({ inputPath: process.env.COMPRESS_INPUT, outputPath: process.env.COMPRESS_OUTPUT });
         console.log('[compress] ' + process.env.COMPRESS_INPUT + ' → ratio ' + (r.ratio * 100).toFixed(1) + '%');
@@ -296,7 +296,7 @@ if [[ "$COMPRESS" == "true" ]]; then
   else
     COMPRESS_INPUT="$FLATTEN_OUTPUT" \
     COMPRESS_OUTPUT="${FLATTEN_OUTPUT}.gz" \
-    node -e "
+    node --input-type=module -e "
       import { compress } from '/app/dist/compress.js';
       const r = await compress({ inputPath: process.env.COMPRESS_INPUT, outputPath: process.env.COMPRESS_OUTPUT });
       console.log('[compress] ratio ' + (r.ratio * 100).toFixed(1) + '%');
