@@ -17,6 +17,10 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- `docs/PERFORMANCE.md` — VIC build performance baseline: timing, memory, output sizes, hardware specs (P1.16)
+- `Dockerfile` — multi-stage self-contained image: Postgres 16 + PostGIS 3.5, Python 3, gnaf-loader, Node.js 22, TypeScript flattener (P2.01)
+- `.dockerignore` — excludes dev artifacts, tests, docs from Docker build context
+- `docker-entrypoint.sh` — minimal entrypoint supporting `--help` and `--fixture-only` modes (P2.01)
 - `scripts/build-local.sh` — full local build orchestrator: load → flatten → verify (P1.11)
 - `sql/address_full_prep.sql` — pre-materializes aggregation CTEs as temp tables for production-scale flattening
 - `sql/address_full_main.sql` — streamable multi-join query using temp tables (no CTEs)
