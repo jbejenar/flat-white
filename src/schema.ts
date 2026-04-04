@@ -120,8 +120,8 @@ export const LocalityDocumentSchema = z.object({
   class: z.string(),
   neighbours: z.array(z.string()),
   aliases: z.array(z.string()),
-  latitude: z.number(),
-  longitude: z.number(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
 });
 
 // --- Inferred TypeScript types ---

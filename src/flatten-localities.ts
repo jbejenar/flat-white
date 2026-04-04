@@ -46,8 +46,8 @@ export function composeLocalityDocument(
     class: (row.locality_class_name as string) ?? "UNKNOWN",
     neighbours: row.locality_neighbours as string[],
     aliases: row.locality_aliases as string[],
-    latitude: Number(row.latitude),
-    longitude: Number(row.longitude),
+    latitude: row.latitude != null ? Number(row.latitude) : null,
+    longitude: row.longitude != null ? Number(row.longitude) : null,
   };
 }
 

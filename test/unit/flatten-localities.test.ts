@@ -79,6 +79,15 @@ describe("composeLocalityDocument", () => {
     expect(doc.postcode).toBeNull();
   });
 
+  it("handles null latitude and longitude", () => {
+    const row = { ...baseLocalityRow, latitude: null, longitude: null };
+    const doc = composeLocalityDocument(row, "2026.02");
+    const result = LocalityDocumentSchema.safeParse(doc);
+    expect(result.success).toBe(true);
+    expect(doc.latitude).toBeNull();
+    expect(doc.longitude).toBeNull();
+  });
+
   it("defaults class to UNKNOWN when locality_class_name is null", () => {
     const row = { ...baseLocalityRow, locality_class_name: null };
     const doc = composeLocalityDocument(row, "2026.02");
