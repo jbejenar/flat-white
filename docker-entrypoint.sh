@@ -21,17 +21,31 @@ PGPASSWORD="${POSTGRES_PASSWORD:-postgres}"
 PGDB="${POSTGRES_DB:-gnaf}"
 
 # ── Logging helpers ──────────────────────────────────────────────────────────
+# Structured JSON logs to stderr (human-readable via message field, machine-parseable via jq)
+
+log_json() {
+  local stage="$1" event="$2" message="$3"
+  shift 3
+  local extra=""
+  while [[ $# -gt 0 ]]; do
+    extra="${extra},\"$1\":$2"
+    shift 2
+  done
+  echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"stage\":\"${stage}\",\"event\":\"${event}\",\"message\":\"${message}\"${extra}}" >&2
+}
 
 log() { echo "[entrypoint] $*"; }
 
 stage_start() {
   STAGE_NAME="$1"
   STAGE_START=$(date +%s)
+  log_json "$STAGE_NAME" "stage_start" "Stage: $STAGE_NAME started"
   log "▶ Stage: $STAGE_NAME"
 }
 
 stage_end() {
   local elapsed=$(( $(date +%s) - STAGE_START ))
+  log_json "$STAGE_NAME" "stage_end" "Stage: $STAGE_NAME completed (${elapsed}s)" "elapsed_s" "$elapsed"
   log "✓ Stage: $STAGE_NAME completed (${elapsed}s)"
 }
 
@@ -107,6 +121,23 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# ── Validate argument combinations ──────────────────────────────────────────
+
+if [[ "$SKIP_DOWNLOAD" == "true" && ( -z "$GNAF_PATH" || -z "$ADMIN_PATH" ) ]]; then
+  log "ERROR: --skip-download requires --gnaf-path and --admin-path to locate pre-downloaded data."
+  exit 1
+fi
+
+if [[ "$MODE" == "fixture" && "$SKIP_DOWNLOAD" == "true" ]]; then
+  log "ERROR: --fixture-only and --skip-download are mutually exclusive."
+  exit 1
+fi
+
+if [[ "$MODE" == "fixture" && "$SPLIT_STATES" == "true" ]]; then
+  log "ERROR: --fixture-only and --split-states are mutually exclusive."
+  exit 1
+fi
 
 mkdir -p "$OUTPUT_DIR"
 
