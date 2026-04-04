@@ -17,6 +17,12 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- `scripts/build-local.sh` — full local build orchestrator: load → flatten → verify (P1.11)
+- `sql/address_full_prep.sql` — pre-materializes aggregation CTEs as temp tables for production-scale flattening
+- `sql/address_full_main.sql` — streamable multi-join query using temp tables (no CTEs)
+- `--materialize` flag for flatten.ts — enables pre-materialization for production runs
+- `src/load.ts` — gnaf-loader wrapper with PGPASSWORD env var, path resolution, logging (P0.04)
+- Full VIC build verified: 3,940,659 documents, 0 schema errors, ~5 min total (P1.11)
 - `src/schema-compat.ts` — schema compatibility checker: compares JSON Schema snapshots, classifies breaking vs non-breaking changes (E1.04)
 - `src/check-schema-compat-cli.ts` — CI entry point for schema evolution checks
 - `src/generate-schema-baseline.ts` — generates `fixtures/schema-baseline.json` from Zod schemas

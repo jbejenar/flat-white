@@ -20,6 +20,8 @@ import type { AddressDocument } from "./schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SQL_PATH = resolve(__dirname, "..", "sql", "address_full.sql");
+const PREP_SQL_PATH = resolve(__dirname, "..", "sql", "address_full_prep.sql");
+const MAIN_SQL_PATH = resolve(__dirname, "..", "sql", "address_full_main.sql");
 
 export interface FlattenOptions {
   /** Postgres connection URL */
@@ -28,6 +30,13 @@ export interface FlattenOptions {
   outputPath: string;
   /** G-NAF data version (e.g. "2026.02") */
   version: string;
+  /**
+   * Pre-materialize aggregation CTEs as temp tables before streaming.
+   * Required for production-scale runs (>10k rows). The CTE-based query
+   * in address_full.sql is fine for fixtures but too slow when cursored
+   * over millions of rows.
+   */
+  materialize?: boolean;
 }
 
 function mapPrimarySecondary(value: unknown): "PRIMARY" | "SECONDARY" | null {
@@ -206,7 +215,7 @@ export function composeBoundaries(row: Record<string, unknown>) {
  * Run the flatten pipeline: read from Postgres, compose documents, write NDJSON.
  */
 export async function flatten(options: FlattenOptions): Promise<{ count: number; errors: number }> {
-  const { connectionString, outputPath, version } = options;
+  const { connectionString, outputPath, version, materialize } = options;
 
   const sql = postgres(connectionString, {
     max: 1,
@@ -216,7 +225,20 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
     },
   });
 
-  const flattenSql = readFileSync(SQL_PATH, "utf-8");
+  let flattenSql: string;
+
+  if (materialize) {
+    // Production mode: pre-materialize aggregations as temp tables, then stream the simple join
+    const prepSql = readFileSync(PREP_SQL_PATH, "utf-8");
+    console.log("[flatten] Materializing aggregation tables...");
+    await sql.unsafe(prepSql); // DDL: creates temp tables, no cursor needed
+    console.log("[flatten] Aggregation tables ready. Starting cursor stream...");
+    flattenSql = readFileSync(MAIN_SQL_PATH, "utf-8");
+  } else {
+    // Fixture mode: use the CTE-based query (fine for small datasets)
+    flattenSql = readFileSync(SQL_PATH, "utf-8");
+  }
+
   let count = 0;
   let errors = 0;
 
@@ -298,13 +320,17 @@ async function main() {
     return;
   }
 
-  const outputPath = process.argv[2] ?? "output/fixture.ndjson";
+  const materialize = process.argv.includes("--materialize");
+  const outputPath =
+    process.argv.find(
+      (a) => !a.startsWith("-") && a !== process.argv[0] && a !== process.argv[1],
+    ) ?? "output/fixture.ndjson";
 
   console.log(`[flatten] Connecting to ${connectionString}`);
   console.log(`[flatten] Output: ${outputPath}`);
   console.log(`[flatten] Version: ${version}`);
 
-  const { count, errors } = await flatten({ connectionString, outputPath, version });
+  const { count, errors } = await flatten({ connectionString, outputPath, version, materialize });
 
   console.log(`[flatten] Done: ${count} documents written, ${errors} errors`);
 
