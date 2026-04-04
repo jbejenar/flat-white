@@ -181,3 +181,252 @@ jobs:
           name: flat-white-all
           path: flat-white-*-all.ndjson.gz
           retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Create GitHub Release with all assets (P3.03 + P3.04)
+  # ---------------------------------------------------------------------------
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [setup, build, concatenate]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all per-state artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: flat-white-*
+
+      - name: Collect assets and generate metadata
+        id: collect
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          ASSET_DIR="release-assets"
+          mkdir -p "$ASSET_DIR"
+
+          # Collect per-state gzips and count files
+          TOTAL=0
+          STATES_JSON="{"
+          FIRST=true
+          for state in VIC NSW QLD SA WA TAS NT ACT OT; do
+            STATE_LOWER=$(echo "$state" | tr '[:upper:]' '[:lower:]')
+            GZ_FILE=$(find "artifacts/flat-white-${state}" -name "*.ndjson.gz" | head -1)
+            COUNT_FILE="artifacts/flat-white-${state}/${state}.count"
+
+            if [[ -z "$GZ_FILE" ]]; then
+              echo "ERROR: Missing gzip for $state"
+              exit 1
+            fi
+
+            cp "$GZ_FILE" "$ASSET_DIR/flat-white-${VERSION}-${STATE_LOWER}.ndjson.gz"
+
+            COUNT=$(cat "$COUNT_FILE")
+            TOTAL=$((TOTAL + COUNT))
+
+            if [[ "$FIRST" == "true" ]]; then
+              FIRST=false
+            else
+              STATES_JSON+=","
+            fi
+            STATES_JSON+="\"${state}\":${COUNT}"
+          done
+          STATES_JSON+="}"
+
+          # Copy all-states file
+          ALL_GZ=$(find "artifacts/flat-white-all" -name "*.ndjson.gz" | head -1)
+          cp "$ALL_GZ" "$ASSET_DIR/flat-white-${VERSION}-all.ndjson.gz"
+
+          # Read schema version from package.json
+          SCHEMA_VERSION=$(node -p "require('./package.json').version")
+
+          # Generate metadata.json
+          cat > "$ASSET_DIR/metadata.json" <<METAEOF
+          {
+            "version": "${VERSION}",
+            "schemaVersion": "${SCHEMA_VERSION}",
+            "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "states": ${STATES_JSON},
+            "totalCount": ${TOTAL}
+          }
+          METAEOF
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' "$ASSET_DIR/metadata.json"
+
+          # Copy DOCUMENT-SCHEMA.md
+          cp docs/DOCUMENT-SCHEMA.md "$ASSET_DIR/DOCUMENT-SCHEMA.md"
+
+          # Export for later steps
+          echo "total=${TOTAL}" >> "$GITHUB_OUTPUT"
+          echo "schema_version=${SCHEMA_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "asset_dir=${ASSET_DIR}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify asset count and size
+        run: |
+          ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
+
+          # Count assets: 9 per-state + 1 all-states + metadata.json + DOCUMENT-SCHEMA.md = 12
+          ASSET_COUNT=$(ls -1 "$ASSET_DIR" | wc -l | tr -d ' ')
+          echo "Asset count: $ASSET_COUNT"
+          ls -lh "$ASSET_DIR"
+
+          if [[ "$ASSET_COUNT" -ne 12 ]]; then
+            echo "ERROR: Expected 12 assets, got $ASSET_COUNT"
+            exit 1
+          fi
+          echo "✓ Asset count verified: 12"
+
+          # Verify total size under 2GB (2147483648 bytes)
+          TOTAL_SIZE=$(du -sb "$ASSET_DIR" | cut -f1)
+          LIMIT=2147483648
+          echo "Total asset size: $(du -sh "$ASSET_DIR" | cut -f1)"
+
+          if [[ "$TOTAL_SIZE" -ge "$LIMIT" ]]; then
+            echo "ERROR: Total asset size ($TOTAL_SIZE bytes) exceeds 2GB GitHub limit"
+            exit 1
+          fi
+          echo "✓ Total size under 2GB"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          TOTAL="${{ steps.collect.outputs.total }}"
+          SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
+          ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
+
+          # Try to get prior release metadata for delta calculation
+          PRIOR_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+          HAS_DELTA=false
+
+          if [[ -n "$PRIOR_TAG" ]]; then
+            # Download prior metadata.json
+            if gh release download "$PRIOR_TAG" --pattern "metadata.json" --dir /tmp/prior 2>/dev/null; then
+              HAS_DELTA=true
+              PRIOR_TOTAL=$(node -p "require('/tmp/prior/metadata.json').totalCount")
+              DELTA_TOTAL=$((TOTAL - PRIOR_TOTAL))
+              if [[ "$DELTA_TOTAL" -ge 0 ]]; then
+                DELTA_TOTAL_FMT="+${DELTA_TOTAL}"
+              else
+                DELTA_TOTAL_FMT="${DELTA_TOTAL}"
+              fi
+            fi
+          fi
+
+          # Build release notes
+          NOTES_FILE=$(mktemp)
+          cat > "$NOTES_FILE" <<NOTESEOF
+          Pre-joined, boundary-enriched Australian address data from G-NAF ${VERSION}.
+
+          ## Summary
+
+          - **Total addresses:** $(printf "%'d" "$TOTAL")$(if [[ "$HAS_DELTA" == "true" ]]; then echo " (${DELTA_TOTAL_FMT} from ${PRIOR_TAG})"; fi)
+          - **Schema version:** ${SCHEMA_VERSION}
+          - **G-NAF data version:** ${VERSION}
+
+          ## Per-State Document Counts
+
+          | State | Count |$(if [[ "$HAS_DELTA" == "true" ]]; then echo " Delta |"; fi)
+          |-------|------:|$(if [[ "$HAS_DELTA" == "true" ]]; then echo "------:|"; fi)
+          NOTESEOF
+
+          for state in ACT NSW NT OT QLD SA TAS VIC WA; do
+            COUNT_FILE="artifacts/flat-white-${state}/${state}.count"
+            COUNT=$(cat "$COUNT_FILE")
+            COUNT_FMT=$(printf "%'d" "$COUNT")
+            ROW="| ${state} | ${COUNT_FMT} |"
+
+            if [[ "$HAS_DELTA" == "true" ]]; then
+              PRIOR_COUNT=$(node -p "require('/tmp/prior/metadata.json').states?.${state} ?? 0" 2>/dev/null || echo "0")
+              DELTA=$((COUNT - PRIOR_COUNT))
+              if [[ "$DELTA" -ge 0 ]]; then
+                ROW+=" +${DELTA} |"
+              else
+                ROW+=" ${DELTA} |"
+              fi
+            fi
+
+            echo "$ROW" >> "$NOTES_FILE"
+          done
+
+          cat >> "$NOTES_FILE" <<'DLEOF'
+
+          ## Downloads
+
+          Download individual state files or the complete dataset:
+
+          ```bash
+          # Single state (e.g. Victoria)
+          gh release download v{VERSION} --pattern '*-vic.ndjson.gz'
+
+          # All states in one file
+          gh release download v{VERSION} --pattern '*-all.ndjson.gz'
+
+          # Everything
+          gh release download v{VERSION}
+          ```
+
+          ## Schema
+
+          The document schema reference is included as a release asset (`DOCUMENT-SCHEMA.md`).
+          Each line in the NDJSON files is one JSON document conforming to this schema.
+          DLEOF
+
+          # Replace {VERSION} placeholder in download examples
+          sed -i "s/{VERSION}/${VERSION}/g" "$NOTES_FILE"
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' "$NOTES_FILE"
+
+          echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+
+          echo "--- Release Notes Preview ---"
+          cat "$NOTES_FILE"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create GitHub Release
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          TAG="v${VERSION}"
+          ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
+          NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
+
+          gh release create "$TAG" \
+            --title "flat-white ${TAG}" \
+            --notes-file "$NOTES_FILE" \
+            "$ASSET_DIR"/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Verify release
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          TAG="v${VERSION}"
+
+          echo "--- Release Details ---"
+          gh release view "$TAG"
+
+          echo ""
+          echo "--- Release Assets ---"
+          ASSET_COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          echo "Asset count: $ASSET_COUNT"
+
+          if [[ "$ASSET_COUNT" -ne 12 ]]; then
+            echo "ERROR: Expected 12 release assets, got $ASSET_COUNT"
+            exit 1
+          fi
+          echo "✓ All 12 assets uploaded successfully"
+
+          echo ""
+          echo "--- Programmatic Download Test ---"
+          mkdir -p /tmp/download-test
+          gh release download "$TAG" --pattern "*-act.ndjson.gz" --dir /tmp/download-test
+          ls -lh /tmp/download-test/
+          echo "✓ Programmatic download works"
+        env:
+          GH_TOKEN: ${{ github.token }}
