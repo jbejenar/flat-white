@@ -107,8 +107,6 @@ export function buildArgs(opts: LoadOptions): string[] {
     opts.pgDb ?? "gnaf",
     "--pguser",
     opts.pgUser ?? "postgres",
-    "--pgpassword",
-    opts.pgPassword ?? "postgres",
     "--geoscape-version",
     opts.geoscapeVersion ?? "202602",
     "--srid",
@@ -178,10 +176,8 @@ export async function load(opts: LoadOptions = {}): Promise<void> {
   const args = buildArgs(opts);
   const statesLabel = opts.states?.join(", ") ?? "ALL";
 
-  // Redact password from logged command
-  const safeArgs = args.map((a, i) => (args[i - 1] === "--pgpassword" ? "***" : a));
   console.log(`[load] Starting gnaf-loader for states: ${statesLabel}`);
-  console.log(`[load] Python: python3 ${safeArgs.join(" ")}`);
+  console.log(`[load] Python: python3 ${args.join(" ")}`);
 
   const startTime = Date.now();
 
@@ -189,6 +185,7 @@ export async function load(opts: LoadOptions = {}): Promise<void> {
     const child = spawn("python3", args, {
       cwd: PROJECT_ROOT,
       stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, PGPASSWORD: opts.pgPassword ?? "postgres" },
     });
 
     child.stdout.on("data", (data: Buffer) => {

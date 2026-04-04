@@ -95,6 +95,12 @@ describe("buildArgs", () => {
     expect(args[idx + 1]).toBe("8");
   });
 
+  it("does not include password in CLI args", () => {
+    const args = buildArgs({ states: ["VIC"], pgPassword: "secret123" });
+    expect(args).not.toContain("--pgpassword");
+    expect(args).not.toContain("secret123");
+  });
+
   it("computes --local-server-dir from resolved paths", () => {
     const args = buildArgs({ states: ["VIC"] });
     const idx = args.indexOf("--local-server-dir");
