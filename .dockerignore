@@ -20,7 +20,6 @@ output/
 # Docs not needed at runtime
 *.md
 !fixtures/*.md
-docs/
 
 # Tests not needed in image
 test/

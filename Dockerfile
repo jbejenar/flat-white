@@ -20,7 +20,6 @@ RUN npm ci --ignore-scripts
 # Copy source and build
 COPY tsconfig.json ./
 COPY src/ ./src/
-COPY sql/ ./sql/
 RUN npm run build
 
 # ---------------------------------------------------------------------------

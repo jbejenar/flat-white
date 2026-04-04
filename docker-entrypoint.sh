@@ -37,7 +37,7 @@ fi
 
 # --- Start Postgres ---
 echo "[entrypoint] Starting Postgres..."
-su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30" 2>/dev/null || {
+su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30" 2>>/var/log/postgresql.log || {
   # First run: initialize the database
   echo "[entrypoint] Initializing Postgres..."
   su postgres -c "initdb -D $PGDATA --auth=trust"
@@ -46,6 +46,7 @@ su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30" 2>/
   echo "listen_addresses = 'localhost'" >> "$PGDATA/postgresql.conf"
   su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30"
   su postgres -c "createdb $PGDB" || true
+  su postgres -c "psql -d $PGDB -c 'CREATE EXTENSION IF NOT EXISTS postgis'"
 }
 
 # Wait for Postgres to be ready
