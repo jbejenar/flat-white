@@ -393,6 +393,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - name: Update CHANGELOG.md
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
+          TOTAL="${{ steps.collect.outputs.total }}"
+          BUILD_DATE=$(date -u +%Y-%m-%d)
+
+          # Build per-state counts line
+          STATE_COUNTS=""
+          for state in ACT NSW NT OT QLD SA TAS VIC WA; do
+            COUNT_FILE="artifacts/flat-white-${state}/${state}.count"
+            COUNT=$(cat "$COUNT_FILE")
+            COUNT_FMT=$(printf "%'d" "$COUNT")
+            STATE_COUNTS+="  - ${state}: ${COUNT_FMT}\n"
+          done
+
+          # Build the new changelog entry
+          ENTRY="## [v${VERSION}] - ${BUILD_DATE}\n\n"
+          ENTRY+="### Release\n\n"
+          ENTRY+="- **G-NAF data version:** ${VERSION}\n"
+          ENTRY+="- **Schema version:** ${SCHEMA_VERSION}\n"
+          ENTRY+="- **Total addresses:** $(printf "%'d" "$TOTAL")\n"
+          ENTRY+="- **Per-state counts:**\n"
+          ENTRY+="${STATE_COUNTS}\n"
+
+          # Insert after the [Unreleased] section header
+          # Find the line number of "## [Unreleased]" and insert before it
+          sed -i "/^## \[Unreleased\]/a\\\\n${ENTRY}" CHANGELOG.md
+
+          # Commit the changelog update
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs: update CHANGELOG.md for v${VERSION} release"
+          git push
+
       - name: Create GitHub Release
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
