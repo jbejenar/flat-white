@@ -1,56 +1,55 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-04. Active phase: P2 complete → P3 next.
+> Updated: 2026-04-05. Active phase: P3 nearly complete → P4 next.
 
-## Completed This Session (2026-04-04)
+## Completed This Session (2026-04-05)
 
-### P2.02 — Entrypoint (done)
+### P3.03 — GitHub Release Creation (done)
 
-- [x] Full pipeline orchestration: postgres → download → load → flatten → verify → split → compress
-- [x] Each stage logged with start/end timestamps
-- [x] Postgres started before data work, stopped via EXIT trap
+- [x] Tagged release with all assets (per-state + all-states + metadata + schema)
+- [x] Asset size verification (under 2GB)
+- [x] 12-asset count verification
+- [x] Programmatic download test
+- [x] CHANGELOG auto-update
 
-### P2.03 — CLI Arguments (done)
+### P3.04 — Release Notes (done)
 
-- [x] All 8 flags: --states, --output, --split-states, --compress, --skip-download, --gnaf-path, --admin-path, --fixture-only
-- [x] --help with full flag docs, exit codes, pipeline stages
-- [x] Invalid flag combination errors (4 combos validated)
+- [x] Auto-generated notes with total/per-state counts, delta, schema version, gnaf-loader version
+- [x] Readable markdown format
 
-### P2.04 — Exit Codes (done)
+### P3.05 — Downstream Dispatch (done)
 
-- [x] Exit codes 0-5 per failure type (download/load/flatten/verify/output)
-- [x] Deterministic per stage, CI-distinguishable
+- [x] `repository_dispatch` to geocode-au with version payload
+- [x] Asset URLs in payload
 
-### P2.05 — Volume Mount (done)
+### P3.06 — Download Docs (done)
 
-- [x] `/output` default, `VOLUME ["/output"]` in Dockerfile
-- [x] File permissions: world-readable by default
+- [x] gh CLI + curl download examples in README
+- [x] API-based download for CI/scripts
+- [x] Consumer verification one-liner
 
-### P2.06 — Progress Logging (done)
+### P3.07 — Adoption & Discovery (in-progress)
 
-- [x] Structured JSON progress logs (ProgressLogger class + bash log_json)
-- [x] Human-readable + machine-parseable (message field + jq-compatible)
-- [x] 30s debounced progress updates during flatten stage
+- [x] Quick Start in README
+- [ ] data.gov.au listing [DEFERRED: manual submission after first release]
+- [x] Community announcement plan in docs/COMMUNITY-ANNOUNCEMENT.md
 
-### P2.07 — Image Publish (done)
+## P3 Phase Status: 6/7 done, 1 in-progress
 
-- [x] GitHub Actions workflow for Docker Hub publish on v\* tags
-- [x] Version + latest tagging
-
-## P2 Phase Status: COMPLETE
-
-All 8 P2 tickets done (P2.01–P2.08). Next phase: P3.
+All functional tickets complete. P3.07 has 1 DEFERRED item (data.gov.au listing). Next phase: P4.
 
 ## Reference Files
 
-| Need             | Read this                      | NOT this                     |
-| ---------------- | ------------------------------ | ---------------------------- |
-| Table schemas    | `fixtures/SCHEMA-REFERENCE.md` | `fixtures/seed-postgres.sql` |
-| Field provenance | `docs/FIELD-PROVENANCE.md`     | —                            |
-| Document schema  | `docs/DOCUMENT-SCHEMA.md`      | —                            |
-| Flatten SQL      | `sql/address_full.sql`         | —                            |
-| Verification     | `src/verify.ts`                | —                            |
-| Metadata         | `src/metadata.ts`              | —                            |
-| Split            | `src/split.ts`                 | —                            |
-| Compress         | `src/compress.ts`              | —                            |
-| Agent rules      | `CLAUDE.md` (auto-loaded)      | —                            |
+| Need             | Read this                               | NOT this                     |
+| ---------------- | --------------------------------------- | ---------------------------- |
+| Table schemas    | `fixtures/SCHEMA-REFERENCE.md`          | `fixtures/seed-postgres.sql` |
+| Field provenance | `docs/FIELD-PROVENANCE.md`              | —                            |
+| Document schema  | `docs/DOCUMENT-SCHEMA.md`               | —                            |
+| Flatten SQL      | `sql/address_full.sql`                  | —                            |
+| Verification     | `src/verify.ts`                         | —                            |
+| Metadata         | `src/metadata.ts`                       | —                            |
+| Split            | `src/split.ts`                          | —                            |
+| Compress         | `src/compress.ts`                       | —                            |
+| Quarterly build  | `.github/workflows/quarterly-build.yml` | —                            |
+| Community plan   | `docs/COMMUNITY-ANNOUNCEMENT.md`        | —                            |
+| Agent rules      | `CLAUDE.md` (auto-loaded)               | —                            |

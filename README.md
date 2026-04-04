@@ -200,11 +200,43 @@ Every quarter, a [GitHub Actions](https://github.com/features/actions) matrix bu
 **Total cost: $0.** Free runners. Free hosting. Free forever.
 
 ```bash
-# Download programmatically
-gh release download v2026.02 --pattern '*-vic.ndjson.gz'
+# Download a single state with gh CLI
+gh release download latest --repo jbejenar/flat-white --pattern '*-vic.ndjson.gz'
 
-# Or via curl
-curl -LO "https://github.com/jbejenar/flat-white/releases/download/v2026.02/flat-white-2026.02-vic.ndjson.gz"
+# Download all states in one file
+gh release download latest --repo jbejenar/flat-white --pattern '*-all.ndjson.gz'
+
+# Or via curl (replace VERSION with e.g. 2026.02)
+curl -LO "https://github.com/jbejenar/flat-white/releases/download/vVERSION/flat-white-VERSION-vic.ndjson.gz"
+```
+
+### Programmatic Download (CI / Scripts)
+
+Use the GitHub API to fetch the latest release and download assets:
+
+```bash
+# Get the latest release tag
+TAG=$(gh api repos/jbejenar/flat-white/releases/latest --jq '.tag_name')
+
+# Download a specific state
+gh release download "$TAG" --repo jbejenar/flat-white --pattern '*-vic.ndjson.gz'
+
+# Download metadata to check counts before downloading data
+gh release download "$TAG" --repo jbejenar/flat-white --pattern 'metadata.json'
+cat metadata.json | jq .
+```
+
+### Verify Your Download
+
+After downloading, verify integrity and validate against the schema:
+
+```bash
+# Decompress, check line count against metadata, validate 3 random documents
+STATE="vic"; VERSION="2026.02"
+FILE="flat-white-${VERSION}-${STATE}.ndjson.gz"
+gzip -t "$FILE" && echo "gzip OK"
+LINES=$(zcat "$FILE" | wc -l | tr -d ' ') && echo "$LINES documents"
+zcat "$FILE" | shuf -n 3 | jq . > /dev/null && echo "schema OK"
 ```
 
 ---
