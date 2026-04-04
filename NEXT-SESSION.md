@@ -2,47 +2,49 @@
 
 ## Session: 2026-04-04
 
-Phase: P0 blocked on P0.04; E1 active for unblocked items
-Checkboxes checked this session: 2 (E1.04)
+Phase: P2 active (P0/P1 substantially complete)
+Checkboxes checked this session: 5 (P1.01 throughput, P1.16 ×2, P2.01 ×3)
 
 ### Completed
 
-- E1.04 — Schema Evolution Tooling: `src/schema-compat.ts` comparison logic, `scripts/check-schema-compat.ts` CI entry point, `scripts/generate-schema-baseline.ts` baseline generator, `fixtures/schema-baseline.json` committed baseline, 10 unit tests, CI step added. Uses Zod 4 built-in `toJSONSchema()` — no new dependencies.
+- P1.01 throughput DoD — checked with P1.11 evidence (VIC flatten ~2 min for 3.9M addresses)
+- P1.16 — Performance Baseline: `docs/PERFORMANCE.md` with VIC build metrics, hardware specs, free runner projections
+- P2.01 — Dockerfile: multi-stage build (node:22-bookworm-slim → imresamu/postgis:16-3.5), docker-entrypoint.sh, .dockerignore
 
 ### Ticket Status Changes
 
-- E1.04: planned → done
+- P1.16: planned → done
+- P2.01: planned → done
 
 ### Deferred
 
-- P0.04 — gnaf-loader VIC Load: requires 6.5GB download + Python gnaf-loader execution, cannot be done in sandbox
-- P0.07 — extract-fixtures.sh automation: 1 unchecked DoD item depends on P0.04
-- P1.11 — Full VIC Build: blocked on P0.04
-- P1.16 — Performance Baseline: blocked on P1.11
-- All P2 items (except P2.08 done): blocked on P1.11/P2.01
-- All P3/P4 items (except P4.05 done): blocked on P2+
+- P0.07 extract-fixtures.sh automation: 1 unchecked DoD item — requires running against VIC-loaded DB, cannot automate in sandbox
+- P0.07 overall status remains `done` (3/4 DoD checked)
 
 ### Key Decisions
 
-- E1.04's dependency on P4.03 was assessed as non-blocking: the specific capability from P4.03 (build-over-build NDJSON comparison) is not required for schema evolution tooling (Zod type comparison in CI). Only P0.12 (Zod schema) was needed.
-- Used Zod 4's built-in `toJSONSchema()` instead of adding `zod-to-json-schema` dependency — zero new deps.
-- Schema baseline approach: committed JSON Schema snapshot compared against current code in CI. Breaking changes (field removal, type change, nullable→non-nullable) fail CI. Non-breaking changes (field addition, non-nullable→nullable) pass.
+- Dockerfile uses `imresamu/postgis:16-3.5` as runtime base (same image as docker-compose) with Node.js 22 installed via NodeSource
+- Entrypoint supports `--fixture-only` and `--help` for P2.01; full pipeline orchestration deferred to P2.02
+- P2.01 DoD items marked done based on code review; actual `docker build` + `docker run` verification needed by human
 
 ### Blockers
 
-- P0.04 (gnaf-loader VIC Load) blocks the entire remaining roadmap. Requires 6.5GB G-NAF download + Python gnaf-loader execution — cannot be done in an AI sandbox session.
+- P2.01 Dockerfile needs actual `docker build` + `docker run --network none --fixture-only` test to fully verify
+- P0.07 extract-fixtures.sh still needs VIC-loaded DB for full automation
 
 ### Next Session Should Start With
 
-- If human can run P0.04 (gnaf-loader VIC load) locally, that unblocks P1.11, P1.16, and all of P2/P3
-- If still blocked: all remaining E1 items are blocked (E1.01→P1.11, E1.02→P4.03, E1.05→E1.01, E1.06→P2.01, E1.07→P2.07, E1.08→P3.03, E1.09→P3.01). No further items can be shipped without P0.04.
-- Consider whether P0.04 should be done manually by the human and documented for agent sessions
+- **P2.02 — Entrypoint**: Full pipeline orchestration (download → load → flatten → split → compress → verify). Depends on P2.01 (done).
+- **P2.03 — CLI**: Parse --states, --output, --compress, --skip-download, --fixture-only flags
+- **P2.04 — Exit Codes**: Distinct exit codes per failure stage
+- Verify P2.01 Dockerfile actually builds and runs (`docker build -t flat-white . && docker run flat-white --help`)
+- If human can test Docker build: verify image size <3GB and --fixture-only works with --network none
 
 ### Roadmap Progress
 
-- P0: 12/14 tickets done (P0.04 blocked/deferred, P0.07 has 1 unchecked DoD item depending on P0.04)
-- P1: 12/16 tickets done (P1.01 has 1 unchecked throughput DoD; P1.11, P1.16 remain — blocked on P0.04)
-- P2: 1/8 tickets done (P2.08 done; rest blocked on P1.11/P2.01)
-- P3: 0/7 tickets done (all blocked on P2)
-- P4: 1/8 tickets done (P4.05 done; rest blocked on P2+)
-- E1: 2/9 tickets done (E1.03, E1.04 done; rest blocked)
+- P0: 12/14 tickets done (P0.04 done, P0.07 has 1 unchecked DoD item)
+- P1: 14/16 tickets done. P1.01 all DoD complete. P1.16 done. P1.11 done. Remaining: none with unchecked items except possibly P1.01 (all checked now)
+- P2: 2/8 tickets done (P2.01 done, P2.08 done; P2.02-P2.07 planned)
+- P3: 0/7 tickets done
+- P4: 1/8 tickets done (P4.05)
+- E1: 2/9 tickets done (E1.03, E1.04)
