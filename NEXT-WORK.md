@@ -1,6 +1,6 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-04. Active phase: P2 (Container).
+> Updated: 2026-04-04. Active phase: P2 complete → P3 next.
 
 ## Completed This Session (2026-04-04)
 
@@ -9,6 +9,12 @@
 - [x] Full pipeline orchestration: postgres → download → load → flatten → verify → split → compress
 - [x] Each stage logged with start/end timestamps
 - [x] Postgres started before data work, stopped via EXIT trap
+
+### P2.03 — CLI Arguments (done)
+
+- [x] All 8 flags: --states, --output, --split-states, --compress, --skip-download, --gnaf-path, --admin-path, --fixture-only
+- [x] --help with full flag docs, exit codes, pipeline stages
+- [x] Invalid flag combination errors (4 combos validated)
 
 ### P2.04 — Exit Codes (done)
 
@@ -20,24 +26,20 @@
 - [x] `/output` default, `VOLUME ["/output"]` in Dockerfile
 - [x] File permissions: world-readable by default
 
-## Remaining Tickets
+### P2.06 — Progress Logging (done)
 
-### P2.03 — CLI Arguments (planned, unblocked — depends on P2.02 done)
+- [x] Structured JSON progress logs (ProgressLogger class + bash log_json)
+- [x] Human-readable + machine-parseable (message field + jq-compatible)
+- [x] 30s debounced progress updates during flatten stage
 
-- `--states`, `--output`, `--split-states`, `--compress`, `--skip-download`, `--gnaf-path`, `--admin-path`, `--fixture-only`
-- `--help` with full flag docs
-- Invalid flag combination errors
+### P2.07 — Image Publish (done)
 
-### P2.06 — Progress Logging (planned, unblocked — depends on P2.02 done)
+- [x] GitHub Actions workflow for Docker Hub publish on v\* tags
+- [x] Version + latest tagging
 
-- Structured JSON progress logs
-- Human-readable + machine-parseable
-- Updates every 30s during long stages
+## P2 Phase Status: COMPLETE
 
-### P2.07 — Image Publish (planned, unblocked — depends on P2.01 done)
-
-- GitHub Actions workflow for Docker Hub publish on tags
-- Version + latest tagging
+All 8 P2 tickets done (P2.01–P2.08). Next phase: P3.
 
 ## Reference Files
 
