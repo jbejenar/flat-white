@@ -317,6 +317,9 @@ jobs:
             fi
           fi
 
+          # Get gnaf-loader version from submodule
+          GNAF_LOADER_VERSION=$(git -C gnaf-loader describe --tags --always 2>/dev/null || git -C gnaf-loader rev-parse --short HEAD)
+
           # Build release notes
           NOTES_FILE=$(mktemp)
           cat > "$NOTES_FILE" <<NOTESEOF
@@ -327,6 +330,7 @@ jobs:
           - **Total addresses:** $(printf "%'d" "$TOTAL")$(if [[ "$HAS_DELTA" == "true" ]]; then echo " (${DELTA_TOTAL_FMT} from ${PRIOR_TAG})"; fi)
           - **Schema version:** ${SCHEMA_VERSION}
           - **G-NAF data version:** ${VERSION}
+          - **gnaf-loader version:** ${GNAF_LOADER_VERSION}
 
           ## Per-State Document Counts
 
