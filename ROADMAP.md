@@ -3847,7 +3847,7 @@ Some use cases only need locality-level data — a suburb search autocomplete, a
 ```yaml
 id: E1.04
 title: Schema Evolution Tooling
-status: planned
+status: done
 priority: p2-medium
 epic: E1.C
 persona: [builder/contributor]
@@ -3861,7 +3861,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -3876,12 +3876,12 @@ The NDJSON schema is the contract. Breaking changes (removing a field, changing 
 
 ### Functional
 
-- [ ] CI check compares PR's Zod schema against main branch schema and flags breaking changes
+- [x] CI check compares PR's Zod schema against main branch schema and flags breaking changes
   - `Verify:` PR that removes a field triggers CI failure with "breaking change detected" message
-  - `Evidence:`
-- [ ] Non-breaking additions (new optional fields) are allowed without version bump
+  - `Evidence:` `src/schema-compat.ts` implements structural JSON Schema comparison. `scripts/check-schema-compat.ts` runs in CI (`.github/workflows/ci.yml`). Compares current Zod schemas against committed `fixtures/schema-baseline.json`. Unit tests verify: field removal → breaking, type change → breaking, nullable→non-nullable → breaking. 10 unit tests pass.
+- [x] Non-breaking additions (new optional fields) are allowed without version bump
   - `Verify:` PR that adds a new optional field passes CI
-  - `Evidence:`
+  - `Evidence:` Unit tests verify: field addition → non-breaking (exit 0), non-nullable→nullable → non-breaking. `compareSchemas()` classifies additions and nullable widening as non-breaking. CI script exits 0 for non-breaking-only changes.
 
 ## Scope
 
