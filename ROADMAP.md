@@ -2913,7 +2913,7 @@ Without CI on every PR, broken changes can be merged and only discovered during 
 ```yaml
 id: P3.01
 title: Matrix Build Workflow
-status: in-progress
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [ops/maintainer]
@@ -2981,7 +2981,7 @@ Building all 9 Australian states sequentially would take ~4 hours. The GitHub Ac
 ```yaml
 id: P3.02
 title: All-States Concatenation
-status: in-progress
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [data consumer]
