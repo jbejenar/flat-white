@@ -178,8 +178,10 @@ export async function load(opts: LoadOptions = {}): Promise<void> {
   const args = buildArgs(opts);
   const statesLabel = opts.states?.join(", ") ?? "ALL";
 
+  // Redact password from logged command
+  const safeArgs = args.map((a, i) => (args[i - 1] === "--pgpassword" ? "***" : a));
   console.log(`[load] Starting gnaf-loader for states: ${statesLabel}`);
-  console.log(`[load] Python: python3 ${args.join(" ")}`);
+  console.log(`[load] Python: python3 ${safeArgs.join(" ")}`);
 
   const startTime = Date.now();
 
