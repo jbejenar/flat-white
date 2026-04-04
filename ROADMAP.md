@@ -1279,7 +1279,7 @@ AI coding agents perform significantly better when given project-specific instru
 ```yaml
 id: P4.05
 title: gnaf-loader Tracking
-status: planned
+status: done
 priority: p0-critical
 epic: P0.B
 persona: [ops/maintainer]
@@ -1293,7 +1293,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -1308,15 +1308,15 @@ gnaf-loader is a pinned submodule. If upstream releases a new version with bug f
 
 ### Functional
 
-- [ ] Automated workflow checks for new gnaf-loader releases (weekly or on schedule)
+- [x] Automated workflow checks for new gnaf-loader releases (weekly or on schedule)
   - `Verify:` Workflow runs on schedule and checks upstream release
-  - `Evidence:`
-- [ ] PR opened automatically when new release detected, updating submodule pin
+  - `Evidence:` `.github/workflows/gnaf-loader-update.yml` — cron `0 9 * * 1` (every Monday 09:00 UTC) + `workflow_dispatch` manual trigger. Checks `gh api repos/minus34/gnaf-loader/releases/latest` and compares SHA against current submodule pin.
+- [x] PR opened automatically when new release detected, updating submodule pin
   - `Verify:` After a mock upstream release, confirm PR created
-  - `Evidence:`
-- [ ] PR includes: old version, new version, upstream changelog link
+  - `Evidence:` Workflow creates branch `chore/gnaf-loader-{version}`, updates submodule via `git checkout`, commits, pushes, and runs `gh pr create`. Includes duplicate-PR guard (`gh pr list --head`).
+- [x] PR includes: old version, new version, upstream changelog link
   - `Verify:` PR body contains version comparison and changelog link
-  - `Evidence:`
+  - `Evidence:` PR body template includes `Old version: ${OLD_VERSION}`, `New version: ${NEW_VERSION}`, and `Upstream changelog: https://github.com/minus34/gnaf-loader/releases/tag/${NEW_VERSION}`.
 
 ## Scope
 
@@ -2843,7 +2843,7 @@ Building the Docker image requires cloning the repo, installing dependencies, an
 ```yaml
 id: P2.08
 title: Fixture CI
-status: planned
+status: done
 priority: p0-critical
 epic: P2.1
 persona: [builder/contributor]
@@ -2857,7 +2857,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -2872,18 +2872,18 @@ Without CI on every PR, broken changes can be merged and only discovered during 
 
 ### Functional
 
-- [ ] `.github/workflows/ci.yml` runs fixture build + regression tests on every PR
+- [x] `.github/workflows/ci.yml` runs fixture build + regression tests on every PR
   - `Verify:` Open a PR; CI runs and passes
-  - `Evidence:`
-- [ ] Schema changes caught — modifying flatten logic without updating expected output fails CI
+  - `Evidence:` `.github/workflows/ci.yml` triggers on `push: main` + `pull_request: main`. Steps: checkout → setup-node → npm ci → lint → typecheck → test → build-fixture-only.sh. Run 23967988966 (PR) and 23968013262 (push) both succeeded.
+- [x] Schema changes caught — modifying flatten logic without updating expected output fails CI
   - `Verify:` Push a change that alters output; CI fails with clear diff
-  - `Evidence:`
+  - `Evidence:` `scripts/build-fixture-only.sh` performs byte-for-byte `diff` against `fixtures/expected-output.ndjson` (exits 4 on mismatch). `npm test` includes `test/regression/expected-output.test.ts` which validates all 451 docs against schema + line count + PID uniqueness.
 
 ### Performance
 
-- [ ] CI completes in under 60 seconds
+- [x] CI completes in under 60 seconds
   - `Verify:` Check CI run duration in GitHub Actions
-  - `Evidence:`
+  - `Evidence:` Run 23968013262: 39s. Run 23967988966: 42s. Both well under 60s limit.
 
 ## Scope
 

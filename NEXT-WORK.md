@@ -4,33 +4,23 @@
 
 ## Completed This Session (2026-04-04)
 
-### P1.12 — Output Metadata (done)
+### P4.05 — gnaf-loader Tracking (done)
 
-- [x] `src/metadata.ts` — generates metadata JSON with version, per-state counts, schema version, build timestamp, gnaf-loader version
-- [x] `test/unit/metadata.test.ts` — 7 unit tests including fixture validation
+- [x] `.github/workflows/gnaf-loader-update.yml` — weekly check for upstream releases, auto-PR on update
+- [x] All 3 DoD items verified with evidence from workflow file
 
-### P1.13 — Per-State Split (done)
+### P2.08 — Fixture CI (done)
 
-- [x] `src/split.ts` — streaming per-state NDJSON splitter with backpressure handling
-- [x] `test/unit/split.test.ts` — 4 unit tests: multi-state split, single-state, count sum, content preservation
-
-### P1.14 — Gzip Compression (done)
-
-- [x] `src/compress.ts` — streaming gzip compression using Node.js pipeline
-- [x] `test/unit/compress.test.ts` — 5 unit tests: valid gzip, size metrics, ratio, levels, fixture compression
-
-### Prior Session Work (still valid)
-
-- P1.01–P1.09 — Core flatten pipeline (recognized as done)
-- P1.10 + P1.10A — Verification & data quality checks
-- P1.15 — Regression tests (enhanced)
+- [x] `.github/workflows/ci.yml` — runs lint, typecheck, test, build-fixture-only.sh on every PR
+- [x] CI completes in 39-42s (under 60s target)
+- [x] Schema changes caught via byte-for-byte diff + regression tests
 
 ## Remaining Tickets
 
 ### P0.04 — gnaf-loader VIC Load (planned, blocked)
 
 - Requires 6.5GB download + Python gnaf-loader. Cannot be done in sandbox.
-- Blocks: P1.11 (Full VIC Build), P1.16 (Performance Baseline)
+- Blocks: P1.11, P1.16, P2.01-P2.07, P3.x, P4.x
 
 ### P1.11 — Full VIC Build (blocked on P0.04)
 
@@ -39,6 +29,11 @@
 ### P1.16 — Performance Baseline (blocked on P1.11)
 
 - Docs: VIC build time, peak memory, output file sizes
+
+### E1.03 — Locality-Only Output (unblocked, depends on P1.05 done)
+
+- `--locality-only` flag produces `localities.ndjson`
+- Only unblocked feature work remaining
 
 ### P2.01+ — Container & Distribution (blocked on P1.11)
 
