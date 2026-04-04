@@ -109,6 +109,21 @@ export const AddressDocumentSchema = z.object({
   secondaries: z.array(SecondarySchema),
 });
 
+// --- Locality-only document schema ---
+
+export const LocalityDocumentSchema = z.object({
+  _id: z.string(),
+  _version: z.string(),
+  localityName: z.string(),
+  state: z.string(),
+  postcode: z.string().nullable(),
+  class: z.string(),
+  neighbours: z.array(z.string()),
+  aliases: z.array(z.string()),
+  latitude: z.number(),
+  longitude: z.number(),
+});
+
 // --- Inferred TypeScript types ---
 
 export type Geocode = z.infer<typeof GeocodeSchema>;
@@ -119,3 +134,4 @@ export type Boundaries = z.infer<typeof BoundariesSchema>;
 export type Alias = z.infer<typeof AliasSchema>;
 export type Secondary = z.infer<typeof SecondarySchema>;
 export type AddressDocument = z.infer<typeof AddressDocumentSchema>;
+export type LocalityDocument = z.infer<typeof LocalityDocumentSchema>;

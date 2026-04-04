@@ -273,8 +273,32 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
 async function main() {
   const connectionString =
     process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/gnaf";
-  const outputPath = process.argv[2] ?? "output/fixture.ndjson";
   const version = process.env.GNAF_VERSION ?? "2026.02";
+  const localityOnly = process.argv.includes("--locality-only");
+
+  if (localityOnly) {
+    const outputPath =
+      process.argv.find(
+        (a) => !a.startsWith("-") && a !== process.argv[0] && a !== process.argv[1],
+      ) ?? "output/localities.ndjson";
+    const { flattenLocalities } = await import("./flatten-localities.js");
+
+    console.log(`[flatten] Mode: locality-only`);
+    console.log(`[flatten] Connecting to ${connectionString}`);
+    console.log(`[flatten] Output: ${outputPath}`);
+    console.log(`[flatten] Version: ${version}`);
+
+    const { count, errors } = await flattenLocalities({ connectionString, outputPath, version });
+
+    console.log(`[flatten] Done: ${count} locality documents written, ${errors} errors`);
+
+    if (errors > 0) {
+      process.exit(3);
+    }
+    return;
+  }
+
+  const outputPath = process.argv[2] ?? "output/fixture.ndjson";
 
   console.log(`[flatten] Connecting to ${connectionString}`);
   console.log(`[flatten] Output: ${outputPath}`);
