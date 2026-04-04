@@ -317,8 +317,12 @@ jobs:
             fi
           fi
 
-          # Get gnaf-loader version from submodule
-          GNAF_LOADER_VERSION=$(git -C gnaf-loader describe --tags --always 2>/dev/null || git -C gnaf-loader rev-parse --short HEAD)
+          # Get gnaf-loader version from submodule commit pinned in parent repo
+          # (works without submodule init — reads the tree object directly)
+          GNAF_LOADER_VERSION=$(git ls-tree HEAD gnaf-loader | awk '{print $3}' | cut -c1-7)
+          if [[ -z "$GNAF_LOADER_VERSION" ]]; then
+            GNAF_LOADER_VERSION="unknown"
+          fi
 
           # Build release notes
           NOTES_FILE=$(mktemp)
@@ -400,27 +404,38 @@ jobs:
           TOTAL="${{ steps.collect.outputs.total }}"
           BUILD_DATE=$(date -u +%Y-%m-%d)
 
-          # Build per-state counts line
+          # Build per-state counts as a newline-separated string
           STATE_COUNTS=""
           for state in ACT NSW NT OT QLD SA TAS VIC WA; do
             COUNT_FILE="artifacts/flat-white-${state}/${state}.count"
             COUNT=$(cat "$COUNT_FILE")
             COUNT_FMT=$(printf "%'d" "$COUNT")
-            STATE_COUNTS+="  - ${state}: ${COUNT_FMT}\n"
+            STATE_COUNTS+="  - ${state}: ${COUNT_FMT}"$'\n'
           done
 
-          # Build the new changelog entry
-          ENTRY="## [v${VERSION}] - ${BUILD_DATE}\n\n"
-          ENTRY+="### Release\n\n"
-          ENTRY+="- **G-NAF data version:** ${VERSION}\n"
-          ENTRY+="- **Schema version:** ${SCHEMA_VERSION}\n"
-          ENTRY+="- **Total addresses:** $(printf "%'d" "$TOTAL")\n"
-          ENTRY+="- **Per-state counts:**\n"
-          ENTRY+="${STATE_COUNTS}\n"
+          # Use Python to build the entry with real newlines and insert into CHANGELOG
+          python3 -c "
+          import sys
+          version, build_date, schema_version, total, state_counts = sys.argv[1:6]
 
-          # Insert after the [Unreleased] section header
-          # Find the line number of "## [Unreleased]" and insert before it
-          sed -i "/^## \[Unreleased\]/a\\\\n${ENTRY}" CHANGELOG.md
+          entry = f'''## [v{version}] - {build_date}
+
+          ### Release
+
+          - **G-NAF data version:** {version}
+          - **Schema version:** {schema_version}
+          - **Total addresses:** {total}
+          - **Per-state counts:**
+          {state_counts}'''
+
+          # Remove leading whitespace from triple-quoted string
+          import textwrap
+          entry = textwrap.dedent(entry)
+
+          content = open('CHANGELOG.md').read()
+          content = content.replace('## [Unreleased]', '## [Unreleased]\n\n' + entry, 1)
+          open('CHANGELOG.md', 'w').write(content)
+          " "$VERSION" "$BUILD_DATE" "$SCHEMA_VERSION" "$(printf "%'d" "$TOTAL")" "$STATE_COUNTS"
 
           # Commit the changelog update
           git config user.name "github-actions[bot]"
@@ -429,14 +444,19 @@ jobs:
           git commit -m "docs: update CHANGELOG.md for v${VERSION} release"
           git push
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (draft)
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
           TAG="v${VERSION}"
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
           NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
 
+          # Idempotency guard: delete any existing release for this tag (re-run safety)
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+
+          # Create as draft — only publish after verification passes
           gh release create "$TAG" \
+            --draft \
             --title "flat-white ${TAG}" \
             --notes-file "$NOTES_FILE" \
             "$ASSET_DIR"/*
@@ -467,6 +487,11 @@ jobs:
           mkdir -p /tmp/download-test
           gh release download "$TAG" --pattern "*-act.ndjson.gz" --dir /tmp/download-test
           ls -lh /tmp/download-test/
+
+          echo ""
+          echo "--- Publishing release (draft → public) ---"
+          gh release edit "$TAG" --draft=false
+          echo "✓ Release published"
           echo "✓ Programmatic download works"
         env:
           GH_TOKEN: ${{ github.token }}
