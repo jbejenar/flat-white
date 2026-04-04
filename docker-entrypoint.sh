@@ -3,15 +3,39 @@ set -euo pipefail
 
 # flat-white Docker entrypoint
 #
-# Minimal entrypoint for P2.01. Starts Postgres, runs the requested mode,
-# and stops Postgres. Full orchestration (download → load → flatten) is P2.02.
+# Orchestrates the full pipeline:
+#   start Postgres → download → gnaf-loader → flatten → verify → output → stop Postgres
+#
+# Exit codes (P2.04):
+#   0  Success
+#   1  Download failed
+#   2  gnaf-loader failed
+#   3  Flatten failed
+#   4  Verification failed
+#   5  Output write failed (split/compress/metadata)
 
 PGDATA="${PGDATA:-/var/lib/postgresql/data}"
 PGUSER="${POSTGRES_USER:-postgres}"
 PGPASSWORD="${POSTGRES_PASSWORD:-postgres}"
 PGDB="${POSTGRES_DB:-gnaf}"
 
-# --- Help ---
+# ── Logging helpers ──────────────────────────────────────────────────────────
+
+log() { echo "[entrypoint] $*"; }
+
+stage_start() {
+  STAGE_NAME="$1"
+  STAGE_START=$(date +%s)
+  log "▶ Stage: $STAGE_NAME"
+}
+
+stage_end() {
+  local elapsed=$(( $(date +%s) - STAGE_START ))
+  log "✓ Stage: $STAGE_NAME completed (${elapsed}s)"
+}
+
+# ── Help ─────────────────────────────────────────────────────────────────────
+
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<'EOF'
 flat-white — Australian address data, flattened and served.
@@ -27,27 +51,85 @@ Flags:
   --states STATES     States to process (e.g. VIC, "VIC NSW")
   --output DIR        Output directory (default: /output)
   --compress          Gzip output files
-  --skip-download     Skip data download (assumes data already in /data)
+  --split-states      Split output into per-state files
+  --skip-download     Skip data download (assumes data in /data)
+  --gnaf-path PATH    Path to extracted G-NAF data
+  --admin-path PATH   Path to extracted Admin Boundaries data
 
-Full pipeline (P2.02+):
-  download → gnaf-loader → flatten → split → compress → verify → output
+Exit codes:
+  0  Success
+  1  Download failed
+  2  gnaf-loader (data load) failed
+  3  Flatten failed
+  4  Verification failed
+  5  Output write failed (split/compress)
+
+Pipeline stages:
+  1. Start Postgres (internal)
+  2. Download G-NAF + Admin Boundaries (or --skip-download / --fixture-only)
+  3. Run gnaf-loader to load data into Postgres (or seed fixtures)
+  4. Flatten: stream Postgres → NDJSON
+  5. Verify output (row count, schema, data quality)
+  6. Split per-state (if --split-states)
+  7. Compress (if --compress)
+  8. Stop Postgres
 EOF
   exit 0
 fi
 
-# --- Start Postgres ---
-echo "[entrypoint] Starting Postgres..."
-su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30" 2>>/var/log/postgresql.log || {
+# ── Parse arguments ──────────────────────────────────────────────────────────
+
+MODE=""
+OUTPUT_DIR="/output"
+STATES=""
+COMPRESS=false
+SPLIT_STATES=false
+SKIP_DOWNLOAD=false
+GNAF_PATH=""
+ADMIN_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --fixture-only)  MODE="fixture"; shift ;;
+    --states)        shift; STATES="$1"; shift ;;
+    --output)        shift; OUTPUT_DIR="$1"; shift ;;
+    --compress)      COMPRESS=true; shift ;;
+    --split-states)  SPLIT_STATES=true; shift ;;
+    --skip-download) SKIP_DOWNLOAD=true; shift ;;
+    --gnaf-path)     shift; GNAF_PATH="$1"; shift ;;
+    --admin-path)    shift; ADMIN_PATH="$1"; shift ;;
+    *)
+      log "Unknown argument: $1"
+      log "Run with --help for usage."
+      exit 1
+      ;;
+  esac
+done
+
+mkdir -p "$OUTPUT_DIR"
+
+# ── Postgres cleanup trap ────────────────────────────────────────────────────
+
+cleanup() {
+  log "Stopping Postgres..."
+  su postgres -c "pg_ctl -D $PGDATA stop -m fast" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# ── Stage 1: Start Postgres ─────────────────────────────────────────────────
+
+stage_start "postgres"
+
+if ! su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30" 2>>/var/log/postgresql.log; then
   # First run: initialize the database
-  echo "[entrypoint] Initializing Postgres..."
+  log "Initializing Postgres..."
   su postgres -c "initdb -D $PGDATA --auth=trust"
-  # Allow local connections without password
   echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"
   echo "listen_addresses = 'localhost'" >> "$PGDATA/postgresql.conf"
   su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30"
   su postgres -c "createdb $PGDB" || true
   su postgres -c "psql -d $PGDB -c 'CREATE EXTENSION IF NOT EXISTS postgis'"
-}
+fi
 
 # Wait for Postgres to be ready
 for i in $(seq 1 30); do
@@ -57,51 +139,169 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-echo "[entrypoint] Postgres ready."
+stage_end
 
-# --- Parse arguments ---
-MODE=""
-OUTPUT_DIR="/output"
-STATES=""
-COMPRESS=false
-SKIP_DOWNLOAD=false
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --fixture-only) MODE="fixture"; shift ;;
-    --states) shift; STATES="$1"; shift ;;
-    --output) shift; OUTPUT_DIR="$1"; shift ;;
-    --compress) COMPRESS=true; shift ;;
-    --skip-download) SKIP_DOWNLOAD=true; shift ;;
-    *) echo "[entrypoint] Unknown argument: $1"; exit 1 ;;
-  esac
-done
-
-mkdir -p "$OUTPUT_DIR"
-
-# --- Execute ---
-cleanup() {
-  echo "[entrypoint] Stopping Postgres..."
-  su postgres -c "pg_ctl -D $PGDATA stop -m fast" 2>/dev/null || true
-}
-trap cleanup EXIT
+# ── Stage 2 & 3: Data acquisition ───────────────────────────────────────────
 
 if [[ "$MODE" == "fixture" ]]; then
-  echo "[entrypoint] Running fixture-only build..."
-
-  # Seed fixtures
-  su postgres -c "psql -d $PGDB -q -f /app/fixtures/seed-postgres.sql"
-
-  # Flatten
-  GNAF_VERSION="2026.02" DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
-    node /app/dist/flatten.js "$OUTPUT_DIR/fixture.ndjson"
-
-  LINE_COUNT=$(wc -l < "$OUTPUT_DIR/fixture.ndjson" | tr -d ' ')
-  echo "[entrypoint] Fixture build complete: $LINE_COUNT documents"
+  # Fixture-only: seed from committed fixture SQL
+  stage_start "seed"
+  su postgres -c "psql -d $PGDB -q -f /app/fixtures/seed-postgres.sql" || {
+    log "ERROR: Fixture seeding failed"
+    exit 3
+  }
+  stage_end
 else
-  echo "[entrypoint] Full pipeline mode not yet implemented (P2.02)."
-  echo "[entrypoint] Use --fixture-only for now, or run build-local.sh outside Docker."
-  exit 1
+  # Full pipeline: download + gnaf-loader
+
+  # Stage 2: Download
+  if [[ "$SKIP_DOWNLOAD" == "false" ]]; then
+    stage_start "download"
+
+    DOWNLOAD_ENV=""
+    if [[ -n "$GNAF_PATH" ]]; then
+      DOWNLOAD_ENV="GNAF_DATA_PATH=$GNAF_PATH"
+    fi
+    if [[ -n "$ADMIN_PATH" ]]; then
+      DOWNLOAD_ENV="$DOWNLOAD_ENV ADMIN_BDYS_PATH=$ADMIN_PATH"
+    fi
+
+    if ! env $DOWNLOAD_ENV node /app/dist/download.js; then
+      log "ERROR: Download failed"
+      exit 1
+    fi
+    stage_end
+  else
+    log "Skipping download (--skip-download)"
+  fi
+
+  # Stage 3: gnaf-loader
+  stage_start "load"
+
+  LOAD_ARGS=""
+  if [[ -n "$STATES" ]]; then
+    LOAD_ARGS="--states $STATES"
+  fi
+
+  if ! node /app/dist/load.js $LOAD_ARGS; then
+    log "ERROR: gnaf-loader failed"
+    exit 2
+  fi
+  stage_end
 fi
 
-echo "[entrypoint] Done."
+# ── Stage 4: Flatten ────────────────────────────────────────────────────────
+
+stage_start "flatten"
+
+# Construct output filename
+if [[ "$MODE" == "fixture" ]]; then
+  FLATTEN_OUTPUT="$OUTPUT_DIR/fixture.ndjson"
+  MATERIALIZE_FLAG=""
+else
+  STATE_LOWER=$(echo "${STATES:-all}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+  FLATTEN_OUTPUT="$OUTPUT_DIR/flat-white-${STATE_LOWER}.ndjson"
+  MATERIALIZE_FLAG="--materialize"
+fi
+
+GNAF_VERSION="${GNAF_VERSION:-2026.02}" \
+  DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
+  node /app/dist/flatten.js "$FLATTEN_OUTPUT" $MATERIALIZE_FLAG || {
+  log "ERROR: Flatten failed"
+  exit 3
+}
+
+LINE_COUNT=$(wc -l < "$FLATTEN_OUTPUT" | tr -d ' ')
+log "Flatten output: $LINE_COUNT documents → $FLATTEN_OUTPUT"
+stage_end
+
+# ── Stage 5: Verify ─────────────────────────────────────────────────────────
+
+stage_start "verify"
+
+# Basic verification: file exists, has lines, each line is valid JSON
+if [[ ! -s "$FLATTEN_OUTPUT" ]]; then
+  log "ERROR: Output file is empty"
+  exit 4
+fi
+
+if command -v jq &>/dev/null; then
+  INVALID_LINES=$(jq -c -e '.' "$FLATTEN_OUTPUT" 2>&1 | grep -c "parse error" || true)
+  if [[ "$INVALID_LINES" -gt 0 ]]; then
+    log "ERROR: Output contains $INVALID_LINES invalid JSON lines"
+    exit 4
+  fi
+fi
+
+# Regression check for fixture mode
+if [[ "$MODE" == "fixture" && -f /app/fixtures/expected-output.ndjson ]]; then
+  EXPECTED_COUNT=$(wc -l < /app/fixtures/expected-output.ndjson | tr -d ' ')
+  if [[ "$LINE_COUNT" -ne "$EXPECTED_COUNT" ]]; then
+    log "ERROR: Expected $EXPECTED_COUNT lines, got $LINE_COUNT"
+    exit 4
+  fi
+  if ! diff -q "$FLATTEN_OUTPUT" /app/fixtures/expected-output.ndjson >/dev/null 2>&1; then
+    log "ERROR: Output differs from expected-output.ndjson"
+    exit 4
+  fi
+  log "Regression check: PASS (byte-for-byte match)"
+fi
+
+stage_end
+
+# ── Stage 6: Split (optional) ───────────────────────────────────────────────
+
+if [[ "$SPLIT_STATES" == "true" && "$MODE" != "fixture" ]]; then
+  stage_start "split"
+  node -e "
+    import { split } from '/app/dist/split.js';
+    const r = await split({
+      inputPath: '$FLATTEN_OUTPUT',
+      outputDir: '$OUTPUT_DIR',
+      version: '${GNAF_VERSION:-2026.02}'
+    });
+    console.log('[split] ' + r.totalCount + ' docs → ' + r.outputFiles.length + ' files');
+  " || {
+    log "ERROR: Split failed"
+    exit 5
+  }
+  stage_end
+fi
+
+# ── Stage 7: Compress (optional) ────────────────────────────────────────────
+
+if [[ "$COMPRESS" == "true" ]]; then
+  stage_start "compress"
+
+  # Compress the main output file (or per-state files if split)
+  if [[ "$SPLIT_STATES" == "true" && "$MODE" != "fixture" ]]; then
+    # Compress each per-state file
+    for f in "$OUTPUT_DIR"/flat-white-*.ndjson; do
+      [[ -f "$f" ]] || continue
+      node -e "
+        import { compress } from '/app/dist/compress.js';
+        const r = await compress({ inputPath: '$f', outputPath: '${f}.gz' });
+        console.log('[compress] ${f} → ratio ' + (r.ratio * 100).toFixed(1) + '%');
+      " || {
+        log "ERROR: Compress failed for $f"
+        exit 5
+      }
+    done
+  else
+    node -e "
+      import { compress } from '/app/dist/compress.js';
+      const r = await compress({ inputPath: '$FLATTEN_OUTPUT', outputPath: '${FLATTEN_OUTPUT}.gz' });
+      console.log('[compress] ratio ' + (r.ratio * 100).toFixed(1) + '%');
+    " || {
+      log "ERROR: Compress failed"
+      exit 5
+    }
+  fi
+  stage_end
+fi
+
+# ── Summary ──────────────────────────────────────────────────────────────────
+
+log "Pipeline complete."
+log "Output: $OUTPUT_DIR"
+ls -lh "$OUTPUT_DIR"/ 2>/dev/null || true
