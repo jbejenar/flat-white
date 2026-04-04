@@ -1,0 +1,34 @@
+# Build artifacts
+dist/
+node_modules/
+
+# Data (downloaded at runtime, not baked in)
+data/
+output/
+
+# Git
+.git/
+.gitignore
+
+# Dev tools
+.claude-loop/
+.claude/
+.husky/
+.vscode/
+.devcontainer/
+
+# Docs not needed at runtime
+*.md
+!fixtures/*.md
+docs/
+
+# Tests not needed in image
+test/
+coverage/
+
+# Config not needed in image
+.prettierrc*
+.eslintrc*
+eslint.config.*
+vitest.config.*
+commitlint.config.*
