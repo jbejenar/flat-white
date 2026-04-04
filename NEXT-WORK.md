@@ -1,43 +1,43 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-04. Active phase: P1 (P0 blocked on P0.04).
+> Updated: 2026-04-04. Active phase: P2 (Container).
 
 ## Completed This Session (2026-04-04)
 
-### P4.05 — gnaf-loader Tracking (done)
+### P2.02 — Entrypoint (done)
 
-- [x] `.github/workflows/gnaf-loader-update.yml` — weekly check for upstream releases, auto-PR on update
-- [x] All 3 DoD items verified with evidence from workflow file
+- [x] Full pipeline orchestration: postgres → download → load → flatten → verify → split → compress
+- [x] Each stage logged with start/end timestamps
+- [x] Postgres started before data work, stopped via EXIT trap
 
-### P2.08 — Fixture CI (done)
+### P2.04 — Exit Codes (done)
 
-- [x] `.github/workflows/ci.yml` — runs lint, typecheck, test, build-fixture-only.sh on every PR
-- [x] CI completes in 39-42s (under 60s target)
-- [x] Schema changes caught via byte-for-byte diff + regression tests
+- [x] Exit codes 0-5 per failure type (download/load/flatten/verify/output)
+- [x] Deterministic per stage, CI-distinguishable
+
+### P2.05 — Volume Mount (done)
+
+- [x] `/output` default, `VOLUME ["/output"]` in Dockerfile
+- [x] File permissions: world-readable by default
 
 ## Remaining Tickets
 
-### P0.04 — gnaf-loader VIC Load (planned, blocked)
+### P2.03 — CLI Arguments (planned, unblocked — depends on P2.02 done)
 
-- Requires 6.5GB download + Python gnaf-loader. Cannot be done in sandbox.
-- Blocks: P1.11, P1.16, P2.01-P2.07, P3.x, P4.x
+- `--states`, `--output`, `--split-states`, `--compress`, `--skip-download`, `--gnaf-path`, `--admin-path`, `--fixture-only`
+- `--help` with full flag docs
+- Invalid flag combination errors
 
-### P1.11 — Full VIC Build (blocked on P0.04)
+### P2.06 — Progress Logging (planned, unblocked — depends on P2.02 done)
 
-- End-to-end pipeline at production scale (~3.8M addresses)
+- Structured JSON progress logs
+- Human-readable + machine-parseable
+- Updates every 30s during long stages
 
-### P1.16 — Performance Baseline (blocked on P1.11)
+### P2.07 — Image Publish (planned, unblocked — depends on P2.01 done)
 
-- Docs: VIC build time, peak memory, output file sizes
-
-### E1.03 — Locality-Only Output (unblocked, depends on P1.05 done)
-
-- `--locality-only` flag produces `localities.ndjson`
-- Only unblocked feature work remaining
-
-### P2.01+ — Container & Distribution (blocked on P1.11)
-
-- Dockerfile, entrypoint, CLI, exit codes, CI
+- GitHub Actions workflow for Docker Hub publish on tags
+- Version + latest tagging
 
 ## Reference Files
 
