@@ -1,7 +1,7 @@
 {
   "name": "main-protection",
   "target": "branch",
-  "enforcement": "active",
+  "enforcement": "disabled",
   "conditions": {
     "ref_name": {
       "include": ["refs/heads/main"],

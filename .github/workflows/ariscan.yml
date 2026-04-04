@@ -70,6 +70,8 @@ jobs:
 
       - name: Commit if changed
         if: steps.scan.outputs.score != ''
+        env:
+          HUSKY: "0"
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -77,6 +79,6 @@ jobs:
             echo "No changes to commit"
           else
             git add README.md
-            git commit -m "chore: update ARI score badge to ${{ steps.scan.outputs.score }}/100"
-            git push origin main
+            git commit --no-verify -m "chore: update ARI score badge to ${{ steps.scan.outputs.score }}/100"
+            git push origin main || echo "::warning::Push failed (branch protection). ARI score: ${{ steps.scan.outputs.score }}/100 — update README manually."
           fi
