@@ -5,7 +5,7 @@
 #   ./scripts/build-local.sh                       # Full build (load + flatten + verify)
 #   ./scripts/build-local.sh --skip-load           # Skip gnaf-loader (data already loaded)
 #   ./scripts/build-local.sh --states VIC          # VIC only (default)
-#   ./scripts/build-local.sh --states VIC NSW      # Multiple states
+#   ./scripts/build-local.sh --states "VIC NSW"    # Multiple states (quote!)
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -78,7 +78,7 @@ FLATTEN_START=$(date +%s)
 STATE_LOWER=$(echo "$STATES" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
 OUTPUT_FILE="$OUTPUT_DIR/flat-white-${STATE_LOWER}.ndjson"
 
-GNAF_VERSION="$VERSION" node dist/flatten.js "$OUTPUT_FILE"
+GNAF_VERSION="$VERSION" node dist/flatten.js "$OUTPUT_FILE" --materialize
 
 FLATTEN_END=$(date +%s)
 FLATTEN_DURATION=$((FLATTEN_END - FLATTEN_START))

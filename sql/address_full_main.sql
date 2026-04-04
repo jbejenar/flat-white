@@ -13,14 +13,20 @@ SELECT
   -- Address components
   site.address_site_name                                AS address_site_name,
   ap.building_name,
-  ap.flat_number,
-  ap.level_number,
+  CASE WHEN ad.flat_number IS NOT NULL
+    THEN CONCAT(COALESCE(ad.flat_number_prefix, ''), ad.flat_number::text, COALESCE(ad.flat_number_suffix, ''))
+    ELSE NULL
+  END                                                   AS flat_number_composed,
+  CASE WHEN ad.level_number IS NOT NULL
+    THEN CONCAT(COALESCE(ad.level_number_prefix, ''), ad.level_number::text, COALESCE(ad.level_number_suffix, ''))
+    ELSE NULL
+  END                                                   AS level_number_composed,
   ap.number_first,
   ap.number_last,
   ap.lot_number,
   ap.street_name,
   ap.street_type,
-  ap.street_suffix,
+  ap.street_suffix                                      AS street_suffix_code,
   ap.locality_name,
   ap.state,
   ap.postcode,
