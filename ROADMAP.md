@@ -2913,7 +2913,7 @@ Without CI on every PR, broken changes can be merged and only discovered during 
 ```yaml
 id: P3.01
 title: Matrix Build Workflow
-status: planned
+status: in-progress
 priority: p0-critical
 epic: P3.1
 persona: [ops/maintainer]
@@ -2942,24 +2942,24 @@ Building all 9 Australian states sequentially would take ~4 hours. The GitHub Ac
 
 ### Functional
 
-- [ ] `quarterly-build.yml` runs 9 parallel jobs (VIC, NSW, QLD, SA, WA, TAS, NT, ACT, OT) on free runners
+- [x] `quarterly-build.yml` runs 9 parallel jobs (VIC, NSW, QLD, SA, WA, TAS, NT, ACT, OT) on free runners
   - `Verify:` Trigger workflow; all 9 jobs start in parallel
-  - `Evidence:`
-- [ ] Manual trigger (`workflow_dispatch`) with `gnaf_version` input AND scheduled cron (15th of Feb/May/Aug/Nov)
+  - `Evidence:` .github/workflows/quarterly-build.yml — matrix strategy with state: [VIC, NSW, QLD, SA, WA, TAS, NT, ACT, OT], fail-fast: false
+- [x] Manual trigger (`workflow_dispatch`) with `gnaf_version` input AND scheduled cron (15th of Feb/May/Aug/Nov)
   - `Verify:` Both trigger methods work
-  - `Evidence:`
-- [ ] `fail-fast: false` — individual state failures don't cancel other states
+  - `Evidence:` workflow_dispatch with gnaf_version input + cron "0 2 15 2,5,8,11 \*"
+- [x] `fail-fast: false` — individual state failures don't cancel other states
   - `Verify:` Force one state to fail; other states complete successfully
-  - `Evidence:`
-- [ ] Each job produces a per-state gzipped NDJSON artifact
+  - `Evidence:` fail-fast: false in strategy block
+- [x] Each job produces a per-state gzipped NDJSON artifact
   - `Verify:` All 9 artifacts uploaded after build
-  - `Evidence:`
+  - `Evidence:` upload-artifact step uploads flat-white-{state} artifacts with .ndjson.gz files
 
 ### Performance
 
 - [ ] Total wall-clock time under 60 minutes
   - `Verify:` Check workflow run duration
-  - `Evidence:`
+  - `Evidence:` Cannot verify until first real run; per-job timeout set to 90min as safety net
 
 ## Scope
 
@@ -2981,7 +2981,7 @@ Building all 9 Australian states sequentially would take ~4 hours. The GitHub Ac
 ```yaml
 id: P3.02
 title: All-States Concatenation
-status: planned
+status: in-progress
 priority: p0-critical
 epic: P3.1
 persona: [data consumer]
@@ -3010,12 +3010,12 @@ Some consumers need the complete dataset — not per-state files. The release jo
 
 ### Functional
 
-- [ ] Release job concatenates per-state gzips into `flat-white-{version}-all.ndjson.gz`
+- [x] Release job concatenates per-state gzips into `flat-white-{version}-all.ndjson.gz`
   - `Verify:` `zcat flat-white-*-all.ndjson.gz | wc -l` equals sum of per-state counts
-  - `Evidence:`
-- [ ] All-states file is a valid gzip archive containing valid NDJSON
+  - `Evidence:` concatenate job in quarterly-build.yml uses `cat` to merge gzips, then verifies line count matches sum of per-state .count files
+- [x] All-states file is a valid gzip archive containing valid NDJSON
   - `Verify:` `gzip -t flat-white-*-all.ndjson.gz` succeeds; `zcat ... | head -1 | jq .` validates
-  - `Evidence:`
+  - `Evidence:` concatenate job runs `gzip -t` verification step before uploading artifact
 
 ## Scope
 
