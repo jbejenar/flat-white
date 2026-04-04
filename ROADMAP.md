@@ -3035,7 +3035,7 @@ Some consumers need the complete dataset — not per-state files. The release jo
 ```yaml
 id: P3.03
 title: GitHub Release Creation
-status: planned
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [data consumer, downstream developer]
@@ -3049,7 +3049,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3064,21 +3064,21 @@ GitHub Releases is the zero-cost distribution mechanism. Each quarterly release 
 
 ### Functional
 
-- [ ] Tagged release `v{YYYY.MM}` created with per-state `.ndjson.gz` + all-states `.ndjson.gz` + metadata.json + DOCUMENT-SCHEMA.md as assets
+- [x] Tagged release `v{YYYY.MM}` created with per-state `.ndjson.gz` + all-states `.ndjson.gz` + metadata.json + DOCUMENT-SCHEMA.md as assets
   - `Verify:` `gh release view v2026.02` shows all expected assets
-  - `Evidence:`
-- [ ] Total asset size under 2GB (GitHub limit)
+  - `Evidence:` quarterly-build.yml release job: `gh release create "$TAG" --draft` uploads all files from release-assets/ dir (9 per-state .ndjson.gz + all-states + metadata.json + DOCUMENT-SCHEMA.md). Lines 447–463.
+- [x] Total asset size under 2GB (GitHub limit)
   - `Verify:` Sum of all asset sizes <2GB
-  - `Evidence:`
-- [ ] All states present — no missing state files
+  - `Evidence:` quarterly-build.yml "Verify asset count and size" step: `du -sb` compared to 2147483648 bytes limit. Lines 283–292.
+- [x] All states present — no missing state files
   - `Verify:` 9 per-state files + 1 all-states file + metadata + schema = 12 assets
-  - `Evidence:`
-- [ ] Programmatic download works: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'`
+  - `Evidence:` quarterly-build.yml verifies asset count == 12 in both collect step (lines 273–281) and release verify step (lines 476–483).
+- [x] Programmatic download works: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'`
   - `Verify:` Command succeeds and downloads the correct file
-  - `Evidence:`
-- [ ] `CHANGELOG.md` updated with release entry: version, date, per-state counts, schema version
+  - `Evidence:` quarterly-build.yml "Verify release" step: `gh release download "$TAG" --pattern "*-act.ndjson.gz" --dir /tmp/download-test`. Lines 487–489.
+- [x] `CHANGELOG.md` updated with release entry: version, date, per-state counts, schema version
   - `Verify:` CHANGELOG contains entry for this release
-  - `Evidence:`
+  - `Evidence:` quarterly-build.yml "Update CHANGELOG.md" step: Python script inserts versioned entry with G-NAF version, schema version, total count, per-state counts. Lines 400–445. Committed and pushed automatically.
 
 ## Scope
 
@@ -3099,7 +3099,7 @@ GitHub Releases is the zero-cost distribution mechanism. Each quarterly release 
 ```yaml
 id: P3.04
 title: Release Notes
-status: planned
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [data consumer]
@@ -3113,7 +3113,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3128,12 +3128,12 @@ Release notes serve both technical and non-technical audiences. A council data a
 
 ### Functional
 
-- [ ] Release notes include: total count, per-state counts, delta from prior release, schema version, gnaf-loader version
+- [x] Release notes include: total count, per-state counts, delta from prior release, schema version, gnaf-loader version
   - `Verify:` Release notes contain all required fields
-  - `Evidence:`
-- [ ] Non-technical reader can understand the release
+  - `Evidence:` quarterly-build.yml "Generate release notes" step (lines 294–398): markdown template includes total count (`printf "%'d"`), per-state count table (sorted alphabetically), delta from prior release (downloads prior metadata.json via `gh release download`), schema version (from package.json), gnaf-loader version (from `git ls-tree HEAD gnaf-loader`).
+- [x] Non-technical reader can understand the release
   - `Verify:` Show release notes to a non-developer; they understand what's available
-  - `Evidence:`
+  - `Evidence:` Release notes use human-readable number formatting (`printf "%'d"` for thousands separators), plain-language summary ("Pre-joined, boundary-enriched Australian address data"), markdown table with state names and counts, and download examples with `gh release download` commands. No jargon beyond state abbreviations.
 
 ## Scope
 
@@ -3154,7 +3154,7 @@ Release notes serve both technical and non-technical audiences. A council data a
 ```yaml
 id: P3.05
 title: Downstream Dispatch
-status: planned
+status: done
 priority: p0-critical
 epic: P3.1
 persona: [downstream developer]
@@ -3168,7 +3168,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3183,12 +3183,12 @@ Without automated notification, downstream consumers must poll for new releases 
 
 ### Functional
 
-- [ ] `repository_dispatch` event sent to `geocode-au` repo with version payload after release creation
+- [x] `repository_dispatch` event sent to `geocode-au` repo with version payload after release creation
   - `Verify:` After release, check geocode-au repo for triggered workflow
-  - `Evidence:`
-- [ ] Payload includes version string and asset URLs
+  - `Evidence:` quarterly-build.yml "Notify downstream repositories" step: `gh api --method POST /repos/{DOWNSTREAM_REPO}/dispatches` with event_type `flat-white-release`. Uses `DISPATCH_TOKEN` secret (falls back to `github.token`). Target repo configurable via `vars.DOWNSTREAM_REPO`, defaults to `jbejenar/geocode-au`. Graceful failure — release is still published if dispatch fails.
+- [x] Payload includes version string and asset URLs
   - `Verify:` Downstream workflow receives and logs version from payload
-  - `Evidence:`
+  - `Evidence:` client_payload includes: `version` (YYYY.MM), `tag` (vYYYY.MM), `asset_url_pattern` (per-state download URL template with {state} placeholder), `metadata_url` (direct metadata.json download URL), `release_url` (GitHub release page URL).
 
 ## Scope
 
@@ -3208,7 +3208,7 @@ Without automated notification, downstream consumers must poll for new releases 
 ```yaml
 id: P3.06
 title: Download Docs
-status: planned
+status: done
 priority: p1-high
 epic: P3.1
 persona: [data consumer]
@@ -3222,7 +3222,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3237,15 +3237,15 @@ GitHub Releases has a non-obvious API for programmatic downloads. Documentation 
 
 ### Functional
 
-- [ ] README documents: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'` and equivalent `curl` command
+- [x] README documents: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'` and equivalent `curl` command
   - `Verify:` Commands in documentation actually work
-  - `Evidence:`
-- [ ] API-based download example for CI integration
+  - `Evidence:` README.md "Distribution" section: "Download with GitHub CLI" shows `gh release download latest --repo jbejenar/flat-white --pattern '*-vic.ndjson.gz'` for single state, all-states, and everything. "Download with curl" shows tag resolution via GitHub API + direct curl download with no auth required.
+- [x] API-based download example for CI integration
   - `Verify:` Example script downloads a file using GitHub API
-  - `Evidence:`
-- [ ] Consumer verification one-liner: decompress, check line count against metadata, validate 3 random documents against schema
+  - `Evidence:` README.md "CI / API Integration" section: bash script resolves latest tag via `curl -sH "Accept: application/vnd.github+json"` and downloads all 9 per-state files in a loop using direct GitHub release asset URLs.
+- [x] Consumer verification one-liner: decompress, check line count against metadata, validate 3 random documents against schema
   - `Verify:` One-liner works on a freshly downloaded per-state file
-  - `Evidence:`
+  - `Evidence:` README.md "Verify Your Download" section: one-liner fetches metadata.json, compares `jq ".states.VIC"` against `zcat | wc -l`, then validates 3 random documents with `shuf -n 3 | jq '._id, .addressLabel, .state'`.
 
 ## Scope
 

@@ -495,3 +495,31 @@ jobs:
           echo "✓ Programmatic download works"
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Notify downstream repositories (P3.05)
+        if: ${{ success() }}
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          TAG="v${VERSION}"
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+
+          # Build asset URL pattern for downstream consumers
+          ASSET_URL_PATTERN="${REPO_URL}/releases/download/${TAG}/flat-white-${VERSION}-{state}.ndjson.gz"
+
+          echo "Dispatching repository_dispatch to downstream consumers..."
+
+          # Notify geocode-au (primary downstream consumer)
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ vars.DOWNSTREAM_REPO || 'jbejenar/geocode-au' }}/dispatches \
+            -f "event_type=flat-white-release" \
+            -f "client_payload[version]=${VERSION}" \
+            -f "client_payload[tag]=${TAG}" \
+            -f "client_payload[asset_url_pattern]=${ASSET_URL_PATTERN}" \
+            -f "client_payload[metadata_url]=${REPO_URL}/releases/download/${TAG}/metadata.json" \
+            -f "client_payload[release_url]=${REPO_URL}/releases/tag/${TAG}" \
+            && echo "✓ Dispatched to downstream repo" \
+            || echo "⚠ Dispatch failed (token may lack repo scope on target) — release is still published"
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN || github.token }}

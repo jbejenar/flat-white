@@ -1,45 +1,39 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-04. Active phase: P2 complete → P3 next.
+> Updated: 2026-04-05. Active phase: P3 (1 ticket remaining).
 
-## Completed This Session (2026-04-04)
+## Completed This Session (2026-04-05)
 
-### P2.02 — Entrypoint (done)
+### P3.03 — GitHub Release Creation (done — verified existing implementation)
 
-- [x] Full pipeline orchestration: postgres → download → load → flatten → verify → split → compress
-- [x] Each stage logged with start/end timestamps
-- [x] Postgres started before data work, stopped via EXIT trap
+- [x] Tagged release with all 12 assets (9 per-state + all-states + metadata + schema)
+- [x] Total asset size under 2GB verified
+- [x] All states present — 12-asset count check
+- [x] Programmatic download test
+- [x] CHANGELOG.md auto-updated
 
-### P2.03 — CLI Arguments (done)
+### P3.04 — Release Notes (done — verified existing implementation)
 
-- [x] All 8 flags: --states, --output, --split-states, --compress, --skip-download, --gnaf-path, --admin-path, --fixture-only
-- [x] --help with full flag docs, exit codes, pipeline stages
-- [x] Invalid flag combination errors (4 combos validated)
+- [x] Auto-generated: total/per-state counts, delta, schema version, gnaf-loader version
+- [x] Human-readable markdown with formatted numbers
 
-### P2.04 — Exit Codes (done)
+### P3.05 — Downstream Dispatch (done)
 
-- [x] Exit codes 0-5 per failure type (download/load/flatten/verify/output)
-- [x] Deterministic per stage, CI-distinguishable
+- [x] `repository_dispatch` to geocode-au with version payload
+- [x] Payload: version, tag, asset URL pattern, metadata URL, release URL
 
-### P2.05 — Volume Mount (done)
+### P3.06 — Download Docs (done)
 
-- [x] `/output` default, `VOLUME ["/output"]` in Dockerfile
-- [x] File permissions: world-readable by default
+- [x] README: gh CLI, curl, CI/API download examples
+- [x] Consumer verification one-liner
 
-### P2.06 — Progress Logging (done)
+## Remaining P3 Work
 
-- [x] Structured JSON progress logs (ProgressLogger class + bash log_json)
-- [x] Human-readable + machine-parseable (message field + jq-compatible)
-- [x] 30s debounced progress updates during flatten stage
+### P3.07 — Adoption & Discovery (planned)
 
-### P2.07 — Image Publish (done)
-
-- [x] GitHub Actions workflow for Docker Hub publish on v\* tags
-- [x] Version + latest tagging
-
-## P2 Phase Status: COMPLETE
-
-All 8 P2 tickets done (P2.01–P2.08). Next phase: P3.
+- [ ] Quick Start section in README (partially exists — may need DuckDB example expansion)
+- [ ] data.gov.au derivative dataset listing
+- [ ] Community announcement plan
 
 ## Reference Files
 

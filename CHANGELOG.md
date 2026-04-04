@@ -17,6 +17,16 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- P3.05 Downstream Dispatch: `repository_dispatch` step in quarterly-build.yml notifies geocode-au after release publication with version, tag, and asset URL payload
+- P3.06 Download Docs: expanded README Distribution section with `gh`, `curl`, CI/API download examples, and consumer verification one-liner
+
+### Changed
+
+- P3.03 GitHub Release Creation: verified existing implementation in quarterly-build.yml — all 5 DoD items met (tagged release, size check, state verification, programmatic download, CHANGELOG update)
+- P3.04 Release Notes: verified existing implementation — auto-generated markdown with total/per-state counts, delta from prior release, schema version, gnaf-loader version
+
+### Added (prior)
+
 - Progress logging in flatten pipeline: ProgressLogger integrated with 30s debounced progress events during cursor streaming (P2.06)
 - P2.03 CLI Arguments: all 8 flags implemented in `src/cli.ts` and `docker-entrypoint.sh` with validation and `--help` output
 - P2.07 Image Publish: GitHub Actions workflow for Docker Hub publish on v\* tags with version + latest tagging

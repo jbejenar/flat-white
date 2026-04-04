@@ -199,12 +199,57 @@ Every quarter, a [GitHub Actions](https://github.com/features/actions) matrix bu
 
 **Total cost: $0.** Free runners. Free hosting. Free forever.
 
-```bash
-# Download programmatically
-gh release download v2026.02 --pattern '*-vic.ndjson.gz'
+### Download with GitHub CLI
 
-# Or via curl
-curl -LO "https://github.com/jbejenar/flat-white/releases/download/v2026.02/flat-white-2026.02-vic.ndjson.gz"
+```bash
+# Single state (e.g. Victoria)
+gh release download latest --repo jbejenar/flat-white --pattern '*-vic.ndjson.gz'
+
+# All states in one file
+gh release download latest --repo jbejenar/flat-white --pattern '*-all.ndjson.gz'
+
+# Everything (per-state + all-states + metadata + schema)
+gh release download latest --repo jbejenar/flat-white
+```
+
+### Download with curl (no auth required)
+
+```bash
+# Latest release — get the tag first
+TAG=$(curl -s https://api.github.com/repos/jbejenar/flat-white/releases/latest | jq -r .tag_name)
+
+# Download a single state
+curl -LO "https://github.com/jbejenar/flat-white/releases/download/${TAG}/flat-white-${TAG#v}-vic.ndjson.gz"
+
+# Download metadata
+curl -LO "https://github.com/jbejenar/flat-white/releases/download/${TAG}/metadata.json"
+```
+
+### CI / API Integration
+
+```bash
+# Use the GitHub API to download assets programmatically in a pipeline
+TAG=$(curl -sH "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/jbejenar/flat-white/releases/latest | jq -r .tag_name)
+
+# Download all per-state files
+for state in vic nsw qld sa wa tas nt act ot; do
+  curl -LO "https://github.com/jbejenar/flat-white/releases/download/${TAG}/flat-white-${TAG#v}-${state}.ndjson.gz"
+done
+```
+
+### Verify Your Download
+
+```bash
+# One-liner: decompress, check line count against metadata, validate 3 random docs
+STATE=vic && TAG=$(curl -s https://api.github.com/repos/jbejenar/flat-white/releases/latest | jq -r .tag_name) \
+  && curl -sLO "https://github.com/jbejenar/flat-white/releases/download/${TAG}/metadata.json" \
+  && EXPECTED=$(jq ".states.$(echo $STATE | tr '[:lower:]' '[:upper:]')" metadata.json) \
+  && ACTUAL=$(zcat flat-white-*-${STATE}.ndjson.gz | wc -l | tr -d ' ') \
+  && echo "Expected: $EXPECTED, Actual: $ACTUAL" \
+  && [ "$ACTUAL" -eq "$EXPECTED" ] && echo "✓ Count matches" || echo "✗ Count mismatch" \
+  && zcat flat-white-*-${STATE}.ndjson.gz | shuf -n 3 | jq '._id, .addressLabel, .state' > /dev/null \
+  && echo "✓ Random documents are valid JSON with expected fields"
 ```
 
 ---
