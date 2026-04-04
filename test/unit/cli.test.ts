@@ -137,6 +137,18 @@ describe("validateArgs", () => {
     expect(() => validateArgs(parseArgs(["--skip-download"]))).toThrow("--gnaf-path");
   });
 
+  it("rejects --skip-download with only gnaf-path", () => {
+    expect(() => validateArgs(parseArgs(["--skip-download", "--gnaf-path", "/a"]))).toThrow(
+      CliError,
+    );
+  });
+
+  it("rejects --skip-download with only admin-path", () => {
+    expect(() => validateArgs(parseArgs(["--skip-download", "--admin-path", "/b"]))).toThrow(
+      CliError,
+    );
+  });
+
   it("allows --skip-download with both data paths", () => {
     expect(() =>
       validateArgs(parseArgs(["--skip-download", "--gnaf-path", "/a", "--admin-path", "/b"])),

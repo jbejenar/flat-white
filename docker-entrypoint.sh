@@ -124,7 +124,7 @@ done
 
 # ── Validate argument combinations ──────────────────────────────────────────
 
-if [[ "$SKIP_DOWNLOAD" == "true" && -z "$GNAF_PATH" && -z "$ADMIN_PATH" ]]; then
+if [[ "$SKIP_DOWNLOAD" == "true" && ( -z "$GNAF_PATH" || -z "$ADMIN_PATH" ) ]]; then
   log "ERROR: --skip-download requires --gnaf-path and --admin-path to locate pre-downloaded data."
   exit 1
 fi

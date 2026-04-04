@@ -125,7 +125,7 @@ export function validateArgs(opts: CliOptions): void {
     );
   }
 
-  if (opts.skipDownload && !opts.gnafPath && !opts.adminPath) {
+  if (opts.skipDownload && (!opts.gnafPath || !opts.adminPath)) {
     throw new CliError(
       "--skip-download requires --gnaf-path and --admin-path to locate pre-downloaded data.",
     );
