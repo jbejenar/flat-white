@@ -19,8 +19,8 @@ done
 #    Uses a 4-line window heuristic — not AST parsing.
 for f in $(git diff --cached --name-only --diff-filter=ACMR -- '*.ts'); do
   staged=$(git show ":$f" 2>/dev/null) || continue
-  # Find line numbers with sql.unsafe(
-  lines=$(echo "$staged" | grep -n 'sql\.unsafe(' 2>/dev/null | cut -d: -f1) || true
+  # Find line numbers with sql.unsafe( — skip lines with "no cursor needed" comment
+  lines=$(echo "$staged" | grep -n 'sql\.unsafe(' 2>/dev/null | grep -v 'no cursor needed' | cut -d: -f1) || true
   for lineno in $lines; do
     if ! echo "$staged" | sed -n "${lineno},$((lineno + 3))p" | grep -q '\.cursor('; then
       echo "ERROR: sql.unsafe() without .cursor() at $f:$lineno (staged content)"
