@@ -17,6 +17,12 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- `src/schema-compat.ts` — schema compatibility checker: compares JSON Schema snapshots, classifies breaking vs non-breaking changes (E1.04)
+- `src/check-schema-compat-cli.ts` — CI entry point for schema evolution checks
+- `src/generate-schema-baseline.ts` — generates `fixtures/schema-baseline.json` from Zod schemas
+- `fixtures/schema-baseline.json` — committed schema baseline for CI comparison
+- `test/unit/schema-compat.test.ts` — 10 unit tests for schema comparison logic
+- CI schema compatibility check step in `.github/workflows/ci.yml` (E1.04)
 - `src/metadata.ts` — build metadata generator: per-state counts, version, schema version, build timestamp, gnaf-loader version (P1.12)
 - `src/split.ts` — streaming per-state NDJSON splitter with backpressure support (P1.13)
 - `src/compress.ts` — streaming gzip compression using Node.js pipeline (P1.14)
