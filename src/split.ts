@@ -82,7 +82,10 @@ export async function split(options: SplitOptions): Promise<SplitResult> {
     const ok = writer.write(line + "\n");
     if (!ok) {
       // Backpressure: wait for drain before continuing
-      await new Promise<void>((resolve) => writer.once("drain", resolve));
+      await new Promise<void>((resolve, reject) => {
+        writer.once("drain", resolve);
+        writer.once("error", reject);
+      });
     }
   }
 
