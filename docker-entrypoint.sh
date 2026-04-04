@@ -139,6 +139,12 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+if ! su postgres -c "pg_isready" >/dev/null 2>&1; then
+  log "ERROR: Postgres did not become ready within 30s"
+  cat /var/log/postgresql.log 2>/dev/null || true
+  exit 3
+fi
+
 stage_end
 
 # ── Stage 2 & 3: Data acquisition ───────────────────────────────────────────
@@ -148,7 +154,7 @@ if [[ "$MODE" == "fixture" ]]; then
   stage_start "seed"
   su postgres -c "psql -d $PGDB -q -f /app/fixtures/seed-postgres.sql" || {
     log "ERROR: Fixture seeding failed"
-    exit 3
+    exit 2
   }
   stage_end
 else
@@ -158,15 +164,10 @@ else
   if [[ "$SKIP_DOWNLOAD" == "false" ]]; then
     stage_start "download"
 
-    DOWNLOAD_ENV=""
-    if [[ -n "$GNAF_PATH" ]]; then
-      DOWNLOAD_ENV="GNAF_DATA_PATH=$GNAF_PATH"
-    fi
-    if [[ -n "$ADMIN_PATH" ]]; then
-      DOWNLOAD_ENV="$DOWNLOAD_ENV ADMIN_BDYS_PATH=$ADMIN_PATH"
-    fi
+    export GNAF_DATA_PATH="${GNAF_PATH:-}"
+    export ADMIN_BDYS_PATH="${ADMIN_PATH:-}"
 
-    if ! env $DOWNLOAD_ENV node /app/dist/download.js; then
+    if ! node /app/dist/download.js; then
       log "ERROR: Download failed"
       exit 1
     fi
@@ -219,19 +220,17 @@ stage_end
 
 stage_start "verify"
 
-# Basic verification: file exists, has lines, each line is valid JSON
+# Streaming verification: Zod schema validation + data quality checks
 if [[ ! -s "$FLATTEN_OUTPUT" ]]; then
   log "ERROR: Output file is empty"
   exit 4
 fi
 
-if command -v jq &>/dev/null; then
-  INVALID_LINES=$(jq -c -e '.' "$FLATTEN_OUTPUT" 2>&1 | grep -c "parse error" || true)
-  if [[ "$INVALID_LINES" -gt 0 ]]; then
-    log "ERROR: Output contains $INVALID_LINES invalid JSON lines"
-    exit 4
-  fi
-fi
+DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
+  node /app/dist/verify.js "$FLATTEN_OUTPUT" --expected-count "$LINE_COUNT" || {
+  log "ERROR: Verification failed"
+  exit 4
+}
 
 # Regression check for fixture mode
 if [[ "$MODE" == "fixture" && -f /app/fixtures/expected-output.ndjson ]]; then
@@ -253,12 +252,15 @@ stage_end
 
 if [[ "$SPLIT_STATES" == "true" && "$MODE" != "fixture" ]]; then
   stage_start "split"
+  SPLIT_INPUT="$FLATTEN_OUTPUT" \
+  SPLIT_OUTPUT_DIR="$OUTPUT_DIR" \
+  SPLIT_VERSION="${GNAF_VERSION:-2026.02}" \
   node -e "
     import { split } from '/app/dist/split.js';
     const r = await split({
-      inputPath: '$FLATTEN_OUTPUT',
-      outputDir: '$OUTPUT_DIR',
-      version: '${GNAF_VERSION:-2026.02}'
+      inputPath: process.env.SPLIT_INPUT,
+      outputDir: process.env.SPLIT_OUTPUT_DIR,
+      version: process.env.SPLIT_VERSION
     });
     console.log('[split] ' + r.totalCount + ' docs → ' + r.outputFiles.length + ' files');
   " || {
@@ -278,19 +280,23 @@ if [[ "$COMPRESS" == "true" ]]; then
     # Compress each per-state file
     for f in "$OUTPUT_DIR"/flat-white-*.ndjson; do
       [[ -f "$f" ]] || continue
+      COMPRESS_INPUT="$f" \
+      COMPRESS_OUTPUT="${f}.gz" \
       node -e "
         import { compress } from '/app/dist/compress.js';
-        const r = await compress({ inputPath: '$f', outputPath: '${f}.gz' });
-        console.log('[compress] ${f} → ratio ' + (r.ratio * 100).toFixed(1) + '%');
+        const r = await compress({ inputPath: process.env.COMPRESS_INPUT, outputPath: process.env.COMPRESS_OUTPUT });
+        console.log('[compress] ' + process.env.COMPRESS_INPUT + ' → ratio ' + (r.ratio * 100).toFixed(1) + '%');
       " || {
         log "ERROR: Compress failed for $f"
         exit 5
       }
     done
   else
+    COMPRESS_INPUT="$FLATTEN_OUTPUT" \
+    COMPRESS_OUTPUT="${FLATTEN_OUTPUT}.gz" \
     node -e "
       import { compress } from '/app/dist/compress.js';
-      const r = await compress({ inputPath: '$FLATTEN_OUTPUT', outputPath: '${FLATTEN_OUTPUT}.gz' });
+      const r = await compress({ inputPath: process.env.COMPRESS_INPUT, outputPath: process.env.COMPRESS_OUTPUT });
       console.log('[compress] ratio ' + (r.ratio * 100).toFixed(1) + '%');
     " || {
       log "ERROR: Compress failed"
