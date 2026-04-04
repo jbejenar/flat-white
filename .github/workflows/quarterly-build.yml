@@ -533,11 +533,11 @@ jobs:
           # Requires DISPATCH_TOKEN secret with repo scope on target repos
           for REPO in "geocode-au"; do
             echo "Dispatching to ${REPO}..."
-            gh api \
+            BODY=$(jq -n --argjson payload "$PAYLOAD" '{"event_type":"flat-white-release","client_payload":$payload}')
+            echo "$BODY" | gh api \
               --method POST \
               "repos/${{ github.repository_owner }}/${REPO}/dispatches" \
-              -f "event_type=flat-white-release" \
-              -f "client_payload=${PAYLOAD}" \
+              --input - \
               && echo "✓ Dispatched to ${REPO}" \
               || echo "::warning::Failed to dispatch to ${REPO} (may need DISPATCH_TOKEN secret with repo scope)"
           done
