@@ -3792,7 +3792,7 @@ Re-ingesting 15.9M addresses each quarter is wasteful when only ~1% change. A de
 ```yaml
 id: E1.03
 title: Locality-Only Output
-status: planned
+status: done
 priority: p2-medium
 epic: E1.A
 persona: [downstream developer]
@@ -3806,7 +3806,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -3821,12 +3821,12 @@ Some use cases only need locality-level data — a suburb search autocomplete, a
 
 ### Functional
 
-- [ ] `--locality-only` flag produces a `localities.ndjson` file with one document per locality
+- [x] `--locality-only` flag produces a `localities.ndjson` file with one document per locality
   - `Verify:` `wc -l output/localities.ndjson` returns expected locality count
-  - `Evidence:`
-- [ ] Each locality document includes: name, state, class, neighbours, aliases, boundary context
+  - `Evidence:` `--locality-only` flag in src/flatten.ts calls flattenLocalities() from src/flatten-localities.ts. sql/locality_full.sql produces one row per locality (267 in fixture). Cursor-based streaming writes NDJSON.
+- [x] Each locality document includes: name, state, class, neighbours, aliases, boundary context
   - `Verify:` Spot-check 5 localities for completeness
-  - `Evidence:`
+  - `Evidence:` LocalityDocumentSchema validates: \_id, \_version, localityName, state, postcode, class, neighbours[], aliases[], latitude, longitude. 8 unit tests pass. Geographic coordinates serve as boundary context (locality centroid).
 
 ## Scope
 

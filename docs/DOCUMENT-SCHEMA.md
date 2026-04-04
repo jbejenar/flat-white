@@ -176,6 +176,29 @@ A child address (unit/flat) belonging to a primary (building) address. Present i
 
 ---
 
+---
+
+## Locality-Only Document Schema
+
+When running with `--locality-only`, flat-white produces a `localities.ndjson` file with one document per unique locality. This is a lightweight alternative to the full address dataset for use cases like suburb search, service area lookup, or locality-to-electorate mapping.
+
+### Locality Document Fields
+
+| Field          | Type     | Nullable | Description                                                    | Example                        | G-NAF Source                                    |
+| -------------- | -------- | -------- | -------------------------------------------------------------- | ------------------------------ | ----------------------------------------------- |
+| `_id`          | string   | No       | Locality persistent identifier                                 | `"loc67a11408d754"`            | `gnaf.localities.locality_pid`                  |
+| `_version`     | string   | No       | G-NAF data release version (YYYY.MM)                           | `"2026.02"`                    | Build parameter                                 |
+| `localityName` | string   | No       | Suburb/locality name                                           | `"FOOTSCRAY"`                  | `gnaf.localities.locality_name`                 |
+| `state`        | string   | No       | State/territory code                                           | `"VIC"`                        | `gnaf.localities.state`                         |
+| `postcode`     | string   | Yes      | Postcode                                                       | `"3011"`                       | `gnaf.localities.postcode`                      |
+| `class`        | string   | No       | Locality classification                                        | `"GAZETTED LOCALITY"`          | `gnaf.localities.locality_class` (expanded)     |
+| `neighbours`   | string[] | No       | Names of adjacent localities. Empty array if none.             | `["ASCOT VALE", "FLEMINGTON"]` | `gnaf.locality_neighbour_lookup` + `localities` |
+| `aliases`      | string[] | No       | Alternative locality names. Empty array if none.               | `["FOOTSCRAY WEST"]`           | `gnaf.locality_aliases`                         |
+| `latitude`     | number   | Yes      | WGS84 latitude of locality centroid, or null if not available  | `-37.7998`                     | `gnaf.localities.latitude`                      |
+| `longitude`    | number   | Yes      | WGS84 longitude of locality centroid, or null if not available | `144.8991`                     | `gnaf.localities.longitude`                     |
+
+---
+
 ## Data Licensing
 
 All data sourced from data.gov.au under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Source datasets:
