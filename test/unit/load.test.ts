@@ -1,10 +1,42 @@
 /**
  * Unit tests for load.ts — gnaf-loader argument building and validation.
  * Does NOT run the actual gnaf-loader (that's integration testing).
+ * Uses mocked filesystem so tests work without the 6.5GB data directory.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock node:fs before importing the module under test
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    existsSync: vi.fn((p: string) => {
+      const s = String(p);
+      // Only simulate paths under the project's ./data directory
+      if (s.includes("nonexistent") || s.includes("empty")) return false;
+      if (s.includes("G-NAF")) return true;
+      if (s.includes("Standard")) return true;
+      if (s.includes("gnaf-loader/load-gnaf.py")) return true;
+      if (s.endsWith("/data") || s.endsWith("/data/")) return true;
+      return false;
+    }),
+    readdirSync: vi.fn((p: string) => {
+      const s = String(p);
+      if (s.includes("nonexistent") || s.includes("empty")) return [];
+      if (s.endsWith("G-NAF")) return ["G-NAF FEBRUARY 2026"];
+      if (s.endsWith("/data") || s.endsWith("/data/"))
+        return ["G-NAF", "FEB26_AdminBounds_GDA_2020_SHP", "gnaf.zip"];
+      return [];
+    }),
+  };
+});
+
 import { buildArgs, resolveGnafTablesPath, resolveAdminBdysPath } from "../../src/load.js";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("buildArgs", () => {
   it("builds correct default args for VIC", () => {
@@ -62,26 +94,36 @@ describe("buildArgs", () => {
     const idx = args.indexOf("--max-processes");
     expect(args[idx + 1]).toBe("8");
   });
+
+  it("computes --local-server-dir from resolved paths", () => {
+    const args = buildArgs({ states: ["VIC"] });
+    const idx = args.indexOf("--local-server-dir");
+    const serverDir = args[idx + 1];
+    expect(serverDir).toMatch(/^\/data\/G-NAF/);
+    expect(serverDir).not.toContain("/Users/");
+  });
 });
 
 describe("resolveGnafTablesPath", () => {
-  it("resolves the G-NAF Standard directory from ./data", () => {
+  it("resolves the G-NAF version directory", () => {
     const path = resolveGnafTablesPath("./data");
-    expect(path).toMatch(/G-NAF.*G-NAF /);
+    expect(path).toMatch(/G-NAF.*G-NAF FEBRUARY 2026$/);
   });
 
-  it("throws if data directory does not exist", () => {
+  it("throws if G-NAF base directory does not exist", () => {
+    // The mock returns false for paths not matching known patterns
     expect(() => resolveGnafTablesPath("/nonexistent/path")).toThrow("G-NAF directory not found");
   });
 });
 
 describe("resolveAdminBdysPath", () => {
-  it("resolves the Admin Boundaries directory from ./data", () => {
+  it("resolves the Admin Boundaries directory", () => {
     const path = resolveAdminBdysPath("./data");
     expect(path).toMatch(/AdminBounds/);
   });
 
-  it("throws if data directory does not exist", () => {
-    expect(() => resolveAdminBdysPath("/nonexistent/path")).toThrow();
+  it("throws if no AdminBounds directory found", () => {
+    // The mock returns [] for paths not matching known patterns
+    expect(() => resolveAdminBdysPath("/some/empty/dir")).toThrow();
   });
 });

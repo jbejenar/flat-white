@@ -15,7 +15,7 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, relative, join, dirname } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -124,8 +124,8 @@ export function buildArgs(opts: LoadOptions): string[] {
   // When Postgres runs in Docker, the server can't see host paths.
   // docker-compose mounts ./data as /data:ro, so we remap the path.
   const serverDataDir = opts.serverDataDir ?? "/data";
-  const relativeGnafPath = gnafTablesPath.replace(dataDir, "");
-  args.push("--local-server-dir", serverDataDir + relativeGnafPath);
+  const relativeGnafPath = relative(dataDir, gnafTablesPath);
+  args.push("--local-server-dir", join(serverDataDir, relativeGnafPath));
 
   if (opts.states && opts.states.length > 0) {
     args.push("--states", ...opts.states);
@@ -260,4 +260,7 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// Only run CLI when this module is the entry point (not when imported as a library)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
