@@ -17,6 +17,7 @@ import { Readable, Transform } from "node:stream";
 import postgres from "postgres";
 import { AddressDocumentSchema } from "./schema.js";
 import type { AddressDocument } from "./schema.js";
+import { ProgressLogger } from "./progress.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SQL_PATH = resolve(__dirname, "..", "sql", "address_full.sql");
@@ -37,6 +38,8 @@ export interface FlattenOptions {
    * over millions of rows.
    */
   materialize?: boolean;
+  /** Optional progress logger for structured JSON progress events. */
+  logger?: ProgressLogger;
 }
 
 function mapPrimarySecondary(value: unknown): "PRIMARY" | "SECONDARY" | null {
@@ -215,7 +218,7 @@ export function composeBoundaries(row: Record<string, unknown>) {
  * Run the flatten pipeline: read from Postgres, compose documents, write NDJSON.
  */
 export async function flatten(options: FlattenOptions): Promise<{ count: number; errors: number }> {
-  const { connectionString, outputPath, version, materialize } = options;
+  const { connectionString, outputPath, version, materialize, logger } = options;
 
   const sql = postgres(connectionString, {
     max: 1,
@@ -242,6 +245,8 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
   let count = 0;
   let errors = 0;
 
+  logger?.stageStart("flatten");
+
   try {
     const cursor = sql.unsafe(flattenSql).cursor(500);
 
@@ -263,6 +268,7 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
           const result = AddressDocumentSchema.safeParse(doc);
           if (result.success) {
             count++;
+            logger?.progress("flatten", { rows: count });
             callback(null, JSON.stringify(result.data) + "\n");
           } else {
             errors++;
@@ -282,6 +288,8 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
     const output = createWriteStream(outputPath);
 
     await pipeline(source, compose, output);
+
+    logger?.stageEnd("flatten", { rows: count });
   } finally {
     await sql.end();
   }
@@ -326,11 +334,19 @@ async function main() {
       (a) => !a.startsWith("-") && a !== process.argv[0] && a !== process.argv[1],
     ) ?? "output/fixture.ndjson";
 
+  const logger = new ProgressLogger({ minInterval: 30_000 });
+
   console.log(`[flatten] Connecting to ${connectionString}`);
   console.log(`[flatten] Output: ${outputPath}`);
   console.log(`[flatten] Version: ${version}`);
 
-  const { count, errors } = await flatten({ connectionString, outputPath, version, materialize });
+  const { count, errors } = await flatten({
+    connectionString,
+    outputPath,
+    version,
+    materialize,
+    logger,
+  });
 
   console.log(`[flatten] Done: ${count} documents written, ${errors} errors`);
 

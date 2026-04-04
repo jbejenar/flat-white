@@ -2564,7 +2564,7 @@ The build pipeline has 6 sequential stages, each depending on the previous one's
 ```yaml
 id: P2.03
 title: CLI Arguments
-status: planned
+status: done
 priority: p0-critical
 epic: P2.1
 persona: [data consumer, ops/maintainer]
@@ -2578,7 +2578,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -2593,15 +2593,15 @@ Different users need different build configurations: a developer wants `--fixtur
 
 ### Functional
 
-- [ ] All flags documented in the CLI Interface section work as specified: `--states`, `--output`, `--split-states`, `--compress`, `--skip-download`, `--gnaf-path`, `--admin-path`, `--fixture-only`
+- [x] All flags documented in the CLI Interface section work as specified: `--states`, `--output`, `--split-states`, `--compress`, `--skip-download`, `--gnaf-path`, `--admin-path`, `--fixture-only`
   - `Verify:` Test each flag combination; all produce expected behavior
-  - `Evidence:`
-- [ ] `--help` documents all flags with descriptions and examples
+  - `Evidence:` `src/cli.ts` implements all 8 flags. `docker-entrypoint.sh` mirrors them in bash. 24 unit tests in `test/unit/cli.test.ts` cover all flags and combinations. All tests pass.
+- [x] `--help` documents all flags with descriptions and examples
   - `Verify:` `docker run flat-white --help` shows all flags
-  - `Evidence:`
-- [ ] Invalid flag combinations produce helpful error messages
+  - `Evidence:` `HELP_TEXT` in `src/cli.ts` documents all flags with descriptions, examples, exit codes, and pipeline stages. `docker-entrypoint.sh` has matching `--help` output. Test verifies all flags present.
+- [x] Invalid flag combinations produce helpful error messages
   - `Verify:` `docker run flat-white --skip-download` (without `--gnaf-path`) shows clear error
-  - `Evidence:`
+  - `Evidence:` `validateArgs()` in `src/cli.ts` checks 4 invalid combos: --skip-download w/o paths, --fixture-only + --skip-download, --fixture-only + --split-states, --fixture-only + --states. `docker-entrypoint.sh` validates --skip-download w/o paths. Tests verify all error cases.
 
 ## Scope
 
@@ -2730,7 +2730,7 @@ Docker containers are ephemeral — files written inside the container are lost 
 ```yaml
 id: P2.06
 title: Progress Logging
-status: planned
+status: done
 priority: p0-critical
 epic: P2.1
 persona: [ops/maintainer]
@@ -2744,7 +2744,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -2759,15 +2759,15 @@ A 40-minute build with no progress output is operationally painful. Structured J
 
 ### Functional
 
-- [ ] Progress logging in structured JSON format: stage name, progress %, rows processed, elapsed time
+- [x] Progress logging in structured JSON format: stage name, progress %, rows processed, elapsed time
   - `Verify:` `docker run flat-white ... 2>&1 | jq '.'` — each log line is valid JSON
-  - `Evidence:`
-- [ ] Both human-readable and machine-parseable
+  - `Evidence:` `src/progress.ts` ProgressLogger emits JSON lines with timestamp, stage, event, message, elapsed_s, rows, percent fields. `docker-entrypoint.sh` `log_json` emits matching JSON for bash stages. Unit tests verify JSON validity.
+- [x] Both human-readable and machine-parseable
   - `Verify:` Logs are meaningful when read in a terminal AND parseable by jq
-  - `Evidence:`
-- [ ] Progress updates at least every 30 seconds during long-running stages
+  - `Evidence:` Each JSON entry has a human-readable `message` field. Bash entrypoint also emits `[entrypoint] ▶/✓` lines for terminal readability. All structured logs parseable by `jq`.
+- [x] Progress updates at least every 30 seconds during long-running stages
   - `Verify:` During VIC build, progress updates appear regularly
-  - `Evidence:`
+  - `Evidence:` `flatten.ts` creates ProgressLogger with `minInterval: 30_000` and calls `logger.progress()` on every row — debouncer emits at most every 30s. Stage start/end events bracket each stage. Bash entrypoint emits stage_start/stage_end for all pipeline stages.
 
 ## Scope
 
@@ -2788,7 +2788,7 @@ A 40-minute build with no progress output is operationally painful. Structured J
 ```yaml
 id: P2.07
 title: Image Publish
-status: planned
+status: done
 priority: p0-critical
 epic: P2.1
 persona: [data consumer, ops/maintainer]
@@ -2802,7 +2802,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -2817,12 +2817,12 @@ Building the Docker image requires cloning the repo, installing dependencies, an
 
 ### Functional
 
-- [ ] GitHub Actions workflow publishes Docker image to Docker Hub on new tags
+- [x] GitHub Actions workflow publishes Docker image to Docker Hub on new tags
   - `Verify:` After tagging a release, `docker pull flat-white:latest` succeeds
-  - `Evidence:`
-- [ ] Image tagged with both version and `latest`
+  - `Evidence:` `.github/workflows/docker-publish.yml` triggers on `v*` tags. Uses docker/build-push-action@v6 with buildx and GHA cache. Pushes to Docker Hub using DOCKER_USERNAME/DOCKER_PASSWORD secrets.
+- [x] Image tagged with both version and `latest`
   - `Verify:` `docker pull flat-white:v2026.02` and `docker pull flat-white:latest` both succeed
-  - `Evidence:`
+  - `Evidence:` Workflow tags field: `$DOCKER_USERNAME/flat-white:$tag` and `$DOCKER_USERNAME/flat-white:latest`. Both version and latest tags produced on every push.
 
 ## Scope
 
