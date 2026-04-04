@@ -437,13 +437,15 @@ jobs:
           open('CHANGELOG.md', 'w').write(content)
           " "$VERSION" "$BUILD_DATE" "$SCHEMA_VERSION" "$(printf "%'d" "$TOTAL")" "$STATE_COUNTS"
 
-          # Commit the changelog update
+          # Commit the changelog update (best-effort — release proceeds even if push fails).
+          # The release assets are the critical artifacts; a missing CHANGELOG commit
+          # can be manually pushed after the fact.
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           export HUSKY=0
           git add CHANGELOG.md
           git commit --no-verify -m "docs: update CHANGELOG.md for v${VERSION} release"
-          git push || echo "::warning::CHANGELOG push failed (branch protection). Release still proceeds."
+          git push || echo "::warning::CHANGELOG push failed (branch protection). Release still proceeds — push CHANGELOG manually."
 
       - name: Create GitHub Release (draft)
         run: |
