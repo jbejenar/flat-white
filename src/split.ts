@@ -46,6 +46,7 @@ export async function split(options: SplitOptions): Promise<SplitResult> {
   const writers = new Map<string, WriteStream>();
   const counts: Record<string, number> = {};
   let totalCount = 0;
+  let writeError: Error | null = null;
 
   const rl = createInterface({
     input: createReadStream(inputPath),
@@ -56,14 +57,24 @@ export async function split(options: SplitOptions): Promise<SplitResult> {
     if (!line.trim()) continue;
     totalCount++;
 
-    const doc = JSON.parse(line) as { state: string };
+    let doc: { state: string };
+    try {
+      doc = JSON.parse(line) as { state: string };
+    } catch (e) {
+      throw new Error(`Malformed JSON at line ${totalCount}: ${line.slice(0, 100)}`, { cause: e });
+    }
     const state = doc.state;
     counts[state] = (counts[state] ?? 0) + 1;
 
     if (!writers.has(state)) {
       const filename = stateFilename(version, state);
       const outputPath = resolve(outputDir, filename);
-      writers.set(state, createWriteStream(outputPath));
+      const ws = createWriteStream(outputPath);
+      ws.on("error", (err) => {
+        writeError ??= err;
+        rl.close();
+      });
+      writers.set(state, ws);
     }
 
     // Writer is guaranteed to exist — we just set it above if missing
@@ -80,12 +91,16 @@ export async function split(options: SplitOptions): Promise<SplitResult> {
   for (const writer of writers.values()) {
     closePromises.push(
       new Promise<void>((resolve, reject) => {
-        writer.end(() => resolve());
         writer.on("error", reject);
+        writer.end(() => resolve());
       }),
     );
   }
   await Promise.all(closePromises);
+
+  if (writeError) {
+    throw writeError;
+  }
 
   const outputFiles = Array.from(writers.keys())
     .sort()

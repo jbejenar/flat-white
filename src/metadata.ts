@@ -50,7 +50,12 @@ export async function countByState(
     if (!line.trim()) continue;
     totalCount++;
 
-    const doc = JSON.parse(line) as { state: string };
+    let doc: { state: string };
+    try {
+      doc = JSON.parse(line) as { state: string };
+    } catch (e) {
+      throw new Error(`Malformed JSON at line ${totalCount}: ${line.slice(0, 100)}`, { cause: e });
+    }
     const state = doc.state;
     states[state] = (states[state] ?? 0) + 1;
   }
