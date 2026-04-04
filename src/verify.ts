@@ -197,14 +197,18 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   const differencePercent = expectedCount > 0 ? (difference / expectedCount) * 100 : 0;
   const tolerancePercent = tolerance * 100;
 
+  // Fail if output file is empty — regardless of expectedCount
+  const emptyOutput = outputCount === 0;
+
+  // Row-count check is only meaningful when expectedCount > 0
+  const rowCountFailed = expectedCount > 0 && differencePercent > tolerancePercent;
+
   // Partition quality issues: coordinate-bounds are hard errors, state-postcode are warnings
   const qualityErrors = qualityIssues.filter((i) => i.check === "coordinate-bounds");
   const qualityWarnings = qualityIssues.filter((i) => i.check !== "coordinate-bounds");
 
   const passed =
-    differencePercent <= tolerancePercent &&
-    duplicatePids.length === 0 &&
-    qualityErrors.length === 0;
+    !emptyOutput && !rowCountFailed && duplicatePids.length === 0 && qualityErrors.length === 0;
 
   return {
     outputCount,
@@ -229,10 +233,16 @@ export function formatReport(result: VerifyResult): string {
   lines.push("=== Verification Report ===");
   lines.push(`Source count:  ${result.expectedCount}`);
   lines.push(`Output count:  ${result.outputCount}`);
-  lines.push(`Difference:    ${result.difference} (${result.differencePercent.toFixed(3)}%)`);
-  lines.push(
-    `Row count:     ${result.difference === 0 ? "PASS" : result.differencePercent <= result.tolerancePercent ? "PASS (within tolerance)" : "FAIL"}`,
-  );
+  if (result.outputCount === 0) {
+    lines.push("Row count:     FAIL (output file is empty)");
+  } else if (result.expectedCount === 0) {
+    lines.push("Row count:     SKIP (no expected count provided)");
+  } else {
+    lines.push(`Difference:    ${result.difference} (${result.differencePercent.toFixed(3)}%)`);
+    lines.push(
+      `Row count:     ${result.difference === 0 ? "PASS" : result.differencePercent <= result.tolerancePercent ? "PASS (within tolerance)" : "FAIL"}`,
+    );
+  }
 
   if (result.duplicatePids.length > 0) {
     lines.push(`Duplicate PIDs: FAIL (${result.duplicatePids.length} duplicates)`);
@@ -293,6 +303,12 @@ async function main(): Promise<void> {
 
   const expectedIdx = process.argv.indexOf("--expected-count");
   const expectedCount = expectedIdx !== -1 ? parseInt(process.argv[expectedIdx + 1], 10) : 0;
+
+  if (expectedIdx === -1) {
+    console.warn(
+      "Warning: --expected-count not provided. Row-count verification will be skipped (only empty-file and quality checks apply).",
+    );
+  }
 
   const result = await verify({
     outputPath: filePath,

@@ -7,12 +7,13 @@ set -euo pipefail
 #   start Postgres → download → gnaf-loader → flatten → verify → output → stop Postgres
 #
 # Exit codes (P2.04):
-#   0  Success
-#   1  Download failed
-#   2  gnaf-loader failed
-#   3  Flatten failed
-#   4  Verification failed
-#   5  Output write failed (split/compress/metadata)
+#   0   Success
+#   1   Download failed
+#   2   gnaf-loader failed
+#   3   Flatten failed
+#   4   Verification failed
+#   5   Output write failed (split/compress/metadata)
+#   10  Infrastructure failure (e.g. Postgres did not start)
 
 PGDATA="${PGDATA:-/var/lib/postgresql/data}"
 PGUSER="${POSTGRES_USER:-postgres}"
@@ -57,12 +58,13 @@ Flags:
   --admin-path PATH   Path to extracted Admin Boundaries data
 
 Exit codes:
-  0  Success
-  1  Download failed
-  2  gnaf-loader (data load) failed
-  3  Flatten failed
-  4  Verification failed
-  5  Output write failed (split/compress)
+  0   Success
+  1   Download failed
+  2   gnaf-loader (data load) failed
+  3   Flatten failed
+  4   Verification failed
+  5   Output write failed (split/compress)
+  10  Infrastructure failure (e.g. Postgres did not start)
 
 Pipeline stages:
   1. Start Postgres (internal)
@@ -142,7 +144,7 @@ done
 if ! su postgres -c "pg_isready" >/dev/null 2>&1; then
   log "ERROR: Postgres did not become ready within 30s"
   cat /var/log/postgresql.log 2>/dev/null || true
-  exit 3
+  exit 10
 fi
 
 stage_end
