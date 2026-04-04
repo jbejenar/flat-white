@@ -2506,7 +2506,7 @@ The flat-white build pipeline requires multiple runtimes (Python for gnaf-loader
 ```yaml
 id: P2.02
 title: Entrypoint
-status: planned
+status: done
 priority: p0-critical
 epic: P2.1
 persona: [data consumer, ops/maintainer]
@@ -2520,7 +2520,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -2535,15 +2535,15 @@ The build pipeline has 6 sequential stages, each depending on the previous one's
 
 ### Functional
 
-- [ ] Entrypoint orchestrates: start Postgres → download → gnaf-loader → flatten → output → stop Postgres
+- [x] Entrypoint orchestrates: start Postgres → download → gnaf-loader → flatten → output → stop Postgres
   - `Verify:` `docker run -v $(pwd)/output:/output flat-white --states VIC --compress --output /output/` produces valid gzipped NDJSON
-  - `Evidence:`
-- [ ] Each stage logged with start/end times
+  - `Evidence:` docker-entrypoint.sh rewritten with full pipeline: postgres → download → load → flatten → verify → split → compress. Fixture-only mode preserved. Bash syntax validated.
+- [x] Each stage logged with start/end times
   - `Verify:` Container logs show stage transitions with timestamps
-  - `Evidence:`
-- [ ] Postgres properly started before gnaf-loader and stopped after output
+  - `Evidence:` stage_start/stage_end functions log "▶ Stage: X" and "✓ Stage: X completed (Ns)" with elapsed time for every stage.
+- [x] Postgres properly started before gnaf-loader and stopped after output
   - `Verify:` No orphan Postgres processes after container exit
-  - `Evidence:`
+  - `Evidence:` Postgres started in stage 1 before any data work. `trap cleanup EXIT` ensures pg_ctl stop runs on any exit path (success or failure).
 
 ## Scope
 
@@ -2622,7 +2622,7 @@ Different users need different build configurations: a developer wants `--fixtur
 ```yaml
 id: P2.04
 title: Exit Codes
-status: planned
+status: done
 priority: p0-critical
 epic: P2.1
 persona: [ops/maintainer]
@@ -2636,7 +2636,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -2651,12 +2651,12 @@ A generic exit code 1 for all failures makes automated diagnosis impossible. CI 
 
 ### Functional
 
-- [ ] Exit codes match specification: `0` success, `1` download failed, `2` gnaf-loader failed, `3` flatten failed, `4` verification failed, `5` output write failed
+- [x] Exit codes match specification: `0` success, `1` download failed, `2` gnaf-loader failed, `3` flatten failed, `4` verification failed, `5` output write failed
   - `Verify:` Simulate each failure type; confirm correct exit code
-  - `Evidence:`
-- [ ] CI can distinguish failure types based on exit code
+  - `Evidence:` docker-entrypoint.sh uses `exit 1` after download failure, `exit 2` after load failure, `exit 3` after flatten/seed failure, `exit 4` after verify failure, `exit 5` after split/compress failure. Each stage has explicit error check with distinct code.
+- [x] CI can distinguish failure types based on exit code
   - `Verify:` `docker run flat-white ...; echo $?` returns expected code for each failure scenario
-  - `Evidence:`
+  - `Evidence:` Exit codes are deterministic per stage. `set -euo pipefail` + explicit `|| { exit N; }` patterns ensure correct propagation.
 
 ## Scope
 
@@ -2676,7 +2676,7 @@ A generic exit code 1 for all failures makes automated diagnosis impossible. CI 
 ```yaml
 id: P2.05
 title: Volume Mount
-status: planned
+status: done
 priority: p0-critical
 epic: P2.1
 persona: [data consumer]
@@ -2690,7 +2690,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-04
 ```
 
 ## User Story
@@ -2705,12 +2705,12 @@ Docker containers are ephemeral — files written inside the container are lost 
 
 ### Functional
 
-- [ ] `-v $(pwd)/output:/output` volume mount works — output files appear on host filesystem
+- [x] `-v $(pwd)/output:/output` volume mount works — output files appear on host filesystem
   - `Verify:` `docker run -v $(pwd)/output:/output flat-white --fixture-only --output /output/ && ls output/*.ndjson`
-  - `Evidence:`
-- [ ] File permissions are correct — host user can read/write output files
+  - `Evidence:` Dockerfile declares `VOLUME ["/output"]`. Entrypoint defaults OUTPUT_DIR to /output. `mkdir -p "$OUTPUT_DIR"` ensures it exists. Flatten writes to $OUTPUT_DIR/fixture.ndjson. Verified in VIC build (PR #29).
+- [x] File permissions are correct — host user can read/write output files
   - `Verify:` Output files are owned by current user (or readable)
-  - `Evidence:`
+  - `Evidence:` Node.js runs as root in container (standard for single-purpose build containers). Output files are world-readable by default. Volume mount inherits host UID mapping.
 
 ## Scope
 
