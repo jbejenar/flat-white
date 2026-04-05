@@ -71,14 +71,73 @@ jobs:
       - name: Run pipeline for ${{ matrix.state }}
         run: |
           mkdir -p output
-          docker run --rm \
-            -v "$(pwd)/output:/output" \
-            -e "GNAF_VERSION=${{ needs.setup.outputs.version }}" \
-            ${{ env.DOCKER_IMAGE }}:build \
-            --states ${{ matrix.state }} \
-            --split-states \
-            --compress \
-            --output /output
+
+          MAX_RETRIES=2
+          ATTEMPT=0
+          SUCCESS=false
+
+          while [[ $ATTEMPT -le $MAX_RETRIES ]]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "--- Attempt $ATTEMPT of $((MAX_RETRIES + 1)) for ${{ matrix.state }} ---"
+
+            set +e
+            docker run --rm \
+              -v "$(pwd)/output:/output" \
+              -e "GNAF_VERSION=${{ needs.setup.outputs.version }}" \
+              ${{ env.DOCKER_IMAGE }}:build \
+              --states ${{ matrix.state }} \
+              --split-states \
+              --compress \
+              --output /output 2>&1 | tee /tmp/pipeline-output.log
+            EXIT_CODE=${PIPESTATUS[0]}
+            set -e
+
+            if [[ $EXIT_CODE -eq 0 ]]; then
+              SUCCESS=true
+              if [[ $ATTEMPT -gt 1 ]]; then
+                echo "::warning::${{ matrix.state }}: succeeded on attempt $ATTEMPT after $((ATTEMPT - 1)) retry(ies)"
+              fi
+              break
+            fi
+
+            # Classify failure: transient vs persistent
+            # Transient: OOM kill (137), network/download errors, container killed
+            # Persistent: schema validation, flatten logic errors, assertion failures
+            IS_TRANSIENT=false
+
+            if [[ $EXIT_CODE -eq 137 ]]; then
+              # OOM kill (SIGKILL)
+              IS_TRANSIENT=true
+              echo "::warning::${{ matrix.state }}: OOM kill detected (exit 137) on attempt $ATTEMPT"
+            elif [[ $EXIT_CODE -eq 143 ]]; then
+              # SIGTERM (container killed externally)
+              IS_TRANSIENT=true
+              echo "::warning::${{ matrix.state }}: container killed (exit 143) on attempt $ATTEMPT"
+            elif grep -qiE '(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|timeout|connection refused|download failed|fetch failed|socket hang up)' /tmp/pipeline-output.log 2>/dev/null; then
+              IS_TRANSIENT=true
+              echo "::warning::${{ matrix.state }}: network/download error detected on attempt $ATTEMPT"
+            elif grep -qiE '(could not resize shared memory|no space left on device|cannot allocate memory)' /tmp/pipeline-output.log 2>/dev/null; then
+              IS_TRANSIENT=true
+              echo "::warning::${{ matrix.state }}: resource exhaustion detected on attempt $ATTEMPT"
+            fi
+
+            if [[ "$IS_TRANSIENT" == "false" ]]; then
+              echo "::error::${{ matrix.state }}: persistent failure on attempt $ATTEMPT (exit code $EXIT_CODE) — not retrying"
+              exit $EXIT_CODE
+            fi
+
+            if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
+              echo "Transient failure — retrying in 30 seconds..."
+              sleep 30
+              # Clean output directory for retry
+              rm -f output/flat-white-*.ndjson.gz output/${{ matrix.state }}.count
+            fi
+          done
+
+          if [[ "$SUCCESS" != "true" ]]; then
+            echo "::error::${{ matrix.state }}: failed after $ATTEMPT attempts (transient failures exhausted retries)"
+            exit 1
+          fi
 
       - name: Verify output
         run: |
