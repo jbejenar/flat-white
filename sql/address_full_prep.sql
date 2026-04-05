@@ -5,6 +5,42 @@
 -- Usage: Run once before cursor-based streaming of address_full_main.sql.
 -- Schema: gnaf_202602, raw_gnaf_202602, admin_bdys_202602
 
+-- 0. Ensure admin boundary tables exist (empty stubs if --no-boundary-tag or partial load)
+CREATE SCHEMA IF NOT EXISTS admin_bdys_202602;
+CREATE TABLE IF NOT EXISTS admin_bdys_202602.abs_2021_mb (
+  gid integer,
+  mb21_code bigint,
+  mb_cat text,
+  sa1_21code character varying(11),
+  sa2_21code character varying(9),
+  sa2_21name text,
+  sa3_21code character varying(5),
+  sa3_21name text,
+  sa4_21code character varying(3),
+  sa4_21name text,
+  gcc_21code text,
+  gcc_21name text,
+  state text
+);
+CREATE TABLE IF NOT EXISTS gnaf_202602.address_principal_admin_boundaries (
+  gid integer,
+  gnaf_pid text,
+  locality_pid text,
+  locality_name text,
+  postcode text,
+  state text,
+  ce_pid text,
+  ce_name text,
+  lga_pid text,
+  lga_name text,
+  ward_pid text,
+  ward_name text,
+  se_lower_pid text,
+  se_lower_name text,
+  se_upper_pid text,
+  se_upper_name text
+);
+
 -- 1a. Best geocode per address (using window function instead of correlated subquery)
 DROP TABLE IF EXISTS tmp_best_geocode;
 CREATE TEMPORARY TABLE tmp_best_geocode AS
