@@ -123,11 +123,14 @@ export function isExtractionComplete(extractedPath: string, sentinelPaths: strin
     return false;
   }
   if (sentinelPaths.length === 0) return false;
+  // Read directory once for glob matching (avoids repeated readdirSync per sentinel)
+  const hasGlob = sentinelPaths.some((s) => s.includes("*"));
+  const entries = hasGlob ? readdirSync(extractedPath) : [];
   return sentinelPaths.every((sentinel) => {
-    if (sentinel.includes("*")) {
-      // Glob-style prefix match: "LocalGovernmentAreas_*" matches any dir starting with that prefix
-      const prefix = sentinel.replace("*", "");
-      return readdirSync(extractedPath).some((entry) => entry.startsWith(prefix));
+    if (sentinel.endsWith("*")) {
+      // Trailing wildcard: "LocalGovernmentAreas_*" matches any entry starting with the prefix
+      const prefix = sentinel.slice(0, -1);
+      return entries.some((entry) => entry.startsWith(prefix));
     }
     return existsSync(resolve(extractedPath, sentinel));
   });
