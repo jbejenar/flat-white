@@ -296,9 +296,8 @@ jobs:
           done
           STATES_JSON+="}"
 
-          # Copy all-states file
-          ALL_GZ=$(find "artifacts/flat-white-all" -name "*.ndjson.gz" | head -1)
-          cp "$ALL_GZ" "$ASSET_DIR/flat-white-${VERSION}-all.ndjson.gz"
+          # All-states file excluded from release assets (exceeds 2GB GitHub limit).
+          # Available as workflow artifact "flat-white-all" for direct download.
 
           # Read schema version from package.json
           SCHEMA_VERSION=$(node -p "require('./package.json').version")
@@ -328,16 +327,16 @@ jobs:
         run: |
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
 
-          # Count assets: 9 per-state + 1 all-states + metadata.json + DOCUMENT-SCHEMA.md = 12
+          # Count assets: 9 per-state + metadata.json + DOCUMENT-SCHEMA.md = 11
           ASSET_COUNT=$(ls -1 "$ASSET_DIR" | wc -l | tr -d ' ')
           echo "Asset count: $ASSET_COUNT"
           ls -lh "$ASSET_DIR"
 
-          if [[ "$ASSET_COUNT" -ne 12 ]]; then
-            echo "ERROR: Expected 12 assets, got $ASSET_COUNT"
+          if [[ "$ASSET_COUNT" -ne 11 ]]; then
+            echo "ERROR: Expected 11 assets, got $ASSET_COUNT"
             exit 1
           fi
-          echo "✓ Asset count verified: 12"
+          echo "✓ Asset count verified: 11"
 
           # Verify total size under 2GB (2147483648 bytes)
           TOTAL_SIZE=$(du -sb "$ASSET_DIR" | cut -f1)
@@ -538,11 +537,11 @@ jobs:
           ASSET_COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "Asset count: $ASSET_COUNT"
 
-          if [[ "$ASSET_COUNT" -ne 12 ]]; then
-            echo "ERROR: Expected 12 release assets, got $ASSET_COUNT"
+          if [[ "$ASSET_COUNT" -ne 11 ]]; then
+            echo "ERROR: Expected 11 release assets, got $ASSET_COUNT"
             exit 1
           fi
-          echo "✓ All 12 assets uploaded successfully"
+          echo "✓ All 11 assets uploaded successfully"
 
           echo ""
           echo "--- Programmatic Download Test ---"
