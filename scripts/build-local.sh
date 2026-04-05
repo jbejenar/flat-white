@@ -61,7 +61,7 @@ if [ "$SKIP_LOAD" = false ]; then
   echo ""
   echo "[build] Step 1: Running gnaf-loader for states: $STATES"
   LOAD_START=$(date +%s)
-  node dist/load.js --states $STATES
+  node dist/load.js --states $STATES --server-data-dir /data
   LOAD_END=$(date +%s)
   echo "[build] Load completed in $((LOAD_END - LOAD_START)) seconds"
 else

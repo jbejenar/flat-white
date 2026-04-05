@@ -119,11 +119,12 @@ export function buildArgs(opts: LoadOptions): string[] {
     adminBdysPath,
   ];
 
-  // When Postgres runs in Docker, the server can't see host paths.
-  // docker-compose mounts ./data as /data:ro, so we remap the path.
-  const serverDataDir = opts.serverDataDir ?? "/data";
-  const relativeGnafPath = relative(dataDir, gnafTablesPath);
-  args.push("--local-server-dir", join(serverDataDir, relativeGnafPath));
+  // Only remap paths when Postgres runs in a separate container (docker-compose).
+  // When Postgres is local (self-contained Docker image), paths are the same.
+  if (opts.serverDataDir) {
+    const relativeGnafPath = relative(dataDir, gnafTablesPath);
+    args.push("--local-server-dir", join(opts.serverDataDir, relativeGnafPath));
+  }
 
   if (opts.states && opts.states.length > 0) {
     args.push("--states", ...opts.states);
@@ -244,6 +245,9 @@ async function main(): Promise<void> {
         break;
       case "--pgdb":
         opts.pgDb = args[++i];
+        break;
+      case "--server-data-dir":
+        opts.serverDataDir = args[++i];
         break;
       default:
         console.error(`Unknown argument: ${args[i]}`);

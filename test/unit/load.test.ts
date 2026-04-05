@@ -55,7 +55,11 @@ describe("buildArgs", () => {
     expect(args).toContain("VIC");
     expect(args).toContain("--gnaf-tables-path");
     expect(args).toContain("--admin-bdys-path");
-    expect(args).toContain("--local-server-dir");
+  });
+
+  it("omits --local-server-dir when serverDataDir not set", () => {
+    const args = buildArgs({ states: ["VIC"] });
+    expect(args).not.toContain("--local-server-dir");
   });
 
   it("includes multiple states", () => {
@@ -101,12 +105,12 @@ describe("buildArgs", () => {
     expect(args).not.toContain("secret123");
   });
 
-  it("computes --local-server-dir from resolved paths", () => {
-    const args = buildArgs({ states: ["VIC"] });
+  it("computes --local-server-dir when serverDataDir is set", () => {
+    const args = buildArgs({ states: ["VIC"], serverDataDir: "/data" });
     const idx = args.indexOf("--local-server-dir");
+    expect(idx).toBeGreaterThan(-1);
     const serverDir = args[idx + 1];
     expect(serverDir).toMatch(/^\/data\/G-NAF/);
-    expect(serverDir).not.toContain("/Users/");
   });
 });
 
