@@ -31,20 +31,20 @@ FROM imresamu/postgis:16-3.5
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Node.js 22 and Python 3 (for gnaf-loader)
-# Python 3 is already in the postgis image; psycopg2 installed as system package
+# Python 3 is already in the postgis image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     python3 \
-    python3-psycopg2 \
+    python3-pip \
     unzip \
   && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
   && apt-get install -y --no-install-recommends nodejs \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-# gnaf-loader requires psycopg2 (installed above as system package)
-# No additional pip packages needed — gnaf-loader uses only stdlib + psycopg2
+# gnaf-loader requires psycopg 3 (not psycopg2)
+RUN pip3 install --no-cache-dir --break-system-packages psycopg[binary]
 
 WORKDIR /app
 
