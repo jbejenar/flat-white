@@ -16,6 +16,7 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -55,7 +56,7 @@ export const DATA_SOURCES: DataSource[] = [
     name: "Administrative Boundaries GDA2020",
     url: "https://data.gov.au/data/dataset/bdcf5b09-89bc-47ec-9281-6b8e9ee147aa/resource/36cc98bd-df9b-4454-9a05-c2756ee1249e/download/feb26_adminbounds_gda_2020_shp.zip",
     extractedDir: "FEB26_AdminBounds_GDA_2020_SHP",
-    sentinelPaths: ["commonwealth", "state"],
+    sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
   },
 ];
 
@@ -122,7 +123,17 @@ export function isExtractionComplete(extractedPath: string, sentinelPaths: strin
     return false;
   }
   if (sentinelPaths.length === 0) return false;
-  return sentinelPaths.every((sentinel) => existsSync(resolve(extractedPath, sentinel)));
+  // Read directory once for glob matching (avoids repeated readdirSync per sentinel)
+  const hasGlob = sentinelPaths.some((s) => s.includes("*"));
+  const entries = hasGlob ? readdirSync(extractedPath) : [];
+  return sentinelPaths.every((sentinel) => {
+    if (sentinel.endsWith("*")) {
+      // Trailing wildcard: "LocalGovernmentAreas_*" matches any entry starting with the prefix
+      const prefix = sentinel.slice(0, -1);
+      return entries.some((entry) => entry.startsWith(prefix));
+    }
+    return existsSync(resolve(extractedPath, sentinel));
+  });
 }
 
 // --- Retry logic ---
