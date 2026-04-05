@@ -11,13 +11,20 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-// Australian mainland + territories bounding box
+// Australian bounding box including external territories
+// Mainland: -44 to -10 lat, 112 to 154 lng
+// Christmas Island: -10.57, 105.53
+// Cocos (Keeling) Islands: -12.21, 96.82
+// Norfolk Island: -29.08, 167.96
+// Lord Howe Island: -31.56, 159.08
 const AU_LAT_MIN = -44.0;
 const AU_LAT_MAX = -9.0;
-const AU_LNG_MIN = 112.0;
-const AU_LNG_MAX = 154.0;
+const AU_LNG_MIN = 96.0; // Cocos Islands
+const AU_LNG_MAX = 168.0; // Norfolk Island
 
-// State → postcode range mapping (approximate)
+// State → postcode range mapping (approximate).
+// Border localities may have cross-state postcodes — these are logged as
+// warnings, not hard errors (see qualityWarnings in verify()).
 const STATE_POSTCODE_RANGES: Record<string, [number, number][]> = {
   NSW: [
     [1000, 2599],
