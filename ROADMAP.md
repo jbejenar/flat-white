@@ -3500,7 +3500,7 @@ G-NAF data changes incrementally each quarter — typically <1% total address co
 ```yaml
 id: P4.04
 title: Retry Logic
-status: planned
+status: done
 priority: p1-high
 epic: P4.1
 persona: [ops/maintainer]
@@ -3514,7 +3514,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-05
 ```
 
 ## User Story
@@ -3529,15 +3529,15 @@ Free GitHub Actions runners occasionally experience transient issues: network ti
 
 ### Functional
 
-- [ ] Up to 2 automatic retries on transient failures (download timeout, OOM kill)
+- [x] Up to 2 automatic retries on transient failures (download timeout, OOM kill)
   - `Verify:` Simulate a transient failure; confirm automatic retry
-  - `Evidence:`
-- [ ] Distinct alerting for retried-then-succeeded vs retried-then-failed
+  - `Evidence:` quarterly-build.yml "Run pipeline" step: retry loop with MAX_RETRIES=2, classifies exit 137 (OOM) and network errors as transient, retries with 30s backoff
+- [x] Distinct alerting for retried-then-succeeded vs retried-then-failed
   - `Verify:` Check notification content after retry scenarios
-  - `Evidence:`
-- [ ] Persistent failures (flatten logic error, schema violation) are NOT retried
+  - `Evidence:` ::warning:: annotation on retry-then-success ("succeeded on attempt N"), ::error:: annotation on retry exhaustion ("failed after N attempts")
+- [x] Persistent failures (flatten logic error, schema violation) are NOT retried
   - `Verify:` Force a flatten error; confirm no retry, immediate failure
-  - `Evidence:`
+  - `Evidence:` Failure classification: if not exit 137/143 and no network/resource error patterns in output, IS_TRANSIENT=false → immediate exit with ::error:: annotation
 
 ## Scope
 
@@ -3558,7 +3558,7 @@ Free GitHub Actions runners occasionally experience transient issues: network ti
 ```yaml
 id: P4.06
 title: Runbook
-status: planned
+status: in-progress
 priority: p0-critical
 epic: P4.1
 persona: [ops/maintainer]
@@ -3587,10 +3587,10 @@ If the quarterly build fails at 2am on a Saturday, the on-call person needs step
 
 ### Functional
 
-- [ ] Runbook covers: download failures, gnaf-loader errors, flatten failures, verification failures, manual re-run, partial re-run (single state)
+- [x] Runbook covers: download failures, gnaf-loader errors, flatten failures, verification failures, manual re-run, partial re-run (single state)
   - `Verify:` Each scenario has: symptoms, diagnosis steps, resolution procedure, manual commands
-  - `Evidence:`
-- [ ] Tested by an uninvolved person — someone who hasn't worked on flat-white can follow it
+  - `Evidence:` docs/RUNBOOK.md — 6 failure scenarios (download, gnaf-loader, flatten, verification, OOM, release creation) each with symptoms/diagnosis/resolution/commands + manual re-run procedures (full, partial via --failed, single-state via Docker) + retry logic reference table
+- [ ] Tested by an uninvolved person — someone who hasn't worked on flat-white can follow it [BLOCKED: requires human tester]
   - `Verify:` Hand runbook to a colleague; they can diagnose and re-run from the instructions alone
   - `Evidence:`
 

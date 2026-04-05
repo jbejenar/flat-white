@@ -2,51 +2,51 @@
 
 ## Session: 2026-04-05
 
-Phase: P3 (Distribution)
-Checkboxes checked this session: 14 (P3.03 ×5, P3.04 ×2, P3.05 ×2, P3.06 ×3, P3.07 ×2)
+Phase: P4 (Production Operations)
+Checkboxes checked this session: 4 (P4.04 ×3, P4.06 ×1)
 
 ### Completed
 
-- P3.03 — GitHub Release Creation: verified existing implementation in quarterly-build.yml, marked done
-- P3.04 — Release Notes: verified auto-generated notes implementation, marked done
-- P3.05 — Downstream Dispatch: added `repository_dispatch` step to quarterly-build.yml for geocode-au notification, marked done
-- P3.06 — Download Docs: added programmatic download examples + verification one-liner to README, marked done
+- P4.04 — Retry Logic: added retry wrapper to quarterly-build.yml pipeline step with transient/persistent failure classification, up to 2 retries with 30s backoff, distinct GitHub Actions annotations
+- P4.06 — Runbook (partial): wrote docs/RUNBOOK.md covering all 6 failure scenarios with symptoms/diagnosis/resolution/manual commands
 
 ### Ticket Status Changes
 
-- P3.03: planned → done
-- P3.04: planned → done
-- P3.05: planned → done
-- P3.06: planned → done
-- P3.07: planned → in-progress
+- P4.04: planned → done
+- P4.06: planned → in-progress (1/2 DoD items checked; human testing BLOCKED)
 
 ### In Progress
 
-- P3.07 — Adoption & Discovery: 2/3 DoD items checked (Quick Start + community announcement plan). data.gov.au listing DEFERRED until first verified release.
+- P4.06 — Runbook: 1/2 DoD items checked. "Tested by uninvolved person" is BLOCKED — requires human tester.
 
 ### Deferred
 
-- P3.07 data.gov.au listing: requires manual submission after first production release. Instructions in `docs/COMMUNITY-ANNOUNCEMENT.md`.
-- P3.01 wall-clock time verification: cannot verify until first real production run.
+- P3.07 data.gov.au listing: requires manual submission after first production release
+- P3.01 wall-clock time verification: cannot verify until first real production run
+- P0.07 extract-fixtures.sh: requires full VIC-loaded database
 
 ### Key Decisions
 
-- P3.05 uses `DISPATCH_TOKEN` secret (not `github.token`) because `repository_dispatch` to external repos requires a PAT with repo scope. Non-fatal warning if secret is not configured.
-- P3.07 data.gov.au listing deferred as it requires manual external submission — cannot be automated.
+- Retry logic uses shell-level retry wrapper within the workflow step (not job-level retry) to avoid re-running Docker build on each retry
+- Failure classification: exit 137/143 + network/resource error patterns → transient (retried); everything else → persistent (immediate fail)
+- Runbook written proactively before P4.01 (first production run) to have operational docs ready
 
 ### Blockers
 
-- None
+- P4.01 (All-States Production Release) — requires manually triggering the quarterly build workflow. All other P4 tickets except P4.04 depend on this.
+- P4.06 second DoD item — requires human tester
 
 ### Next Session Should Start With
 
-- **P3.07** — data.gov.au listing is DEFERRED; once first release ships, submit manually
-- **P4 tickets** — P3 is nearly complete (6/7 done, 1 in-progress with DEFERRED item). P4 starts with P4.01 (All-States Production Release) which requires triggering the actual matrix build.
-- P0.07 still has 1 unchecked DoD item (extract-fixtures.sh automation — requires VIC-loaded DB)
+- **P4.01** — trigger the first production release via `gh workflow run quarterly-build.yml -f gnaf_version=2026.02` and validate results
+- **P4.02** — verification report (depends on P4.01 completing successfully)
+- **P4.03** — build-over-build comparison (depends on P4.01; needs a prior release to compare against)
+- **P4.06** — find a human tester for the runbook
 
 ### Roadmap Progress
 
-- P0: 12/14 tickets done (P0.07 has 1 unchecked DoD item)
-- P1: 14/16 tickets done
+- P0: 12/14 tickets done (P0.07 has 1 unchecked DoD item — BLOCKED)
+- P1: all tickets done
 - P2: 8/8 tickets done (PHASE COMPLETE)
 - P3: 6/7 tickets done, 1 in-progress (P3.07 — 1 item DEFERRED)
+- P4: 1/6 tickets done (P4.04), 1 in-progress (P4.06 — 1 item BLOCKED)

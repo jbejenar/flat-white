@@ -17,6 +17,8 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- P4.04 Retry Logic: up to 2 automatic retries on transient failures (OOM kill, network timeout, resource exhaustion) in quarterly-build.yml with failure classification — persistent failures (schema validation, flatten errors) fail immediately without retry
+- P4.06 Runbook: `docs/RUNBOOK.md` with 6 failure scenarios (download, gnaf-loader, flatten, verification, OOM, release creation), manual re-run procedures, and retry logic reference table
 - P3.05 Downstream Dispatch: `repository_dispatch` notification to `geocode-au` after release publish, with version + asset URL payload
 - P3.06 Download Docs: programmatic download examples (gh CLI, curl, GitHub API), consumer verification one-liner in README
 - P3.07 Community Announcement: `docs/COMMUNITY-ANNOUNCEMENT.md` with 6 target channels and draft messaging
