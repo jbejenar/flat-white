@@ -153,13 +153,16 @@ trap cleanup EXIT
 
 stage_start "postgres"
 
-if ! su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30" 2>>/var/log/postgresql.log; then
+PG_LOG="/tmp/postgresql.log"
+touch "$PG_LOG" && chown postgres:postgres "$PG_LOG"
+
+if ! su postgres -c "pg_ctl -D $PGDATA -l $PG_LOG start -w -t 30" 2>>"$PG_LOG"; then
   # First run: initialize the database
   log "Initializing Postgres..."
   su postgres -c "initdb -D $PGDATA --auth=trust"
   echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"
   echo "listen_addresses = 'localhost'" >> "$PGDATA/postgresql.conf"
-  su postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start -w -t 30"
+  su postgres -c "pg_ctl -D $PGDATA -l $PG_LOG start -w -t 30"
   su postgres -c "createdb $PGDB" || true
   su postgres -c "psql -d $PGDB -c 'CREATE EXTENSION IF NOT EXISTS postgis'"
 fi
@@ -174,7 +177,7 @@ done
 
 if ! su postgres -c "pg_isready" >/dev/null 2>&1; then
   log "ERROR: Postgres did not become ready within 30s"
-  cat /var/log/postgresql.log 2>/dev/null || true
+  cat "$PG_LOG" 2>/dev/null || true
   exit 10
 fi
 
