@@ -305,6 +305,8 @@ if [[ "$SPLIT_STATES" == "true" && "$MODE" != "fixture" ]]; then
     log "ERROR: Split failed"
     exit 5
   }
+  # Remove the original unsplit file to avoid double-counting during concatenation
+  rm -f "$FLATTEN_OUTPUT"
   stage_end
 fi
 
@@ -315,7 +317,7 @@ if [[ "$COMPRESS" == "true" ]]; then
 
   # Compress the main output file (or per-state files if split)
   if [[ "$SPLIT_STATES" == "true" && "$MODE" != "fixture" ]]; then
-    # Compress each per-state file
+    # Compress each per-state split file (original was removed above)
     for f in "$OUTPUT_DIR"/flat-white-*.ndjson; do
       [[ -f "$f" ]] || continue
       COMPRESS_INPUT="$f" \
