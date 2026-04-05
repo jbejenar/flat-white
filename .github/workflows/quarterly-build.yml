@@ -113,7 +113,7 @@ jobs:
               # SIGTERM (container killed externally)
               IS_TRANSIENT=true
               echo "::warning::${{ matrix.state }}: container killed (exit 143) on attempt $ATTEMPT"
-            elif grep -qiE '(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|timeout|connection refused|download failed|fetch failed|socket hang up)' /tmp/pipeline-output.log 2>/dev/null; then
+            elif grep -qiE '(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|ENOTFOUND|download failed|fetch failed|socket hang up)' /tmp/pipeline-output.log 2>/dev/null; then
               IS_TRANSIENT=true
               echo "::warning::${{ matrix.state }}: network/download error detected on attempt $ATTEMPT"
             elif grep -qiE '(could not resize shared memory|no space left on device|cannot allocate memory)' /tmp/pipeline-output.log 2>/dev/null; then
