@@ -16,6 +16,7 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -55,7 +56,7 @@ export const DATA_SOURCES: DataSource[] = [
     name: "Administrative Boundaries GDA2020",
     url: "https://data.gov.au/data/dataset/bdcf5b09-89bc-47ec-9281-6b8e9ee147aa/resource/36cc98bd-df9b-4454-9a05-c2756ee1249e/download/feb26_adminbounds_gda_2020_shp.zip",
     extractedDir: "FEB26_AdminBounds_GDA_2020_SHP",
-    sentinelPaths: ["commonwealth", "state"],
+    sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
   },
 ];
 
@@ -122,7 +123,14 @@ export function isExtractionComplete(extractedPath: string, sentinelPaths: strin
     return false;
   }
   if (sentinelPaths.length === 0) return false;
-  return sentinelPaths.every((sentinel) => existsSync(resolve(extractedPath, sentinel)));
+  return sentinelPaths.every((sentinel) => {
+    if (sentinel.includes("*")) {
+      // Glob-style prefix match: "LocalGovernmentAreas_*" matches any dir starting with that prefix
+      const prefix = sentinel.replace("*", "");
+      return readdirSync(extractedPath).some((entry) => entry.startsWith(prefix));
+    }
+    return existsSync(resolve(extractedPath, sentinel));
+  });
 }
 
 // --- Retry logic ---
