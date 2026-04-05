@@ -153,7 +153,9 @@ trap cleanup EXIT
 
 stage_start "postgres"
 
-PG_LOG="/tmp/postgresql.log"
+PG_LOG_DIR="/var/run/postgresql"
+mkdir -p "$PG_LOG_DIR" && chown postgres:postgres "$PG_LOG_DIR"
+PG_LOG="$PG_LOG_DIR/postgresql.log"
 touch "$PG_LOG" && chown postgres:postgres "$PG_LOG"
 
 if ! su postgres -c "pg_ctl -D $PGDATA -l $PG_LOG start -w -t 30" 2>>"$PG_LOG"; then
@@ -215,9 +217,9 @@ else
   # Stage 3: gnaf-loader
   stage_start "load"
 
-  LOAD_ARGS=""
+  LOAD_ARGS="--no-boundary-tag"
   if [[ -n "$STATES" ]]; then
-    LOAD_ARGS="--states $STATES"
+    LOAD_ARGS="$LOAD_ARGS --states $STATES"
   fi
 
   if ! node /app/dist/load.js $LOAD_ARGS; then
