@@ -303,25 +303,25 @@ gantt
     P0 Data + Fixtures        :done, p0, 2026-04-01, 5d
 
     section Core
-    P1 Flatten Pipeline       :active, p1, after p0, 14d
-    P2 Container              :p2, after p1, 7d
+    P1 Flatten Pipeline       :done, p1, after p0, 5d
+    P2 Container              :done, p2, after p1, 3d
 
     section Ship
-    P3 Distribution           :p3, after p2, 7d
-    P4 Hardening              :p4, after p3, 7d
-    First Release             :milestone, after p3, 0d
+    P3 Distribution           :done, p3, after p2, 2d
+    First Release             :milestone, m1, after p3, 0d
+    P4 Hardening              :active, p4, after p3, 7d
 ```
 
 <table>
 <tr>
 <td align="center"><h3>73/100</h3><sub>ARI Score (L4)</sub></td>
-<td align="center"><h3>5 / 66</h3><sub>Tickets Done</sub></td>
-<td align="center"><h3>451</h3><sub>Fixture Addresses</sub></td>
-<td align="center"><h3>P0</h3><sub>Current Phase</sub></td>
+<td align="center"><h3>49 / 66</h3><sub>Tickets Done</sub></td>
+<td align="center"><h3>15M</h3><sub>Addresses Released</sub></td>
+<td align="center"><h3>v2026.04</h3><sub>Latest Release</sub></td>
 </tr>
 </table>
 
-See [ROADMAP.md](ROADMAP.md) for the full 66-ticket plan across 8 phases.
+See [ROADMAP.md](ROADMAP.md) for the full 66-ticket plan across 8 phases. [First release shipped!](../../releases/tag/v2026.04)
 
 ---
 
