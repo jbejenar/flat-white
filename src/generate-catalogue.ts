@@ -147,6 +147,15 @@ export function processReleases(releases: GitHubRelease[]): ReleaseData[] {
 
 // --- HTML Generation ---
 
+export function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function formatNumber(n: number): string {
   return n.toLocaleString("en-AU");
 }
@@ -160,13 +169,13 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
     .map(
       (r) => `
       <section class="release">
-        <h2><a href="${r.url}">${r.version}</a></h2>
-        <p class="meta">Released ${r.date} &middot; ${formatNumber(r.totalCount)} addresses &middot; Schema ${r.schemaVersion}</p>
+        <h2><a href="${esc(r.url)}">${esc(r.version)}</a></h2>
+        <p class="meta">Released ${esc(r.date)} &middot; ${esc(formatNumber(r.totalCount))} addresses &middot; Schema ${esc(r.schemaVersion)}</p>
         ${
           r.states.length > 0
             ? `<table class="states">
           <thead><tr><th>State</th><th>Addresses</th></tr></thead>
-          <tbody>${r.states.map((s) => `<tr><td>${s.state}</td><td>${formatNumber(s.count)}</td></tr>`).join("")}</tbody>
+          <tbody>${r.states.map((s) => `<tr><td>${esc(s.state)}</td><td>${esc(formatNumber(s.count))}</td></tr>`).join("")}</tbody>
         </table>`
             : ""
         }
@@ -174,7 +183,7 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
           r.assets.length > 0
             ? `<details>
           <summary>Downloads (${r.assets.length} files)</summary>
-          <ul class="downloads">${r.assets.map((a) => `<li><a href="${a.url}">${a.name}</a> <span class="size">(${a.sizeMB} MB)</span></li>`).join("")}</ul>
+          <ul class="downloads">${r.assets.map((a) => `<li><a href="${esc(a.url)}">${esc(a.name)}</a> <span class="size">(${esc(a.sizeMB)} MB)</span></li>`).join("")}</ul>
         </details>`
             : ""
         }
@@ -258,10 +267,10 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
     <h1>flat-white</h1>
     <p>Australian addresses. Flattened and served.</p>
     <nav>
-      <a href="${repoUrl}">GitHub</a>
-      <a href="${repoUrl}/blob/main/docs/DOCUMENT-SCHEMA.md">Schema Reference</a>
-      <a href="${repoUrl}/blob/main/CHANGELOG.md">Changelog</a>
-      <a href="${repoUrl}/releases">All Releases</a>
+      <a href="${esc(repoUrl)}">GitHub</a>
+      <a href="${esc(repoUrl)}/blob/main/docs/DOCUMENT-SCHEMA.md">Schema Reference</a>
+      <a href="${esc(repoUrl)}/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="${esc(repoUrl)}/releases">All Releases</a>
     </nav>
   </header>
 
@@ -272,14 +281,14 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
 
   <section class="schema">
     <h2>Document Schema</h2>
-    <p>Each NDJSON line is one address document. See the full <a class="schema-link" href="${repoUrl}/blob/main/docs/DOCUMENT-SCHEMA.md">schema reference</a>.</p>
+    <p>Each NDJSON line is one address document. See the full <a class="schema-link" href="${esc(repoUrl)}/blob/main/docs/DOCUMENT-SCHEMA.md">schema reference</a>.</p>
     <p style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--muted);">
       Output formats: NDJSON (.ndjson.gz), Parquet (--format parquet), Geoparquet (--format geoparquet)
     </p>
   </section>
 
   <footer>
-    <p>Generated ${now} from <a href="${repoUrl}" style="color: var(--accent);">${owner}/${repoName}</a>. Data sourced from the <a href="https://data.gov.au/dataset/geocoded-national-address-file-g-naf" style="color: var(--accent);">G-NAF</a> under Creative Commons Attribution 4.0.</p>
+    <p>Generated ${esc(now)} from <a href="${esc(repoUrl)}" style="color: var(--accent);">${esc(owner)}/${esc(repoName)}</a>. Data sourced from the <a href="https://data.gov.au/dataset/geocoded-national-address-file-g-naf" style="color: var(--accent);">G-NAF</a> under Creative Commons Attribution 4.0.</p>
   </footer>
 </body>
 </html>`;

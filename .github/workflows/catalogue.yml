@@ -35,7 +35,8 @@ jobs:
       - name: Generate catalogue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node dist/generate-catalogue.js --repo ${{ github.repository }} --out dist/catalogue/index.html
+          REPO: ${{ github.repository }}
+        run: node dist/generate-catalogue.js --repo "$REPO" --out dist/catalogue/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
