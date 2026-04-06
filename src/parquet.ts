@@ -63,7 +63,7 @@ export const ADDRESS_PARQUET_SCHEMA = new ParquetSchema({
  * Map an AddressDocument (parsed from NDJSON) to a flat Parquet row.
  * Null values are omitted so parquetjs treats them as null.
  */
-function toParquetRow(doc: Record<string, unknown>): Record<string, unknown> {
+export function toParquetRow(doc: Record<string, unknown>): Record<string, unknown> {
   const row: Record<string, unknown> = {
     _id: doc._id,
     _version: doc._version,

@@ -7,7 +7,7 @@
  */
 
 /** Supported output formats. */
-export type OutputFormat = "ndjson" | "parquet";
+export type OutputFormat = "ndjson" | "parquet" | "geoparquet";
 
 /** Parsed CLI options for the flat-white pipeline. */
 export interface CliOptions {
@@ -33,7 +33,7 @@ export interface CliOptions {
   adminPath: string | null;
 }
 
-const VALID_FORMATS: readonly OutputFormat[] = ["ndjson", "parquet"];
+const VALID_FORMATS: readonly OutputFormat[] = ["ndjson", "parquet", "geoparquet"];
 
 const DEFAULT_OPTIONS: CliOptions = {
   help: false,
@@ -189,7 +189,7 @@ Flags:
   --fixture-only      Run fixture build only (no download, no gnaf-loader)
   --states STATES     States to process (e.g. VIC, VIC NSW)
   --output DIR        Output directory (default: /output)
-  --format FORMAT     Output format: ndjson (default) or parquet
+  --format FORMAT     Output format: ndjson (default), parquet, or geoparquet
   --compress          Gzip output files
   --split-states      Split output into per-state files
   --skip-download     Skip data download (assumes data at --gnaf-path / --admin-path)
