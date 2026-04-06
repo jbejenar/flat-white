@@ -18,5 +18,5 @@ flat-white is a data transformation tool — it reads government data and produc
 ## Supported Versions
 
 | Version | Supported |
-|---------|-----------|
+| ------- | --------- |
 | latest  | Yes       |

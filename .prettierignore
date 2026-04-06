@@ -1,0 +1,8 @@
+# Git submodule — read-only, do not format
+gnaf-loader/
+
+# Build output
+dist/
+
+# Generated fixtures (large SQL)
+fixtures/seed-postgres.sql

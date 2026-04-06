@@ -33,9 +33,7 @@ function validDocument() {
       type: "FRONTAGE CENTRE SETBACK",
       reliability: 2,
     },
-    allGeocodes: [
-      { lat: -37.79815294, lng: 144.89719303, type: "FCS", reliability: 2 },
-    ],
+    allGeocodes: [{ lat: -37.79815294, lng: 144.89719303, type: "FCS", reliability: 2 }],
     locality: {
       pid: "loc67a11408d754",
       class: "GAZETTED LOCALITY",

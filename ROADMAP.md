@@ -4408,54 +4408,54 @@ Quarterly builds run on a schedule. Without notifications, failures go undetecte
 **Target:** End of Week 1
 
 - [x] Repo live with gnaf-loader submodule, AGENTS.md, decisions
-- [ ] VIC loaded via gnaf-loader; schema documented from live data
-- [ ] Flatten SQL produces complete document from 9+ table JOIN
-- [x] ~500 address fixture extracted; `expected-output.ndjson` pending (needs flatten SQL)
-- [ ] `./scripts/build-fixture-only.sh` → valid NDJSON in <30 seconds
+- [x] VIC loaded via gnaf-loader; schema documented from live data — P0.04 + P0.05 done
+- [x] Flatten SQL produces complete document from 9+ table JOIN — P0.06 done
+- [x] ~500 address fixture extracted; `expected-output.ndjson` committed — P0.07 + P0.09 done
+- [x] `./scripts/build-fixture-only.sh` → valid NDJSON in <30 seconds — P0.10 done
 
 ### M1: Flatten Core
 
 **Target:** End of Week 3
 
-- [ ] Streaming flattener: VIC 3.8M docs, <500MB memory
-- [ ] All aggregations correct (aliases, secondaries, geocodes, boundaries)
-- [ ] Per-state split + gzip working
-- [ ] `metadata.json` produced
-- [ ] Schema validation on every doc; regression green
+- [x] Streaming flattener: VIC 3.8M docs, <500MB memory — P1.01 + P1.11 done
+- [x] All aggregations correct (aliases, secondaries, geocodes, boundaries) — P1.02, P1.03, P1.04, P1.05, P1.06 done
+- [x] Per-state split + gzip working — P1.13 + P1.14 done
+- [x] `metadata.json` produced — P1.12 done
+- [x] Schema validation on every doc; regression green — P1.09 done
 
 ### M2: Container
 
 **Target:** End of Week 4
 
-- [ ] `docker run flat-white --states VIC --compress --output ./` works
-- [ ] Image published to Docker Hub
-- [ ] Fixture CI on every PR (<60s)
+- [x] `docker run flat-white --states VIC --compress --output ./` works — P3.01 done
+- [x] Image published to Docker Hub — P2.07 done
+- [x] Fixture CI on every PR (<60s) — P2.08 done
 
 ### M3: First Release
 
 **Target:** End of Week 5
 
-- [ ] Matrix build: 9 states in parallel on free runners
-- [ ] GitHub Release `v2026.02` with per-state assets
-- [ ] Downstream `geocode-au` auto-notified
-- [ ] Programmatic download documented
+- [x] Matrix build: 9 states in parallel on free runners — P3.01 done
+- [x] GitHub Release `v2026.04` with per-state assets — P4.01 done (release is v2026.04, not v2026.02)
+- [x] Downstream `geocode-au` auto-notified — P3.05 done
+- [x] Programmatic download documented — P3.06 done
 
 ### M3.5: First Consumer
 
 **Target:** Week 5-6
 
 - [ ] At least 1 external download of a per-state file (GitHub Release download count > 0)
-- [ ] Quick-start guide tested by someone who isn't the builder
+- [ ] Quick-start guide tested by someone who isn't the builder [BLOCKED: P4.06]
 - [ ] 1 downstream integration (geocode-au) successfully ingests the data
 
 ### M4: Autopilot
 
 **Target:** End of Week 6
 
-- [ ] Build-over-build verification operational
-- [ ] Runbook tested
-- [ ] NSW memory-optimised for free runners
-- [ ] Quarterly cron active
+- [ ] Build-over-build verification operational [BLOCKED: P4.03 needs v2026.05]
+- [ ] Runbook tested [BLOCKED: P4.06 needs human tester]
+- [ ] NSW memory-optimised for free runners [BLOCKED: P4.07 needs 4 more runs]
+- [x] Quarterly cron active — P4.01 done
 
 ---
 

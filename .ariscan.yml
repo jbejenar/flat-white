@@ -6,8 +6,8 @@ enforcement: warn
 thresholds:
   composite: 60
   pillars:
-    P1: 50   # Agent Context Quality — AGENTS.md, .agentignore
-    P2: 40   # Feedback Loop Speed — test/lint/typecheck scripts, CI
-    P3: 20   # Test Isolation — low until P0 fixtures + P1 tests land
-    P6: 50   # Build Determinism — strict TypeScript, lockfile
-    P8: 40   # Security & Governance — CODEOWNERS, secrets scanning (gates L2+)
+    P1: 50 # Agent Context Quality — AGENTS.md, .agentignore
+    P2: 40 # Feedback Loop Speed — test/lint/typecheck scripts, CI
+    P3: 20 # Test Isolation — low until P0 fixtures + P1 tests land
+    P6: 50 # Build Determinism — strict TypeScript, lockfile
+    P8: 40 # Security & Governance — CODEOWNERS, secrets scanning (gates L2+)
