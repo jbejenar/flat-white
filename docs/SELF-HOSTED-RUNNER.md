@@ -29,10 +29,7 @@ mkdir actions-runner && cd actions-runner
 curl -o actions-runner-linux-x64-2.321.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.321.0/actions-runner-linux-x64-2.321.0.tar.gz
 tar xzf ./actions-runner-linux-x64-2.321.0.tar.gz
 
-./config.sh --url https://github.com/YOUR_ORG/flat-white --token YOUR_TOKEN
-
-# Add labels for targeting
-./config.sh --labels flat-white,high-memory
+./config.sh --url https://github.com/YOUR_ORG/flat-white --token YOUR_TOKEN --labels flat-white,high-memory
 ```
 
 ### 2. Add Runner Labels
