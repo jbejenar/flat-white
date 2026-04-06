@@ -298,27 +298,31 @@ This repo is built for **autonomous AI coding agents**. Every push to `main` run
 
 ```mermaid
 gantt
-    title flat-white roadmap
+    title flat-white — built in a week
     dateFormat YYYY-MM-DD
     axisFormat %b %d
 
     section Foundation
-    P0 Data + Fixtures        :done, p0, 2026-04-01, 5d
+    P0 Data + Fixtures        :done, p0, 2026-04-01, 3d
 
     section Core
-    P1 Flatten Pipeline       :done, p1, after p0, 5d
-    P2 Container              :done, p2, after p1, 3d
+    P1 Flatten Pipeline       :done, p1, 2026-04-03, 2d
+    P2 Container              :done, p2, 2026-04-04, 2d
 
     section Ship
-    P3 Distribution           :done, p3, after p2, 2d
-    First Release             :milestone, m1, after p3, 0d
-    P4 Hardening              :active, p4, after p3, 7d
+    P3 Distribution           :done, p3, 2026-04-05, 1d
+    First Release             :milestone, m1, 2026-04-05, 0d
+
+    section Ongoing
+    P4 Hardening              :active, p4, 2026-04-05, 7d
+    E1 Enhancements           :active, e1, 2026-04-04, 10d
+    P5 AWS Mirror             :p5, after p4, 7d
 ```
 
 <table>
 <tr>
 <td align="center"><h3>74/100</h3><sub>ARI Score (L4)</sub></td>
-<td align="center"><h3>49 / 66</h3><sub>Tickets Done</sub></td>
+<td align="center"><h3>56 / 66</h3><sub>Tickets Done</sub></td>
 <td align="center"><h3>15M</h3><sub>Addresses Released</sub></td>
 <td align="center"><h3>v2026.04</h3><sub>Latest Release</sub></td>
 </tr>
