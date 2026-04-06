@@ -8,7 +8,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -20,6 +20,8 @@ jobs:
         id: version
         run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
+      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -30,9 +32,82 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/flat-white:${{ steps.version.outputs.tag }}
             ${{ secrets.DOCKER_USERNAME }}/flat-white:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  verify-multi-arch:
+    runs-on: ubuntu-latest
+    needs: publish
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Run fixture build on ${{ matrix.platform }}
+        run: |
+          mkdir -p output
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "$(pwd)/output:/output" \
+            ${{ secrets.DOCKER_USERNAME }}/flat-white:${{ steps.version.outputs.tag }} \
+            --fixture-only --output /output/
+
+      - name: Compute output checksum
+        id: checksum
+        run: |
+          CHECKSUM=$(sha256sum output/fixture.ndjson | cut -d' ' -f1)
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+          echo "${{ matrix.platform }}: $CHECKSUM"
+
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksum-${{ strategy.job-index }}
+          path: output/fixture.ndjson
+          retention-days: 1
+
+  verify-identical:
+    runs-on: ubuntu-latest
+    needs: verify-multi-arch
+    timeout-minutes: 5
+    steps:
+      - name: Download all checksums
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: checksum-*
+
+      - name: Compare outputs across architectures
+        run: |
+          echo "Comparing fixture output across architectures..."
+          CHECKSUM_AMD64=$(sha256sum artifacts/checksum-0/fixture.ndjson | cut -d' ' -f1)
+          CHECKSUM_ARM64=$(sha256sum artifacts/checksum-1/fixture.ndjson | cut -d' ' -f1)
+
+          echo "AMD64: $CHECKSUM_AMD64"
+          echo "ARM64: $CHECKSUM_ARM64"
+
+          if [[ "$CHECKSUM_AMD64" != "$CHECKSUM_ARM64" ]]; then
+            echo "ERROR: Output differs between architectures!"
+            echo "--- Diff (first 20 lines) ---"
+            diff <(head -20 artifacts/checksum-0/fixture.ndjson) <(head -20 artifacts/checksum-1/fixture.ndjson) || true
+            exit 1
+          fi
+
+          echo "✓ Output is identical across AMD64 and ARM64"
