@@ -89,7 +89,7 @@ export function parseArgs(argv: string[]): CliOptions {
       case "--format": {
         i++;
         if (i >= argv.length || argv[i].startsWith("--")) {
-          throw new CliError("--format requires a value (ndjson or parquet)");
+          throw new CliError(`--format requires a value (${VALID_FORMATS.join(", ")})`);
         }
         const fmt = argv[i].toLowerCase();
         if (!VALID_FORMATS.includes(fmt as OutputFormat)) {

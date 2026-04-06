@@ -251,7 +251,7 @@ Available via `--format geoparquet`. Produces a [Geoparquet v1.1.0](https://geop
 ```python
 import geopandas as gpd
 
-gdf = geopandas.read_parquet("flat-white-2026.02.geoparquet")
+gdf = gpd.read_parquet("flat-white-2026.02.geoparquet")
 # geometry column is automatically parsed as shapely Points
 print(gdf.geometry.head())
 # Spatial queries work natively
