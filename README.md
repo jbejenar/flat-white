@@ -200,13 +200,16 @@ Every quarter, a [GitHub Actions](https://github.com/features/actions) matrix bu
 **Total cost: $0.** Free runners. Free hosting. Free forever.
 
 ```bash
-# Download a single state with gh CLI
+# Download a single state
 gh release download latest --repo jbejenar/flat-white --pattern '*-vic.ndjson.gz'
 
-# Download all states in one file
-gh release download latest --repo jbejenar/flat-white --pattern '*-all.ndjson.gz'
+# Download all states (9 per-state files)
+gh release download latest --repo jbejenar/flat-white --pattern '*.ndjson.gz'
 
-# Or via curl (replace VERSION with e.g. 2026.02)
+# Combine into one file (concatenated gzips are valid gzip)
+cat flat-white-*-*.ndjson.gz > flat-white-all.ndjson.gz
+
+# Or via curl (replace VERSION with e.g. 2026.04)
 curl -LO "https://github.com/jbejenar/flat-white/releases/download/vVERSION/flat-white-VERSION-vic.ndjson.gz"
 ```
 
