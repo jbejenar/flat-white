@@ -2,17 +2,17 @@
 
 > Updated: 2026-04-06. Active phase: E1 (Ongoing) — P4 blocked.
 
-## Completed This Session (2026-04-06, session 3)
+## Completed This Session (2026-04-06, session 4)
 
-### E1.09 — Self-Hosted Runner Fallback (done)
+### E1.06 — Build Cache (in-progress)
 
-- [x] docs/SELF-HOSTED-RUNNER.md: hardware reqs, runner setup, workflow config, cost estimates
-- [x] quarterly-build.yml: `runner` input for `workflow_dispatch` targeting
+- [x] `--dump-db` / `--restore-db` flags in docker-entrypoint.sh
+- [x] `actions/cache@v4` integration in quarterly-build.yml
+- [ ] Build time reduction verified in production (DEFERRED: v2026.05)
 
-### E1.07 — Multi-Arch Image (done)
+### E1.01 — Parquet Output (done — roadmap updated)
 
-- [x] docker-publish.yml: ARM64 + AMD64 via QEMU + buildx
-- [x] Cross-arch verification: fixture-only build + SHA-256 checksum comparison
+- [x] Roadmap updated to reflect PR #57 merge
 
 ## Remaining P4 Work (all BLOCKED)
 
@@ -30,16 +30,18 @@
 
 ## Next E1 Work
 
-### E1.01 — Parquet Output (planned, p1-high)
+### E1.05 — Geoparquet Output (planned, p2-medium)
 
-- [ ] `--format parquet` produces valid Parquet file
-- [ ] Parquet schema matches NDJSON document schema
+- [ ] `--format geoparquet` produces valid Geoparquet file with POINT geometry
+- [ ] Geoparquet metadata follows spec
 
-### E1.06 — Build Cache (planned, p1-high)
+### E1.02 — Delta Builds (planned, p2-medium)
 
-- [ ] Postgres dump cached after gnaf-loader (keyed by G-NAF version + state)
-- [ ] Cache miss triggers full load
-- [ ] Build time reduced ~30 min on cache hit
+- [ ] Depends on P4.03
+
+### E1.08 — GitHub Pages Catalogue (planned, p2-medium)
+
+- [ ] Static site with release history, stats, schema docs, download links
 
 ## Reference Files
 

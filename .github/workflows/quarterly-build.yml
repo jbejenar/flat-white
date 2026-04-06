@@ -72,6 +72,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Cache gnaf-loader database dump (E1.06)
+        id: db-cache
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: gnaf-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**') }}
+          # No restore-keys — gnaf-loader schema changes must trigger a full rebuild
+
+      - name: Prepare cache arguments
+        id: cache-args
+        run: |
+          mkdir -p cache
+          CACHE_FILE="cache/${{ matrix.state }}.dump"
+          if [[ "${{ steps.db-cache.outputs.cache-hit }}" == "true" && -f "$CACHE_FILE" ]]; then
+            echo "Cache hit — will restore from dump"
+            echo "flags=--restore-db /cache/${{ matrix.state }}.dump" >> "$GITHUB_OUTPUT"
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Cache miss — will dump after load"
+            echo "flags=--dump-db /cache/${{ matrix.state }}.dump" >> "$GITHUB_OUTPUT"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run pipeline for ${{ matrix.state }}
         run: |
           mkdir -p output
@@ -87,12 +110,14 @@ jobs:
             set +e
             docker run --rm \
               -v "$(pwd)/output:/output" \
+              -v "$(pwd)/cache:/cache" \
               -e "GNAF_VERSION=${{ needs.setup.outputs.version }}" \
               ${{ env.DOCKER_IMAGE }}:build \
               --states ${{ matrix.state }} \
               --split-states \
               --compress \
-              --output /output 2>&1 | tee /tmp/pipeline-output.log
+              --output /output \
+              ${{ steps.cache-args.outputs.flags }} 2>&1 | tee /tmp/pipeline-output.log
             EXIT_CODE=${PIPESTATUS[0]}
             set -e
 
@@ -140,8 +165,22 @@ jobs:
 
           if [[ "$SUCCESS" != "true" ]]; then
             echo "::error::${{ matrix.state }}: failed after $ATTEMPT attempts (transient failures exhausted retries)"
+            # NOTE: If restore fails on every retry, the cache dump may be corrupt or
+            # incompatible. Recovery: delete the GitHub Actions cache entry for this
+            # state from the Actions > Caches UI and re-run the workflow.
             exit 1
           fi
+
+      - name: Report cache status
+        if: always()
+        run: |
+          CACHE_FILE="cache/${{ matrix.state }}.dump"
+          if [[ -f "$CACHE_FILE" ]]; then
+            echo "Cache file: $CACHE_FILE ($(du -h "$CACHE_FILE" | cut -f1))"
+          else
+            echo "No cache file present"
+          fi
+          echo "Cache hit: ${{ steps.db-cache.outputs.cache-hit }}"
 
       - name: Verify output
         run: |
