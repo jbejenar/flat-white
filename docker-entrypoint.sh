@@ -70,6 +70,8 @@ Flags:
   --skip-download     Skip data download (assumes data in /data)
   --gnaf-path PATH    Path to extracted G-NAF data
   --admin-path PATH   Path to extracted Admin Boundaries data
+  --dump-db PATH      Dump database after gnaf-loader (for caching)
+  --restore-db PATH   Restore database from dump (skip download + gnaf-loader)
 
 Exit codes:
   0   Success
@@ -103,6 +105,8 @@ SPLIT_STATES=false
 SKIP_DOWNLOAD=false
 GNAF_PATH=""
 ADMIN_PATH=""
+DUMP_DB=""
+RESTORE_DB=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -114,6 +118,8 @@ while [[ $# -gt 0 ]]; do
     --skip-download) SKIP_DOWNLOAD=true; shift ;;
     --gnaf-path)     shift; GNAF_PATH="$1"; shift ;;
     --admin-path)    shift; ADMIN_PATH="$1"; shift ;;
+    --dump-db)       shift; DUMP_DB="$1"; shift ;;
+    --restore-db)    shift; RESTORE_DB="$1"; shift ;;
     *)
       log "Unknown argument: $1"
       log "Run with --help for usage."
@@ -136,6 +142,26 @@ fi
 
 if [[ "$MODE" == "fixture" && "$SPLIT_STATES" == "true" ]]; then
   log "ERROR: --fixture-only and --split-states are mutually exclusive."
+  exit 1
+fi
+
+if [[ "$MODE" == "fixture" && -n "$DUMP_DB" ]]; then
+  log "ERROR: --fixture-only and --dump-db are mutually exclusive."
+  exit 1
+fi
+
+if [[ "$MODE" == "fixture" && -n "$RESTORE_DB" ]]; then
+  log "ERROR: --fixture-only and --restore-db are mutually exclusive."
+  exit 1
+fi
+
+if [[ -n "$DUMP_DB" && -n "$RESTORE_DB" ]]; then
+  log "ERROR: --dump-db and --restore-db are mutually exclusive."
+  exit 1
+fi
+
+if [[ -n "$RESTORE_DB" && "$SKIP_DOWNLOAD" == "true" ]]; then
+  log "ERROR: --restore-db and --skip-download are mutually exclusive."
   exit 1
 fi
 
@@ -208,6 +234,21 @@ if [[ "$MODE" == "fixture" ]]; then
     exit 2
   }
   stage_end
+elif [[ -n "$RESTORE_DB" ]]; then
+  # Cache hit: restore database from dump, skip download + gnaf-loader
+  stage_start "restore"
+  if [[ ! -f "$RESTORE_DB" ]]; then
+    log "ERROR: --restore-db file not found: $RESTORE_DB"
+    exit 2
+  fi
+  log "Restoring database from cache: $RESTORE_DB"
+  su postgres -c "pg_restore -d $PGDB --no-owner --no-privileges --jobs=2 $RESTORE_DB" || {
+    log "ERROR: Database restore failed"
+    exit 2
+  }
+  DUMP_SIZE=$(du -h "$RESTORE_DB" | cut -f1)
+  log "Database restored from $DUMP_SIZE dump"
+  stage_end
 else
   # Full pipeline: download + gnaf-loader
 
@@ -240,6 +281,20 @@ else
     exit 2
   fi
   stage_end
+
+  # Stage 3b: Dump database for caching (if requested)
+  if [[ -n "$DUMP_DB" ]]; then
+    stage_start "dump"
+    DUMP_DIR=$(dirname "$DUMP_DB")
+    mkdir -p "$DUMP_DIR"
+    su postgres -c "pg_dump -Fc --compress=6 -f $DUMP_DB $PGDB" || {
+      log "ERROR: Database dump failed"
+      exit 2
+    }
+    DUMP_SIZE=$(du -h "$DUMP_DB" | cut -f1)
+    log "Database dumped: $DUMP_DB ($DUMP_SIZE)"
+    stage_end
+  fi
 fi
 
 # ── Stage 4: Flatten ────────────────────────────────────────────────────────

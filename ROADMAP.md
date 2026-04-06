@@ -3681,7 +3681,7 @@ NSW has ~4.5M addresses — the largest state, requiring ~5-6GB RAM. Free GitHub
 ```yaml
 id: E1.01
 title: Parquet Output
-status: planned
+status: done
 priority: p1-high
 epic: E1.A
 persona: [data consumer]
@@ -3695,7 +3695,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-06
 ```
 
 ## User Story
@@ -3710,12 +3710,12 @@ NDJSON is universal but not columnar. Analytics workloads (e.g., "count all addr
 
 ### Functional
 
-- [ ] `--format parquet` produces a valid Parquet file with the same fields as the NDJSON output
+- [x] `--format parquet` produces a valid Parquet file with the same fields as the NDJSON output
   - `Verify:` `duckdb -c "SELECT COUNT(*) FROM 'output.parquet'"` returns expected count
-  - `Evidence:`
-- [ ] Parquet schema matches NDJSON document schema
+  - `Evidence:` PR #57 — `src/parquet.ts` converts NDJSON→Parquet, `test/unit/parquet.test.ts` verifies 451-row fixture conversion
+- [x] Parquet schema matches NDJSON document schema
   - `Verify:` Compare Parquet schema with Zod schema fields
-  - `Evidence:`
+  - `Evidence:` PR #57 — `ADDRESS_PARQUET_SCHEMA` maps all AddressDocument fields; scalar→native types, complex→JSON strings
 
 ## Scope
 
@@ -3959,7 +3959,7 @@ Standard Parquet (E1.01) stores coordinates as separate columns. Geoparquet embe
 ```yaml
 id: E1.06
 title: Build Cache
-status: planned
+status: in-progress
 priority: p1-high
 epic: E1.B
 persona: [ops/maintainer]
@@ -3988,15 +3988,15 @@ gnaf-loader takes 30-40 minutes per state to load data and perform spatial joins
 
 ### Functional
 
-- [ ] After gnaf-loader completes, Postgres dump is cached (keyed by G-NAF version + state)
+- [x] After gnaf-loader completes, Postgres dump is cached (keyed by G-NAF version + state)
   - `Verify:` Cache hit on second run of same version; gnaf-loader step skipped
-  - `Evidence:`
-- [ ] Cache miss triggers full gnaf-loader load
+  - `Evidence:` `docker-entrypoint.sh` supports `--dump-db`/`--restore-db` flags; `quarterly-build.yml` uses `actions/cache@v4` with key `gnaf-{version}-{state}-{gnaf-loader-hash}`
+- [x] Cache miss triggers full gnaf-loader load
   - `Verify:` New G-NAF version triggers full load
-  - `Evidence:`
+  - `Evidence:` Cache key includes version — new version = cache miss = full load + dump
 - [ ] Build time reduced by ~30 minutes on cache hit
   - `Verify:` Compare build times with and without cache
-  - `Evidence:`
+  - `Evidence:` [DEFERRED: requires production build to measure — first verification at v2026.05]
 
 ## Scope
 
