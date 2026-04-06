@@ -11,7 +11,7 @@
  */
 
 import { createReadStream } from "node:fs";
-import { writeFile, readFile } from "node:fs/promises";
+import { writeFile, readFile, access } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { resolve, join } from "node:path";
@@ -62,6 +62,9 @@ async function verifyGzippedState(gzPath: string, state: string): Promise<StateV
   };
   let qualityErrors = 0;
   let qualityWarnings = 0;
+  // NOTE: For NSW (~4.5M addresses), this Set can consume ~250-360MB.
+  // The Set is scoped per-state (released between calls), and the workflow
+  // step uses --max-old-space-size=512 to provide headroom.
   const pids = new Set<string>();
   let duplicatePids = 0;
 
@@ -266,6 +269,27 @@ async function main(): Promise<void> {
 
   for (const { state, path } of stateFiles) {
     process.stdout.write(`  ${state}... `);
+
+    // Check file existence before attempting verification
+    try {
+      await access(path);
+    } catch {
+      console.log(`SKIPPED — file not found: ${path}`);
+      stateResults.push({
+        state,
+        rowCount: 0,
+        schemaValid: false,
+        schemaErrors: 0,
+        boundaryCoverage: {},
+        qualityErrors: 0,
+        qualityWarnings: 0,
+        duplicatePids: 0,
+        passed: false,
+      });
+      overallPassed = false;
+      continue;
+    }
+
     try {
       const result = await verifyGzippedState(path, state);
       stateResults.push(result);

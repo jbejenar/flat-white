@@ -362,7 +362,8 @@ jobs:
         id: verify_report
         run: |
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
-          node dist/verification-report.js "$ASSET_DIR" --output "$ASSET_DIR/verification-report.md"
+          # NSW PID uniqueness Set can reach ~250-360MB; raise V8 heap limit to avoid OOM
+          node --max-old-space-size=512 dist/verification-report.js "$ASSET_DIR" --output "$ASSET_DIR/verification-report.md"
           echo "✓ Verification report generated"
           cat "$ASSET_DIR/verification-report.md"
 
@@ -373,11 +374,14 @@ jobs:
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
           HAS_ANOMALIES=false
 
-          # Try to get prior release metadata
-          PRIOR_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+          # Try to get prior release metadata (exclude drafts to avoid comparing against ourselves on re-runs)
+          PRIOR_TAG=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
 
           if [[ -z "$PRIOR_TAG" ]]; then
             echo "No prior release found — skipping comparison"
+            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$PRIOR_TAG" == "v${VERSION}" ]]; then
+            echo "Prior release is same version (${PRIOR_TAG}) — skipping comparison (manual rebuild)"
             echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
           else
             echo "Comparing against prior release: $PRIOR_TAG"
@@ -392,8 +396,10 @@ jobs:
                 echo "::warning::Build-over-build anomalies detected — review before publishing"
                 HAS_ANOMALIES=true
                 # Copy comparison report to release assets
-                COMPARE_REPORT="comparison-${VERSION}-vs-*.md"
-                cp $COMPARE_REPORT "$ASSET_DIR/" 2>/dev/null || true
+                find . -maxdepth 1 -name 'comparison-*.md' -exec cp {} "$ASSET_DIR/" \;
+                if ! ls "$ASSET_DIR"/comparison-*.md >/dev/null 2>&1; then
+                  echo "::warning::Comparison report not copied to release assets"
+                fi
               fi
             else
               echo "Could not download prior metadata — skipping comparison"
@@ -411,8 +417,8 @@ jobs:
           SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
 
-          # Try to get prior release metadata for delta calculation
-          PRIOR_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+          # Try to get prior release metadata for delta calculation (exclude drafts to avoid self-comparison)
+          PRIOR_TAG=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
           HAS_DELTA=false
 
           if [[ -n "$PRIOR_TAG" ]]; then
