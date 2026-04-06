@@ -163,7 +163,20 @@ if ! su postgres -c "pg_ctl -D $PGDATA -l $PG_LOG start -w -t 30" 2>>"$PG_LOG"; 
   log "Initializing Postgres..."
   su postgres -c "initdb -D $PGDATA --auth=trust"
   echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"
-  echo "listen_addresses = 'localhost'" >> "$PGDATA/postgresql.conf"
+
+  # Memory tuning for 7GB free runners (P4.07)
+  # Default shared_buffers (128MB) works but leaves no margin for NSW (~4.6M rows).
+  # These settings target ~500-700MB PostgreSQL footprint, leaving headroom for
+  # gnaf-loader (Python), Node.js flatten (~65MB), and OS (~500MB).
+  cat >> "$PGDATA/postgresql.conf" <<PGCONF
+listen_addresses = 'localhost'
+shared_buffers = 256MB
+work_mem = 64MB
+maintenance_work_mem = 256MB
+effective_cache_size = 2GB
+max_connections = 20
+PGCONF
+
   su postgres -c "pg_ctl -D $PGDATA -l $PG_LOG start -w -t 30"
   su postgres -c "createdb $PGDB" || true
   su postgres -c "psql -d $PGDB -c 'CREATE EXTENSION IF NOT EXISTS postgis'"

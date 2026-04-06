@@ -48,16 +48,49 @@ Cursor-based streaming (batch size 500) keeps Node.js memory constant regardless
 | ----- | --------- |
 | VIC   | 3,940,659 |
 
-Other states will be added as they are built (P3.01).
+## Production Build — v2026.04 (Free Runners)
 
-## Free Runner Projections
+> Measured from workflow run 24005068570, 2026-04-05. All 9 states on `ubuntu-latest` (7 GB RAM, 2-core x86_64).
 
-GitHub Actions free runners provide 7 GB RAM and 2-core x86_64 CPUs. Based on VIC baseline:
+### Per-State Timing
 
-- **Memory**: ~65 MB Node.js + ~128 MB Postgres = well within 7 GB limit. Even NSW (~4.5M addresses) should fit comfortably.
-- **Time**: gnaf-loader and flatten are CPU-bound. Expect ~2-4x slower on free runners vs M2 Max. VIC should complete well under the 45-minute target.
-- **Disk**: 5 GB NDJSON output + ~2 GB loaded Postgres. Free runners typically have 14 GB disk, sufficient for single-state builds.
+| State     | Addresses      | Download | Load | Flatten | Total Wall Clock                   |
+| --------- | -------------- | -------- | ---- | ------- | ---------------------------------- |
+| NSW       | 4,619,401      | 315s     | 278s | 205s    | ~19m 23s                           |
+| VIC       | 3,940,659      | 228s     | 237s | 178s    | ~16m 49s                           |
+| QLD       | 3,100,481      | 342s     | 173s | 129s    | ~14m 43s                           |
+| WA        | 1,526,407      | 216s     | 126s | 64s     | ~9m 8s                             |
+| SA        | 1,123,131      | 328s     | 92s  | 46s     | ~9m 41s                            |
+| TAS       | 346,248        | 361s     | 91s  | 16s     | ~8m 51s                            |
+| ACT       | 245,362        | 236s     | 28s  | 10s     | ~5m 44s                            |
+| NT        | 110,079        | 277s     | 46s  | 4s      | ~6m 12s                            |
+| OT        | 3,805          | 265s     | 2s   | 0s      | ~5m 18s                            |
+| **Total** | **15,015,573** | —        | —    | —       | **23m 55s** (wall clock, parallel) |
+
+### Key Observations
+
+- **NSW is the largest state** at 4.6M addresses — ~30% of all Australian addresses.
+- **Download dominates small states** — TAS/NT/OT spend more time downloading than processing.
+- **Flatten scales linearly** — ~22.5K docs/s across all states.
+- **No OOM kills** on any state during the v2026.04 build.
+- **Total wall clock** 23m 55s (parallel) — well under the 60-minute target.
+
+### Memory (Free Runners)
+
+| Component                | Estimate    | Notes                                                  |
+| ------------------------ | ----------- | ------------------------------------------------------ |
+| Node.js flatten RSS      | ~65 MB      | Constant regardless of dataset size (cursor streaming) |
+| PostgreSQL (with tuning) | ~500-700 MB | shared_buffers=256MB + work_mem + overhead             |
+| gnaf-loader (Python)     | ~1-3 GB     | Varies by state; NSW is worst case                     |
+| OS + system              | ~500 MB     | Baseline                                               |
+| **NSW peak (estimated)** | **~3-5 GB** | Within 7 GB limit with ~2-4 GB margin                  |
+
+See [NSW-MEMORY-ANALYSIS.md](NSW-MEMORY-ANALYSIS.md) for detailed margin analysis.
+
+### Verification
+
+All 9 states passed: row count, PID uniqueness, schema validation, quality checks.
 
 ## Updating This Baseline
 
-When new measurements are taken (especially on free runners or for other states), update the tables above. Keep the Apple Silicon M2 Max baseline as a reference point.
+When new measurements are taken (especially after PostgreSQL tuning changes), update the tables above. Keep the Apple Silicon M2 Max baseline as a reference point.
