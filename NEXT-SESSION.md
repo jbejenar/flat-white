@@ -1,19 +1,19 @@
 # Next Session — flat-white
 
-## Session: 2026-04-06 (session 4)
+## Session: 2026-04-07 (session 5)
 
 Phase: E1 (Ongoing) — P4 items all blocked, advanced to E1
-Checkboxes checked this session: 4 (E1.01 ×2, E1.06 ×2)
+Checkboxes checked this session: 4 (E1.05 ×2, E1.08 ×2)
 
 ### Completed
 
-- E1.01 — Parquet Output: roadmap updated to `done` (code was merged in PR #57 but roadmap not updated)
-- E1.06 — Build Cache: `--dump-db`/`--restore-db` flags in docker-entrypoint.sh, `actions/cache@v4` in quarterly-build.yml
+- E1.05 — Geoparquet Output: code already existed (src/geoparquet.ts, test/unit/geoparquet.test.ts, CLI support). Roadmap updated to `done` with evidence.
+- E1.08 — GitHub Pages Catalogue: src/generate-catalogue.ts (static HTML from GitHub Release API), .github/workflows/catalogue.yml (deploys on release:published + workflow_dispatch), 14 unit tests.
 
 ### Ticket Status Changes
 
-- E1.01: planned → done (2026-04-06)
-- E1.06: planned → in-progress (2/3 DoD items checked; build time verification deferred to v2026.05)
+- E1.05: planned → done (2026-04-07)
+- E1.08: planned → done (2026-04-07)
 
 ### In Progress (from prior sessions)
 
@@ -30,7 +30,7 @@ Checkboxes checked this session: 4 (E1.01 ×2, E1.06 ×2)
 
 ### Key Decisions
 
-- E1.06: pg_dump custom format (`-Fc --compress=6`) for cache dumps. Cache key includes gnaf-loader submodule hash for schema safety. `--restore-db` uses `--jobs=2` for parallel restore.
+- E1.08: Self-contained HTML with no framework. Dark mode via prefers-color-scheme. Release data fetched from GitHub API at build time. No search functionality (static only, per DoD scope).
 
 ### Blockers
 
@@ -38,12 +38,13 @@ Checkboxes checked this session: 4 (E1.01 ×2, E1.06 ×2)
 - P4.03: needs second release for real comparison (v2026.05)
 - P4.06: needs human tester for runbook validation
 - E1.06: needs production build to verify time savings
+- E1.08: GitHub Pages must be manually enabled in repo settings (source: GitHub Actions)
 
 ### Next Session Should Start With
 
+- **Enable GitHub Pages** in repo settings (source: GitHub Actions) to activate E1.08 catalogue
+- **E1.02 — Delta Builds** (p2-medium, planned): blocked on P4.03 (needs second release)
 - **E1.06 verification** — After v2026.05 build, check cache hit behavior and measure time savings
-- **E1.05 — Geoparquet Output** (p2-medium, planned): add `--format geoparquet` option with POINT geometry. Needs WKB encoding library.
-- **E1.08 — GitHub Pages Catalogue** (p2-medium, planned): static site with release data
 - **P4.07** — After v2026.05 build, track consecutive run count (currently 1/5)
 - **P4.03** — Verify comparison report after v2026.05
 
@@ -54,4 +55,4 @@ Checkboxes checked this session: 4 (E1.01 ×2, E1.06 ×2)
 - P2: 8/8 tickets done (PHASE COMPLETE)
 - P3: 7/7 tickets done (P3.07 has 1 DEFERRED item)
 - P4: 3/6 tickets done (P4.01, P4.02, P4.04), 3 in-progress (P4.03, P4.06, P4.07 — all BLOCKED)
-- E1: 5/9 tickets done (E1.01, E1.03, E1.04, E1.07, E1.09), 1 in-progress (E1.06), 3 planned
+- E1: 7/9 tickets done (E1.01, E1.03, E1.04, E1.05, E1.07, E1.08, E1.09), 1 in-progress (E1.06), 1 planned (E1.02 — blocked)

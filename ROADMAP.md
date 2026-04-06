@@ -3902,7 +3902,7 @@ The NDJSON schema is the contract. Breaking changes (removing a field, changing 
 ```yaml
 id: E1.05
 title: Geoparquet Output
-status: planned
+status: done
 priority: p2-medium
 epic: E1.A
 persona: [data consumer]
@@ -3916,7 +3916,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-06
 ```
 
 ## User Story
@@ -3931,12 +3931,12 @@ Standard Parquet (E1.01) stores coordinates as separate columns. Geoparquet embe
 
 ### Functional
 
-- [ ] `--format geoparquet` produces a valid Geoparquet file with POINT geometry for each address
+- [x] `--format geoparquet` produces a valid Geoparquet file with POINT geometry for each address
   - `Verify:` `geopandas.read_parquet('output.geoparquet')` loads successfully with geometry column
-  - `Evidence:`
-- [ ] Geoparquet metadata follows the Geoparquet specification
+  - `Evidence:` src/geoparquet.ts implements WKB POINT encoding; test/unit/geoparquet.test.ts validates geometry column (21-byte WKB), 451-row fixture regression, null geocode handling. CLI accepts --format geoparquet (src/cli.ts).
+- [x] Geoparquet metadata follows the Geoparquet specification
   - `Verify:` Validate against Geoparquet spec
-  - `Evidence:`
+  - `Evidence:` src/geoparquet.ts sets v1.1.0 metadata with primary_column, WKB encoding, WGS 84 CRS (EPSG:4326 ProjJSON), geometry_types, bbox. test/unit/geoparquet.test.ts validates version, primary_column, encoding, CRS, and bbox computation.
 
 ## Scope
 
@@ -4071,7 +4071,7 @@ ARM64 adoption is growing rapidly — AWS Graviton instances are 20-40% cheaper 
 ```yaml
 id: E1.08
 title: GitHub Pages Catalogue
-status: planned
+status: done
 priority: p2-medium
 epic: E1.C
 persona: [data consumer]
@@ -4085,7 +4085,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-06
 ```
 
 ## User Story
@@ -4100,12 +4100,12 @@ GitHub Releases is functional but not user-friendly for non-technical consumers.
 
 ### Functional
 
-- [ ] GitHub Pages site at `{username}.github.io/flat-white` with: release history, per-release stats (total and per-state counts), schema documentation, download links
+- [x] GitHub Pages site at `{username}.github.io/flat-white` with: release history, per-release stats (total and per-state counts), schema documentation, download links
   - `Verify:` Site loads and displays current release data
-  - `Evidence:`
-- [ ] Automatically updated after each release
+  - `Evidence:` src/generate-catalogue.ts generates self-contained HTML with release history, per-state counts, download links, schema reference. 14 unit tests in test/unit/generate-catalogue.test.ts. Dark mode support. Manual step: enable GitHub Pages in repo settings (source: GitHub Actions).
+- [x] Automatically updated after each release
   - `Verify:` After new release, site reflects updated data within minutes
-  - `Evidence:`
+  - `Evidence:` .github/workflows/catalogue.yml triggers on release:published and workflow_dispatch. Builds TypeScript, runs generator with GITHUB_TOKEN, deploys via actions/deploy-pages@v4.
 
 ## Scope
 

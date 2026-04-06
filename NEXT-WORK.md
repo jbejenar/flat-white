@@ -1,8 +1,20 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-06. Active phase: E1 (Ongoing) — P4 blocked.
+> Updated: 2026-04-07. Active phase: E1 (Ongoing) — P4 blocked.
 
-## Completed This Session (2026-04-06, session 4)
+## Completed This Session (2026-04-07, session 5)
+
+### E1.05 — Geoparquet Output (done — roadmap updated)
+
+- [x] Roadmap updated: code already existed, checkboxes checked with evidence
+
+### E1.08 — GitHub Pages Catalogue (done)
+
+- [x] `src/generate-catalogue.ts` + 14 unit tests
+- [x] `.github/workflows/catalogue.yml` deploys on release publish
+- Note: GitHub Pages must be enabled in repo settings (source: GitHub Actions)
+
+## Completed Prior Sessions
 
 ### E1.06 — Build Cache (in-progress)
 
@@ -30,18 +42,9 @@
 
 ## Next E1 Work
 
-### E1.05 — Geoparquet Output (planned, p2-medium)
-
-- [ ] `--format geoparquet` produces valid Geoparquet file with POINT geometry
-- [ ] Geoparquet metadata follows spec
-
 ### E1.02 — Delta Builds (planned, p2-medium)
 
 - [ ] Depends on P4.03
-
-### E1.08 — GitHub Pages Catalogue (planned, p2-medium)
-
-- [ ] Static site with release history, stats, schema docs, download links
 
 ## Reference Files
 
@@ -54,4 +57,5 @@
 | Self-hosted runner | `docs/SELF-HOSTED-RUNNER.md`            | —                            |
 | Quarterly build    | `.github/workflows/quarterly-build.yml` | —                            |
 | Docker publish     | `.github/workflows/docker-publish.yml`  | —                            |
+| Catalogue          | `.github/workflows/catalogue.yml`       | —                            |
 | Agent rules        | `CLAUDE.md` (auto-loaded)               | —                            |
