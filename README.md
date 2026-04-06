@@ -9,7 +9,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-Apache_2.0-blue" alt="Licence"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="Node">
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
-  <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-73%2F100_L4-97ca00" alt="ARI Score"></a>
+  <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-74%2F100_L4-97ca00" alt="ARI Score"></a>
 </p>
 
 <p align="center">
@@ -269,7 +269,7 @@ zcat "$FILE" | shuf -n 3 | jq . > /dev/null && echo "schema OK"
 
 ## AI-Ready Development
 
-<a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-73%2F100_L4-97ca00" alt="ARI Score"></a> &ensp; Measured by [ariscan](https://github.com/prontiq/ariscan-cli) — the Agent Readiness Index.
+<a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-74%2F100_L4-97ca00" alt="ARI Score"></a> &ensp; Measured by [ariscan](https://github.com/prontiq/ariscan-cli) — the Agent Readiness Index.
 
 This repo is built for **autonomous AI coding agents**. Every push to `main` runs [ariscan](https://github.com/prontiq/ariscan-cli) to measure and track agent readiness across 8 pillars. The badge above updates automatically; pillar breakdown as of last audit:
 
@@ -317,7 +317,7 @@ gantt
 
 <table>
 <tr>
-<td align="center"><h3>73/100</h3><sub>ARI Score (L4)</sub></td>
+<td align="center"><h3>74/100</h3><sub>ARI Score (L4)</sub></td>
 <td align="center"><h3>49 / 66</h3><sub>Tickets Done</sub></td>
 <td align="center"><h3>15M</h3><sub>Addresses Released</sub></td>
 <td align="center"><h3>v2026.04</h3><sub>Latest Release</sub></td>
