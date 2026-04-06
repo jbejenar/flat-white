@@ -78,8 +78,7 @@ jobs:
         with:
           path: cache
           key: gnaf-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**') }}
-          restore-keys: |
-            gnaf-${{ needs.setup.outputs.version }}-${{ matrix.state }}-
+          # No restore-keys — gnaf-loader schema changes must trigger a full rebuild
 
       - name: Prepare cache arguments
         id: cache-args
@@ -166,6 +165,9 @@ jobs:
 
           if [[ "$SUCCESS" != "true" ]]; then
             echo "::error::${{ matrix.state }}: failed after $ATTEMPT attempts (transient failures exhausted retries)"
+            # NOTE: If restore fails on every retry, the cache dump may be corrupt or
+            # incompatible. Recovery: delete the GitHub Actions cache entry for this
+            # state from the Actions > Caches UI and re-run the workflow.
             exit 1
           fi
 
