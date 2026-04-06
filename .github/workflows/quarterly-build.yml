@@ -327,16 +327,18 @@ jobs:
         run: |
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
 
-          # Count assets: 9 per-state + metadata.json + DOCUMENT-SCHEMA.md = 11
+          # Count assets: 9 per-state + metadata.json + DOCUMENT-SCHEMA.md + verification-report.md = 12
+          # Plus optional comparison report(s) if prior release exists
           ASSET_COUNT=$(ls -1 "$ASSET_DIR" | wc -l | tr -d ' ')
           echo "Asset count: $ASSET_COUNT"
           ls -lh "$ASSET_DIR"
 
-          if [[ "$ASSET_COUNT" -ne 11 ]]; then
-            echo "ERROR: Expected 11 assets, got $ASSET_COUNT"
+          MIN_ASSETS=12  # 9 states + metadata + schema + verification report
+          if [[ "$ASSET_COUNT" -lt "$MIN_ASSETS" ]]; then
+            echo "ERROR: Expected at least $MIN_ASSETS assets, got $ASSET_COUNT"
             exit 1
           fi
-          echo "✓ Asset count verified: 11"
+          echo "✓ Asset count verified: $ASSET_COUNT (minimum $MIN_ASSETS)"
 
           # Verify total size under 2GB (2147483648 bytes)
           TOTAL_SIZE=$(du -sb "$ASSET_DIR" | cut -f1)
@@ -349,6 +351,64 @@ jobs:
           fi
           echo "✓ Total size under 2GB"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build verification tools
+        run: npm ci && npm run build
+
+      - name: Generate verification report (P4.02)
+        id: verify_report
+        run: |
+          ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
+          # NSW PID uniqueness Set can reach ~250-360MB; raise V8 heap limit to avoid OOM
+          node --max-old-space-size=512 dist/verification-report.js "$ASSET_DIR" --output "$ASSET_DIR/verification-report.md"
+          echo "✓ Verification report generated"
+          cat "$ASSET_DIR/verification-report.md"
+
+      - name: Compare with prior release (P4.03)
+        id: compare
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
+          HAS_ANOMALIES=false
+
+          # Try to get prior release metadata (exclude drafts to avoid comparing against ourselves on re-runs)
+          PRIOR_TAG=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+
+          if [[ -z "$PRIOR_TAG" ]]; then
+            echo "No prior release found — skipping comparison"
+            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$PRIOR_TAG" == "v${VERSION}" ]]; then
+            echo "Prior release is same version (${PRIOR_TAG}) — skipping comparison (manual rebuild)"
+            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Comparing against prior release: $PRIOR_TAG"
+            mkdir -p /tmp/prior
+            if gh release download "$PRIOR_TAG" --pattern "metadata.json" --dir /tmp/prior 2>/dev/null; then
+              set +e
+              node dist/compare-releases.js "$ASSET_DIR/metadata.json" "/tmp/prior/metadata.json" --threshold 1.0
+              COMPARE_EXIT=$?
+              set -e
+
+              if [[ $COMPARE_EXIT -eq 2 ]]; then
+                echo "::warning::Build-over-build anomalies detected — review before publishing"
+                HAS_ANOMALIES=true
+                # Copy comparison report to release assets
+                find . -maxdepth 1 -name 'comparison-*.md' -exec cp {} "$ASSET_DIR/" \;
+                if ! ls "$ASSET_DIR"/comparison-*.md >/dev/null 2>&1; then
+                  echo "::warning::Comparison report not copied to release assets"
+                fi
+              fi
+            else
+              echo "Could not download prior metadata — skipping comparison"
+            fi
+            echo "has_anomalies=${HAS_ANOMALIES}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Generate release notes
         id: notes
         run: |
@@ -357,8 +417,8 @@ jobs:
           SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
 
-          # Try to get prior release metadata for delta calculation
-          PRIOR_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+          # Try to get prior release metadata for delta calculation (exclude drafts to avoid self-comparison)
+          PRIOR_TAG=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
           HAS_DELTA=false
 
           if [[ -n "$PRIOR_TAG" ]]; then
@@ -537,11 +597,12 @@ jobs:
           ASSET_COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "Asset count: $ASSET_COUNT"
 
-          if [[ "$ASSET_COUNT" -ne 11 ]]; then
-            echo "ERROR: Expected 11 release assets, got $ASSET_COUNT"
+          MIN_RELEASE_ASSETS=12  # 9 states + metadata + schema + verification report
+          if [[ "$ASSET_COUNT" -lt "$MIN_RELEASE_ASSETS" ]]; then
+            echo "ERROR: Expected at least $MIN_RELEASE_ASSETS release assets, got $ASSET_COUNT"
             exit 1
           fi
-          echo "✓ All 11 assets uploaded successfully"
+          echo "✓ All $ASSET_COUNT assets uploaded successfully"
 
           echo ""
           echo "--- Programmatic Download Test ---"
@@ -550,9 +611,16 @@ jobs:
           ls -lh /tmp/download-test/
 
           echo ""
-          echo "--- Publishing release (draft → public) ---"
-          gh release edit "$TAG" --draft=false
-          echo "✓ Release published"
+          HAS_ANOMALIES="${{ steps.compare.outputs.has_anomalies }}"
+          if [[ "$HAS_ANOMALIES" == "true" ]]; then
+            echo "--- Release kept as DRAFT due to build-over-build anomalies ---"
+            echo "::warning::Release $TAG kept as draft — review anomalies in verification-report.md and comparison report before publishing"
+            echo "To publish manually: gh release edit $TAG --draft=false"
+          else
+            echo "--- Publishing release (draft → public) ---"
+            gh release edit "$TAG" --draft=false
+            echo "✓ Release published"
+          fi
           echo "✓ Programmatic download works"
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,42 +1,48 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-05. Active phase: P3 nearly complete → P4 next.
+> Updated: 2026-04-06. Active phase: P4 (Hardening).
 
-## Completed This Session (2026-04-05)
+## Completed This Session (2026-04-06)
 
-### P3.03 — GitHub Release Creation (done)
+### P4.01 — All-States Production Release (done)
 
-- [x] Tagged release with all assets (per-state + all-states + metadata + schema)
-- [x] Asset size verification (under 2GB)
-- [x] 12-asset count verification
-- [x] Programmatic download test
-- [x] CHANGELOG auto-update
+- [x] All 9 states built successfully (15,015,573 total, 23m55s wall-clock)
+- [x] GitHub Release v2026.04 published with 12 assets
+- [x] All assets valid (schema, quality, PID uniqueness all PASS)
 
-### P3.04 — Release Notes (done)
+### P4.02 — Verification Report (done)
 
-- [x] Auto-generated notes with total/per-state counts, delta, schema version, gnaf-loader version
-- [x] Readable markdown format
+- [x] Report generated: per-state row counts, boundary coverage %, schema validation
+- [x] Report uploaded as release asset (verification-report.md)
 
-### P3.05 — Downstream Dispatch (done)
+### P3.01 — Matrix Build Workflow (wall-clock verified)
 
-- [x] `repository_dispatch` to geocode-au with version payload
-- [x] Asset URLs in payload
+- [x] Total wall-clock time 23m55s (under 60 minute target)
 
-### P3.06 — Download Docs (done)
+## Remaining P4 Work
 
-- [x] gh CLI + curl download examples in README
-- [x] API-based download for CI/scripts
-- [x] Consumer verification one-liner
+### P4.03 — Build-Over-Build Comparison (in-progress)
 
-### P3.07 — Adoption & Discovery (in-progress)
+- Code complete and integrated into workflow
+- [ ] Needs second release to verify (v2026.05 expected May 2026)
+- [ ] Anomaly detection >1% verified by unit tests only
 
-- [x] Quick Start in README
-- [ ] data.gov.au listing [DEFERRED: manual submission after first release]
-- [x] Community announcement plan in docs/COMMUNITY-ANNOUNCEMENT.md
+### P4.06 — Runbook (in-progress)
 
-## P3 Phase Status: 6/7 done, 1 in-progress
+- [x] Runbook written (docs/RUNBOOK.md)
+- [ ] Tested by uninvolved person [BLOCKED: requires human tester]
 
-All functional tickets complete. P3.07 has 1 DEFERRED item (data.gov.au listing). Next phase: P4.
+### P4.07 — NSW Memory Optimisation (planned)
+
+- [ ] NSW builds reliably on 7GB free runners (5 consecutive runs)
+- [ ] Peak memory usage documented
+- [ ] Build time under 60 minutes
+
+## Known Data Quality Note
+
+LGA/ward/electorate boundaries are NULL (0% coverage) due to `--no-boundary-tag` in Docker build.
+Cause: gnaf-loader crashes on Feb 2026 admin boundaries wards table naming change.
+ABS boundaries (meshBlock/SA1/SA2) at 100%. Tracked by P4.05 gnaf-loader update check.
 
 ## Reference Files
 
