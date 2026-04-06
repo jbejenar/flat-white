@@ -199,6 +199,44 @@ When running with `--locality-only`, flat-white produces a `localities.ndjson` f
 
 ---
 
+## Output Formats
+
+### NDJSON (default)
+
+The default output format. One JSON document per line, conforming to the schema above. Produced by `--format ndjson` (or omitting `--format`).
+
+### Parquet
+
+Available via `--format parquet`. Produces an Apache Parquet file with the same data as the NDJSON output.
+
+**Column mapping:**
+
+- Scalar fields (`_id`, `addressLabel`, `state`, `confidence`, etc.) are stored as native Parquet types (`UTF8`, `INT32`).
+- Nullable scalar fields use Parquet's optional repetition level.
+- Complex fields (`geocode`, `allGeocodes`, `locality`, `street`, `boundaries`, `aliases`, `secondaries`) are serialized as **JSON strings** (UTF8 columns) for maximum compatibility across Parquet readers.
+
+**Reading complex fields from Parquet:**
+
+```python
+import pandas as pd
+import json
+
+df = pd.read_parquet("flat-white-2026.02.parquet")
+# Scalar fields work directly
+print(df["state"].value_counts())
+
+# Complex fields need JSON parsing
+df["geocode_parsed"] = df["geocode"].apply(lambda x: json.loads(x) if x else None)
+```
+
+```sql
+-- DuckDB
+SELECT _id, state, json_extract(geocode, '$.latitude') as lat
+FROM 'flat-white-2026.02.parquet';
+```
+
+---
+
 ## Data Licensing
 
 All data sourced from data.gov.au under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Source datasets:

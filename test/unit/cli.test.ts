@@ -13,6 +13,7 @@ describe("parseArgs", () => {
       fixtureOnly: false,
       states: [],
       outputDir: "/output",
+      format: "ndjson",
       compress: false,
       splitStates: false,
       skipDownload: false,
@@ -82,6 +83,28 @@ describe("parseArgs", () => {
 
   it("parses --admin-path", () => {
     expect(parseArgs(["--admin-path", "/data/admin"]).adminPath).toBe("/data/admin");
+  });
+
+  it("parses --format ndjson", () => {
+    expect(parseArgs(["--format", "ndjson"]).format).toBe("ndjson");
+  });
+
+  it("parses --format parquet", () => {
+    expect(parseArgs(["--format", "parquet"]).format).toBe("parquet");
+  });
+
+  it("parses --format case-insensitively", () => {
+    expect(parseArgs(["--format", "PARQUET"]).format).toBe("parquet");
+  });
+
+  it("throws when --format has no value", () => {
+    expect(() => parseArgs(["--format"])).toThrow(CliError);
+    expect(() => parseArgs(["--format", "--compress"])).toThrow("--format requires");
+  });
+
+  it("throws on invalid format value", () => {
+    expect(() => parseArgs(["--format", "csv"])).toThrow(CliError);
+    expect(() => parseArgs(["--format", "csv"])).toThrow('Invalid format "csv"');
   });
 
   it("throws on unknown flags", () => {
@@ -185,6 +208,7 @@ describe("HELP_TEXT", () => {
       "--fixture-only",
       "--states",
       "--output",
+      "--format",
       "--compress",
       "--split-states",
       "--skip-download",

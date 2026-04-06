@@ -6,6 +6,9 @@
  * The Docker entrypoint (bash) has its own parser that mirrors these flags.
  */
 
+/** Supported output formats. */
+export type OutputFormat = "ndjson" | "parquet";
+
 /** Parsed CLI options for the flat-white pipeline. */
 export interface CliOptions {
   /** Show help and exit */
@@ -16,6 +19,8 @@ export interface CliOptions {
   states: string[];
   /** Output directory (default: /output) */
   outputDir: string;
+  /** Output format (default: ndjson) */
+  format: OutputFormat;
   /** Gzip output files */
   compress: boolean;
   /** Split output into per-state files */
@@ -28,11 +33,14 @@ export interface CliOptions {
   adminPath: string | null;
 }
 
+const VALID_FORMATS: readonly OutputFormat[] = ["ndjson", "parquet"];
+
 const DEFAULT_OPTIONS: CliOptions = {
   help: false,
   fixtureOnly: false,
   states: [],
   outputDir: "/output",
+  format: "ndjson",
   compress: false,
   splitStates: false,
   skipDownload: false,
@@ -76,6 +84,20 @@ export function parseArgs(argv: string[]): CliOptions {
           throw new CliError("--output requires a directory path");
         }
         opts.outputDir = argv[i];
+        break;
+      }
+      case "--format": {
+        i++;
+        if (i >= argv.length || argv[i].startsWith("--")) {
+          throw new CliError("--format requires a value (ndjson or parquet)");
+        }
+        const fmt = argv[i].toLowerCase();
+        if (!VALID_FORMATS.includes(fmt as OutputFormat)) {
+          throw new CliError(
+            `Invalid format "${argv[i]}". Valid formats: ${VALID_FORMATS.join(", ")}`,
+          );
+        }
+        opts.format = fmt as OutputFormat;
         break;
       }
       case "--compress":
@@ -167,6 +189,7 @@ Flags:
   --fixture-only      Run fixture build only (no download, no gnaf-loader)
   --states STATES     States to process (e.g. VIC, VIC NSW)
   --output DIR        Output directory (default: /output)
+  --format FORMAT     Output format: ndjson (default) or parquet
   --compress          Gzip output files
   --split-states      Split output into per-state files
   --skip-download     Skip data download (assumes data at --gnaf-path / --admin-path)
