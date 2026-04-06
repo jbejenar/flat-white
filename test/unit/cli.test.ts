@@ -93,8 +93,13 @@ describe("parseArgs", () => {
     expect(parseArgs(["--format", "parquet"]).format).toBe("parquet");
   });
 
+  it("parses --format geoparquet", () => {
+    expect(parseArgs(["--format", "geoparquet"]).format).toBe("geoparquet");
+  });
+
   it("parses --format case-insensitively", () => {
     expect(parseArgs(["--format", "PARQUET"]).format).toBe("parquet");
+    expect(parseArgs(["--format", "GEOPARQUET"]).format).toBe("geoparquet");
   });
 
   it("throws when --format has no value", () => {

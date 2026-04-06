@@ -235,6 +235,41 @@ SELECT _id, state, json_extract(geocode, '$.latitude') as lat
 FROM 'flat-white-2026.02.parquet';
 ```
 
+### Geoparquet
+
+Available via `--format geoparquet`. Produces a [Geoparquet v1.1.0](https://geoparquet.org/releases/v1.1.0/) file — a standard Parquet file with an additional `geometry` column containing WKB-encoded POINT geometries and spec-compliant file-level metadata.
+
+**What's different from standard Parquet:**
+
+- Adds a `geometry` column (BYTE_ARRAY) with WKB-encoded POINT for each address geocode.
+- Addresses without a geocode have a null geometry.
+- File-level `"geo"` metadata declares WGS 84 (EPSG:4326) CRS, encoding, geometry types, and bounding box.
+- All other columns remain identical to the standard Parquet format.
+
+**Reading Geoparquet:**
+
+```python
+import geopandas as gpd
+
+gdf = gpd.read_parquet("flat-white-2026.02.geoparquet")
+# geometry column is automatically parsed as shapely Points
+print(gdf.geometry.head())
+# Spatial queries work natively
+melbourne = gdf.cx[144.9:145.0, -37.9:-37.7]
+```
+
+```sql
+-- DuckDB with spatial extension
+INSTALL spatial; LOAD spatial;
+SELECT _id, state, ST_AsText(geometry) as wkt
+FROM 'flat-white-2026.02.geoparquet'
+WHERE ST_Within(geometry, ST_GeomFromText('POLYGON((144 -38, 145 -38, 145 -37, 144 -37, 144 -38))'));
+```
+
+```
+# QGIS: Open directly as a vector layer via drag-and-drop or Layer → Add Layer → Add Vector Layer
+```
+
 ---
 
 ## Data Licensing
