@@ -17,6 +17,8 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- E1.09 Self-Hosted Runner Fallback: `docs/SELF-HOSTED-RUNNER.md` with hardware requirements, runner setup, workflow configuration, cost estimates. `quarterly-build.yml` supports `runner` input for targeting self-hosted runners via `workflow_dispatch`.
+- E1.07 Multi-Arch Image: `docker-publish.yml` builds and publishes ARM64 + AMD64 Docker images via QEMU. Includes `verify-multi-arch` and `verify-identical` CI jobs to ensure byte-for-byte output parity across architectures.
 - P4.07 NSW Memory Optimisation: PostgreSQL memory tuning in docker-entrypoint.sh (shared_buffers=256MB, work_mem=64MB, maintenance_work_mem=256MB, max_connections=20). Margin analysis in `docs/NSW-MEMORY-ANALYSIS.md`. Per-state production timing added to `docs/PERFORMANCE.md`.
 - P4.01 First Production Release: v2026.04 published with 15,015,573 addresses across all 9 Australian states. 23m55s wall-clock on free runners.
 - P4.02 Verification Report: per-state schema validation, boundary coverage %, quality checks, PID uniqueness. All 9 states PASS. Uploaded as release asset.

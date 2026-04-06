@@ -7,6 +7,10 @@ on:
         description: "G-NAF version (e.g. 2026.05)"
         required: false
         default: ""
+      runner:
+        description: "Runner label (e.g. 'self-hosted', 'high-memory'). Default: ubuntu-latest"
+        required: false
+        default: "ubuntu-latest"
   schedule:
     # 15th of Feb, May, Aug, Nov at 02:00 UTC — shortly after quarterly G-NAF release
     - cron: "0 2 15 2,5,8,11 *"
@@ -20,7 +24,7 @@ jobs:
   # Job 0: Compute version once (avoids drift at month boundaries)
   # ---------------------------------------------------------------------------
   setup:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -44,7 +48,7 @@ jobs:
   # Job 1: Build each state in parallel
   # ---------------------------------------------------------------------------
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     needs: setup
     timeout-minutes: 90
     strategy:
@@ -180,7 +184,7 @@ jobs:
   # Job 2: Concatenate all states into a single file (P3.02)
   # ---------------------------------------------------------------------------
   concatenate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 30
     needs: [setup, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
@@ -245,7 +249,7 @@ jobs:
   # Job 3: Create GitHub Release with all assets (P3.03 + P3.04)
   # ---------------------------------------------------------------------------
   release:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 30
     needs: [setup, build, concatenate]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}

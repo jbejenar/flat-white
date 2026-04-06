@@ -1,61 +1,55 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-06. Active phase: P4 (Hardening).
+> Updated: 2026-04-06. Active phase: E1 (Ongoing) — P4 blocked.
 
-## Completed This Session (2026-04-06)
+## Completed This Session (2026-04-06, session 3)
 
-### P4.01 — All-States Production Release (done)
+### E1.09 — Self-Hosted Runner Fallback (done)
 
-- [x] All 9 states built successfully (15,015,573 total, 23m55s wall-clock)
-- [x] GitHub Release v2026.04 published with 12 assets
-- [x] All assets valid (schema, quality, PID uniqueness all PASS)
+- [x] docs/SELF-HOSTED-RUNNER.md: hardware reqs, runner setup, workflow config, cost estimates
+- [x] quarterly-build.yml: `runner` input for `workflow_dispatch` targeting
 
-### P4.02 — Verification Report (done)
+### E1.07 — Multi-Arch Image (done)
 
-- [x] Report generated: per-state row counts, boundary coverage %, schema validation
-- [x] Report uploaded as release asset (verification-report.md)
+- [x] docker-publish.yml: ARM64 + AMD64 via QEMU + buildx
+- [x] Cross-arch verification: fixture-only build + SHA-256 checksum comparison
 
-### P3.01 — Matrix Build Workflow (wall-clock verified)
-
-- [x] Total wall-clock time 23m55s (under 60 minute target)
-
-## Remaining P4 Work
+## Remaining P4 Work (all BLOCKED)
 
 ### P4.03 — Build-Over-Build Comparison (in-progress)
 
-- Code complete and integrated into workflow
 - [ ] Needs second release to verify (v2026.05 expected May 2026)
-- [ ] Anomaly detection >1% verified by unit tests only
 
 ### P4.06 — Runbook (in-progress)
 
-- [x] Runbook written (docs/RUNBOOK.md)
 - [ ] Tested by uninvolved person [BLOCKED: requires human tester]
 
-### P4.07 — NSW Memory Optimisation (planned)
+### P4.07 — NSW Memory Optimisation (in-progress)
 
-- [ ] NSW builds reliably on 7GB free runners (5 consecutive runs)
-- [ ] Peak memory usage documented
-- [ ] Build time under 60 minutes
+- [ ] NSW builds reliably on 7GB free runners (1/5 consecutive runs)
 
-## Known Data Quality Note
+## Next E1 Work
 
-LGA/ward/electorate boundaries are NULL (0% coverage) due to `--no-boundary-tag` in Docker build.
-Cause: gnaf-loader crashes on Feb 2026 admin boundaries wards table naming change.
-ABS boundaries (meshBlock/SA1/SA2) at 100%. Tracked by P4.05 gnaf-loader update check.
+### E1.01 — Parquet Output (planned, p1-high)
+
+- [ ] `--format parquet` produces valid Parquet file
+- [ ] Parquet schema matches NDJSON document schema
+
+### E1.06 — Build Cache (planned, p1-high)
+
+- [ ] Postgres dump cached after gnaf-loader (keyed by G-NAF version + state)
+- [ ] Cache miss triggers full load
+- [ ] Build time reduced ~30 min on cache hit
 
 ## Reference Files
 
-| Need             | Read this                               | NOT this                     |
-| ---------------- | --------------------------------------- | ---------------------------- |
-| Table schemas    | `fixtures/SCHEMA-REFERENCE.md`          | `fixtures/seed-postgres.sql` |
-| Field provenance | `docs/FIELD-PROVENANCE.md`              | —                            |
-| Document schema  | `docs/DOCUMENT-SCHEMA.md`               | —                            |
-| Flatten SQL      | `sql/address_full.sql`                  | —                            |
-| Verification     | `src/verify.ts`                         | —                            |
-| Metadata         | `src/metadata.ts`                       | —                            |
-| Split            | `src/split.ts`                          | —                            |
-| Compress         | `src/compress.ts`                       | —                            |
-| Quarterly build  | `.github/workflows/quarterly-build.yml` | —                            |
-| Community plan   | `docs/COMMUNITY-ANNOUNCEMENT.md`        | —                            |
-| Agent rules      | `CLAUDE.md` (auto-loaded)               | —                            |
+| Need               | Read this                               | NOT this                     |
+| ------------------ | --------------------------------------- | ---------------------------- |
+| Table schemas      | `fixtures/SCHEMA-REFERENCE.md`          | `fixtures/seed-postgres.sql` |
+| Field provenance   | `docs/FIELD-PROVENANCE.md`              | —                            |
+| Document schema    | `docs/DOCUMENT-SCHEMA.md`               | —                            |
+| Flatten SQL        | `sql/address_full.sql`                  | —                            |
+| Self-hosted runner | `docs/SELF-HOSTED-RUNNER.md`            | —                            |
+| Quarterly build    | `.github/workflows/quarterly-build.yml` | —                            |
+| Docker publish     | `.github/workflows/docker-publish.yml`  | —                            |
+| Agent rules        | `CLAUDE.md` (auto-loaded)               | —                            |

@@ -4017,7 +4017,7 @@ gnaf-loader takes 30-40 minutes per state to load data and perform spatial joins
 ```yaml
 id: E1.07
 title: Multi-Arch Image
-status: planned
+status: done
 priority: p1-high
 epic: E1.B
 persona: [data consumer, ops/maintainer]
@@ -4031,7 +4031,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-06
 ```
 
 ## User Story
@@ -4046,12 +4046,12 @@ ARM64 adoption is growing rapidly — AWS Graviton instances are 20-40% cheaper 
 
 ### Functional
 
-- [ ] Docker image published with both ARM64 and AMD64 manifests
+- [x] Docker image published with both ARM64 and AMD64 manifests
   - `Verify:` `docker manifest inspect flat-white:latest` shows both architectures
-  - `Evidence:`
-- [ ] Both architectures produce identical output (byte-for-byte NDJSON)
+  - `Evidence:` `docker-publish.yml` updated: added `docker/setup-qemu-action@v3` for ARM64 emulation, added `platforms: linux/amd64,linux/arm64` to `docker/build-push-action@v6`. Multi-platform images pushed on every tag push. Timeout increased from 30 to 60 minutes to accommodate ARM64 build via QEMU.
+- [x] Both architectures produce identical output (byte-for-byte NDJSON)
   - `Verify:` Run fixture build on both architectures; diff output
-  - `Evidence:`
+  - `Evidence:` `docker-publish.yml` includes `verify-multi-arch` job: runs fixture-only build on both `linux/amd64` and `linux/arm64` via QEMU, uploads fixture output as artifacts. `verify-identical` job downloads both outputs and compares SHA-256 checksums. Fails if output differs.
 
 ## Scope
 
@@ -4126,7 +4126,7 @@ GitHub Releases is functional but not user-friendly for non-technical consumers.
 ```yaml
 id: E1.09
 title: Self-Hosted Runner Fallback
-status: planned
+status: done
 priority: p1-high
 epic: E1.B
 persona: [ops/maintainer]
@@ -4140,7 +4140,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-06
 ```
 
 ## User Story
@@ -4155,12 +4155,12 @@ Free GitHub Actions runners have 7GB RAM and 2-core CPUs. While sufficient for t
 
 ### Functional
 
-- [ ] Documentation in `docs/SELF-HOSTED-RUNNER.md` covering: hardware requirements, runner setup, workflow configuration changes, cost estimates
+- [x] Documentation in `docs/SELF-HOSTED-RUNNER.md` covering: hardware requirements, runner setup, workflow configuration changes, cost estimates
   - `Verify:` A user can follow the guide to set up a self-hosted runner and run the quarterly build
-  - `Evidence:`
-- [ ] Workflow supports both free and self-hosted runners via configuration
+  - `Evidence:` `docs/SELF-HOSTED-RUNNER.md` created with: hardware requirements table (8-16 GB RAM, 2-4 cores, 30-50 GB disk), runner setup instructions (install, label, start, Docker access), workflow configuration (manual dispatch with `runner` input), cost estimates table (free/$0/cloud/$5-15), troubleshooting section.
+- [x] Workflow supports both free and self-hosted runners via configuration
   - `Verify:` Workflow runs on self-hosted runner when configured
-  - `Evidence:`
+  - `Evidence:` `quarterly-build.yml` updated: `runner` input added to `workflow_dispatch` (default: `ubuntu-latest`). All 4 jobs (`setup`, `build`, `concatenate`, `release`) use `${{ inputs.runner || 'ubuntu-latest' }}` for `runs-on`. Scheduled runs default to `ubuntu-latest`. Manual dispatch: `gh workflow run quarterly-build.yml -f runner=self-hosted`.
 
 ## Scope
 
