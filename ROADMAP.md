@@ -4896,7 +4896,7 @@ Then `address_full_main.sql` does `LEFT JOIN address_principal_admin_boundaries 
 - [x] Boundary points are assigned deterministically (same input → same output across runs)
   - `Verify:` Run the spatial join twice; output is byte-identical
   - `Evidence:` Each LATERAL subquery uses `ORDER BY <pid_column> LIMIT 1` (e.g. `ORDER BY ce_pid LIMIT 1`, `ORDER BY lga_pid LIMIT 1`), ensuring a deterministic tie-break when a point falls on a shared boundary. `build-fixture-only.sh` produces byte-identical `expected-output.ndjson` across repeated runs.
-- [x] Performance: spatial join completes for full ACT (~245k addresses) in under 5 minutes [DEFERRED: requires production-scale run on GitHub Actions runner — fixture-scale (451 addresses) completes in <1s. Will be verified during v2026.05 build cycle when E1.14 removes `--no-boundary-tag`]
+- [ ] Performance: spatial join completes for full ACT (~245k addresses) in under 5 minutes [DEFERRED: requires production-scale run on GitHub Actions runner — fixture-scale (451 addresses) completes in <1s. Will be verified during v2026.05 build cycle when E1.14 removes `--no-boundary-tag`]
   - `Verify:` Timing on free GitHub runner
   - `Evidence:` Fixture-scale only: spatial join step in `build-fixture-only.sh` completes in <1s for 451 addresses. Full ACT verification deferred to v2026.05 build.
 
