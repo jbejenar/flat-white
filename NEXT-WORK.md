@@ -49,6 +49,33 @@
 - [ ] Remove pre-baked `address_principal_admin_boundaries` rows from `seed-postgres.sql`
 - Origin: PR #67 retrospective — fixture has no visibility into shapefile loading or spatial join, which is how both the v2026.04 wards crash and streetType regression slipped past CI
 
+### E1.11 — Consolidate flatten SQL (planned, p1-high)
+
+- [ ] Pick one of: generated materialize SQL, single-file with mode flag, templating layer
+- [ ] Eliminate possibility of drift between legacy and materialize paths by construction
+- Origin: PR #67 — root cause of streetType regression was hand-maintained drift between two parallel SQL files
+
+### E1.12 — Hardened verify checks (planned, p2-medium)
+
+- [ ] Validate `streetType`, `flatType`, `levelType`, `streetSuffix`, `localityClass`, `state` against authority tables
+- [ ] Surface unknown values in verification report
+- Origin: PR #67 — Zod schema only constrains type, not content; bug shipped because verify had no opinion on the _value_
+
+### E1.13 — Patch release tooling (planned, p2-medium)
+
+- [ ] Versioning convention for `vYYYY.MM.N` patch releases
+- [ ] `quarterly-build.yml` `patch_version` input
+- [ ] Catalogue grouping for patches under parent quarterly cut
+- Origin: PR #67 — v2026.04 needs a patch release for the streetType fix but there is no tooling for it
+
+### E1.14 — Remove `--no-boundary-tag` workaround (planned, p1-high)
+
+- [ ] Root-cause the gnaf-loader wards loading failure (suspected: worker-pool issue in `multiprocess_shapefile_load`, unconfirmed)
+- [ ] Upstream fix PR to minus34/gnaf-loader OR local submodule patch with upstream PR open
+- [ ] Remove `--no-boundary-tag` from `docker-entrypoint.sh`
+- [ ] Restore `wardName` population in next release
+- Origin: PR #67 audit — every v2026.04 document has `wardName: null` because of this workaround
+
 ### E1.02 — Delta Builds (planned, p2-medium)
 
 - [ ] Depends on P4.03

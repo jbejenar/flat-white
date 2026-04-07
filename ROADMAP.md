@@ -4269,6 +4269,262 @@ Origin: surfaced during PR #67 retrospective. The streetType regression and the 
 
 ---
 
+### Ticket E1.11 — Consolidate flatten SQL into single source of truth
+
+```yaml
+id: E1.11
+title: Consolidate flatten SQL (eliminate legacy/materialize drift)
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need a single SQL source of truth for the flatten query so that the legacy CTE-based path and the production materialize path cannot drift apart.
+
+## Problem Statement
+
+`sql/address_full.sql` (legacy CTE-based) and `sql/address_full_main.sql` (production, used with `--materialize`) are maintained as parallel files. They MUST stay semantically equivalent but there is no structural enforcement — only the cross-path byte-equality check added in PR #67. The v2026.04 streetType regression is a direct consequence of this drift: the materialize file was created in PR #29 from a copy of the pre-PR-#23 query and silently carried the broken `street_type_aut` join for two months. The same drift could happen for any future change.
+
+The right structural fix is one of:
+
+1. Generate `address_full_main.sql` from `address_full.sql` at build time (e.g. a small script that rewrites CTEs into temp-table references).
+2. Make `address_full.sql` produce the temp tables directly when run with a flag, eliminating the second file.
+3. Use a templating layer (`pg-promise` named queries, sqlc, or similar) so the SELECT body is shared and only the FROM/WITH header differs.
+
+Whichever approach is chosen, the goal is: **one human-edited SQL source, no possibility of silent drift.**
+
+## Definition of Done
+
+### Functional
+
+- [ ] Single human-edited SQL source for the flatten query
+  - `Verify:` `git log` shows changes to flatten field set touch only one file
+  - `Evidence:`
+- [ ] The materialize-mode SQL is either generated or derived at build time, not hand-maintained
+  - `Verify:` Editing the source file and running build automatically updates both paths
+  - `Evidence:`
+- [ ] Cross-path byte-equality check from PR #67 still passes
+  - `Verify:` `scripts/build-fixture-only.sh` exits 0 with cross-path PASS
+  - `Evidence:`
+- [ ] No regression in cursor-based streaming memory profile (must stay < 500MB for NSW)
+  - `Verify:` `docs/PERFORMANCE.md` updated with new measurement
+  - `Evidence:`
+
+### Documentation
+
+- [ ] `AGENTS.md` updated to describe the new single-source pattern
+- [ ] `docs/FIELD-PROVENANCE.md` updated to point at the canonical source
+
+## Scope
+
+### In
+
+- Choosing one of the three approaches above (or another) and implementing it
+- Removing the cross-path guard from `build-fixture-only.sh` IF the new structure makes drift impossible by construction (otherwise keep the guard as belt-and-braces)
+
+### Out — Do Not Implement
+
+- Rewriting the flatten query semantically — pure structural refactor
+- Switching to a query builder / ORM (overkill, breaks the SQL-first principle)
+
+## Notes
+
+Origin: PR #67 retrospective. Without this, every bug fix to the flatten SQL has to be applied to both files manually and the cross-path test is the only safety net.
+
+---
+
+### Ticket E1.12 — Hardened verify checks (enum-ish field validation)
+
+```yaml
+id: E1.12
+title: Hardened verify checks against authority tables
+status: planned
+priority: p2-medium
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need `verify.ts` to detect when output fields contain values that don't match the authority table conventions, so that future bugs like the v2026.04 streetType regression are caught at verification time even if they bypass the cross-path SQL check.
+
+## Problem Statement
+
+The Zod schema in `src/schema.ts` only constrains `streetType` (and similar fields) to `z.string().nullable()`. Any string passes — including the abbreviation `"PL"` instead of the long form `"PLACE"`. The bug shipped in v2026.04 because verify.ts had no opinion on the _content_ of these fields, only their type and nullability.
+
+A defense-in-depth check would compare each enum-ish output field against the authoritative source:
+
+- `streetType` should match a value in `raw_gnaf_202602.street_type_aut.code` (the long-form column for this reversed table)
+- `flatType` should match `flat_type_aut.name`
+- `levelType` should match `level_type_aut.name`
+- `streetSuffix` should match `street_suffix_aut.name`
+- `localityClass` should match `locality_class_aut.name`
+- `state` should be one of `{NSW, VIC, QLD, WA, SA, TAS, ACT, NT, OT}`
+
+Any mismatch is either a bug in flatten or a stale auth table, both worth surfacing.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `src/verify.ts` queries the authority tables once at startup, builds in-memory sets, and validates each document's enum-ish fields against them
+  - `Verify:` Manually editing `expected-output.ndjson` to set `streetType: "PL"` causes verify to fail with a clear error
+  - `Evidence:`
+- [ ] Verification report (P4.02) includes a per-field "unknown value count" line for each enum-ish field
+  - `Verify:` `verification.json` artifact contains the new fields
+  - `Evidence:`
+- [ ] Verify is opt-out, not opt-in (default-on, with `--skip-enum-check` flag for the rare case where stale auth tables block a release)
+  - `Verify:` Quarterly build runs the check by default
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Authority-table-driven validation for the six enum-ish fields above
+- Clear failure messages pointing at the offending document `_id` and field
+- Performance: validation must add < 5s to verify time on the largest state (NSW, ~4.6M rows)
+
+### Out — Do Not Implement
+
+- Validating freeform fields (street_name, locality_name, etc) — too much false positive risk
+- Auto-fixing mismatches — verify reports, doesn't mutate
+
+## Notes
+
+Origin: PR #67 retrospective. The fixture cross-path check catches drift between SQL files; this catches drift between SQL output and the source-of-truth authority tables, which is a different (and broader) class of bug.
+
+---
+
+### Ticket E1.13 — Patch release tooling for hotfix releases
+
+```yaml
+id: E1.13
+title: Patch release tooling (e.g. v2026.04.1)
+status: planned
+priority: p2-medium
+epic: E1.B
+persona: [ops/maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, when a critical bug is found in a published release (like the v2026.04 streetType regression), I need a documented and partially-automated workflow to ship a patch release without waiting for the next quarterly build, so that consumers can get the fix in days rather than months.
+
+## Problem Statement
+
+The current versioning scheme is `YYYY.MM` (e.g. `v2026.04`), tied to G-NAF data versions. There is no convention or tooling for patch releases when a critical bug is found between quarterly cuts. PR #67 fixes a real production bug shipped in v2026.04, but there is no defined path to publish `v2026.04.1` with the fix — manual `quarterly-build.yml` re-trigger is the only option, and it would overwrite the existing v2026.04 release rather than creating a new patched one.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Versioning convention documented for patches: `vYYYY.MM.N` (e.g. `v2026.04.1`)
+  - `Verify:` `CHANGELOG.md` and `docs/RELEASING.md` (or equivalent) describe the convention
+  - `Evidence:`
+- [ ] `quarterly-build.yml` accepts a `patch_version` input that, when set, publishes as `vYYYY.MM.N` against the SAME G-NAF data as the original cut
+  - `Verify:` `gh workflow run quarterly-build.yml -f gnaf_version=2026.04 -f patch_version=1` produces `v2026.04.1` release
+  - `Evidence:`
+- [ ] Patch release notes auto-link to the original release and the fixing PR(s)
+  - `Verify:` `v2026.04.1` release body links to `v2026.04` and PR #67
+  - `Evidence:`
+- [ ] Catalogue (E1.08) groups patch releases under their parent quarterly cut
+  - `Verify:` GitHub Pages catalogue shows `v2026.04.1` nested under `v2026.04`
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Workflow input + release naming convention
+- Catalogue grouping
+- CHANGELOG patch-version section template
+
+### Out — Do Not Implement
+
+- Auto-detection of "this PR fixes a critical bug, trigger patch release" — patch decision stays human
+- Yanking / deleting the original release — patches are additive
+- Breaking-change patch releases (those need a new quarterly cut)
+
+## Notes
+
+Origin: PR #67 retrospective. The streetType bug needs a patch release for v2026.04 but there is no tooling for it; this ticket creates the path.
+
+---
+
+### Ticket E1.14 — Root-cause and remove `--no-boundary-tag` workaround
+
+```yaml
+id: E1.14
+title: Remove `--no-boundary-tag` workaround for wards loading
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a downstream consumer of flat-white NDJSON, I need the `wardName` field to be populated so that I can group addresses by local government ward. Today every document in v2026.04 has `wardName: null` because of the `--no-boundary-tag` workaround in `docker-entrypoint.sh`.
+
+## Problem Statement
+
+`docker-entrypoint.sh` runs gnaf-loader with `--no-boundary-tag` because gnaf-loader's wards loading was failing during the v2026.04 build cycle. The workaround unblocked the release but means **every address in v2026.04 has `wardName: null`** — a real data quality regression compared to expectations.
+
+The failure mode (observed in local Mac replication, though not yet root-caused — see PR #67 audit notes): gnaf-loader's `multiprocess_shapefile_load()` calls `shp2pgsql` for each `{state}_*.shp` file, but in some configurations the shp2pgsql calls silently no-op and the resulting `aus_*` tables don't exist, causing prep SQL to fail. Direct invocation of `shp2pgsql` against the same files works fine, so the bug is somewhere in the worker pool layer (likely `spawn`-mode worker re-import of `settings.py` losing argv/env, but not confirmed).
+
+## Definition of Done
+
+### Functional
+
+- [ ] Root cause identified and documented (specific failing code path in gnaf-loader's `geoscape.multiprocess_shapefile_load()` or `import_shapefile_to_postgres()`)
+  - `Verify:` Reproducible test case in a clean environment
+  - `Evidence:`
+- [ ] Fix landed: either upstream PR to `minus34/gnaf-loader` accepted, or local patch applied to the vendored submodule with upstream PR open
+  - `Verify:` Running gnaf-loader without `--no-boundary-tag` succeeds for VIC + NSW + QLD
+  - `Evidence:`
+- [ ] `--no-boundary-tag` removed from `docker-entrypoint.sh`
+  - `Verify:` `grep no-boundary-tag docker-entrypoint.sh` returns nothing
+  - `Evidence:`
+- [ ] `wardName` populated in next release for at least 90% of addresses (some addresses legitimately fall outside any ward boundary)
+  - `Verify:` `verification.json` shows `boundaryCoverage.ward / total > 0.9`
+  - `Evidence:`
+
+### Documentation
+
+- [ ] CHANGELOG entry under `Fixed` describing the resolution
+- [ ] `docs/RUNBOOK.md` updated to remove the wards workaround section
+
+## Scope
+
+### In
+
+- gnaf-loader / geoscape.py investigation and fix
+- Removal of the workaround in flat-white
+- Verification that ward data is populated end-to-end
+
+### Out — Do Not Implement
+
+- Changes to flat-white's spatial join logic (E1.10 covers fixture coverage for the spatial join; this ticket is about the _load_ failing before the spatial join even runs)
+- Replacing gnaf-loader with a custom loader (out of scope by principle: "gnaf-loader is a submodule, do NOT modify it" — exception is the targeted bug fix above, which goes upstream)
+
+## Notes
+
+Origin: PR #67 audit. The wards crash is the OTHER half of the v2026.04 quality issue (streetType is fixed in PR #67; wards is still null). E1.10 (shapefile fixtures) gives CI visibility into this class of failure but does not fix it; this ticket is the actual fix.
+
+---
+
 ## Phase P5 — AWS Mirror (Deferred)
 
 **Target:** Post-M4 · **Status:** Planned · **Rationale:** GitHub Releases is the primary distribution. S3 is redundancy — valuable but not required for the first release. Deferred from Phase P3 to avoid overloading the first release week.
