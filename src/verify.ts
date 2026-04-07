@@ -93,9 +93,13 @@ export const ENUM_FIELD_PATHS: {
  * so we query `code` for streetType.
  */
 export async function queryEnumSets(sql: Sql): Promise<EnumSets> {
-  const schemaPrefix = process.env.GNAF_VERSION
-    ? `raw_gnaf_${process.env.GNAF_VERSION.replace(".", "")}`
-    : "raw_gnaf_202602";
+  const raw = process.env.GNAF_VERSION?.replace(/\./g, "") ?? "202602";
+  if (!/^\d{6}$/.test(raw)) {
+    throw new Error(
+      `Invalid GNAF_VERSION: must be YYYY.MM format, got "${process.env.GNAF_VERSION}"`,
+    );
+  }
+  const schemaPrefix = `raw_gnaf_${raw}`;
 
   async function collectColumn(query: string, col: string): Promise<Set<string>> {
     const values = new Set<string>();
@@ -155,6 +159,7 @@ export interface VerifyResult {
   boundaryCoverage: BoundaryCoverage;
   duplicatePids: string[];
   enumUnknownCounts: EnumUnknownCounts;
+  enumChecked: boolean;
 }
 
 export interface BoundaryCoverage {
@@ -331,6 +336,7 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     boundaryCoverage: coverage,
     duplicatePids,
     enumUnknownCounts,
+    enumChecked: !!enumSets,
   };
 }
 
@@ -376,11 +382,15 @@ export function formatReport(result: VerifyResult): string {
   }
 
   // Enum-ish field validation
-  const enumFields = Object.keys(result.enumUnknownCounts);
-  if (enumFields.length > 0) {
-    lines.push("Enum field check: FAIL");
-    for (const field of enumFields) {
-      lines.push(`  ${field}: ${result.enumUnknownCounts[field]} unknown values`);
+  if (result.enumChecked) {
+    const enumFields = Object.entries(result.enumUnknownCounts).filter(([, n]) => n > 0);
+    if (enumFields.length > 0) {
+      lines.push("Enum field check: FAIL");
+      for (const [field, count] of enumFields) {
+        lines.push(`  ${field}: ${count} unknown values`);
+      }
+    } else {
+      lines.push("Enum field check: PASS");
     }
   }
 
