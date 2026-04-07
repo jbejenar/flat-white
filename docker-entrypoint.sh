@@ -356,7 +356,8 @@ if [[ ! -s "$FLATTEN_OUTPUT" ]]; then
 fi
 
 DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
-  node /app/dist/verify.js "$FLATTEN_OUTPUT" --expected-count "$LINE_COUNT" || {
+  node /app/dist/verify.js "$FLATTEN_OUTPUT" --expected-count "$LINE_COUNT" \
+    --db-url "postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" || {
   log "ERROR: Verification failed"
   exit 4
 }

@@ -594,6 +594,30 @@ jobs:
           Each line in the NDJSON files is one JSON document conforming to this schema.
           DLEOF
 
+          # For patch releases, auto-link merged PRs between the base version tag and HEAD
+          if [[ "$IS_PATCH" == "true" ]]; then
+            BASE_TAG="v${VERSION}"
+            PR_LINKS=""
+            if git rev-parse "$BASE_TAG" >/dev/null 2>&1; then
+              # Find merge commits between the base tag and HEAD, extract PR numbers
+              PR_NUMBERS=$(git log "${BASE_TAG}..HEAD" --oneline --grep='(#' | grep -oP '\(#\K[0-9]+' | sort -un || true)
+              if [[ -n "$PR_NUMBERS" ]]; then
+                PR_LINKS=$'\n## Fixes\n\n'
+                while IFS= read -r pr_num; do
+                  PR_TITLE=$(gh pr view "$pr_num" --json title --jq '.title' 2>/dev/null || echo "")
+                  if [[ -n "$PR_TITLE" ]]; then
+                    PR_LINKS+="- ${PR_TITLE} (#${pr_num})"$'\n'
+                  else
+                    PR_LINKS+="- #${pr_num}"$'\n'
+                  fi
+                done <<< "$PR_NUMBERS"
+              fi
+            fi
+            if [[ -n "$PR_LINKS" ]]; then
+              echo "$PR_LINKS" >> "$NOTES_FILE"
+            fi
+          fi
+
           # Replace {VERSION} placeholder in download examples (use release_version
           # so the gh download commands reference the correct tag and asset names)
           sed -i "s/{VERSION}/${RELEASE_VERSION}/g" "$NOTES_FILE"

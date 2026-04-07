@@ -4343,12 +4343,12 @@ Origin: PR #67 retrospective. Without this, every bug fix to the flatten SQL has
 ```yaml
 id: E1.12
 title: Hardened verify checks against authority tables
-status: planned
+status: done
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-07
 ```
 
 ## User Story
@@ -4374,15 +4374,15 @@ Any mismatch is either a bug in flatten or a stale auth table, both worth surfac
 
 ### Functional
 
-- [ ] `src/verify.ts` queries the authority tables once at startup, builds in-memory sets, and validates each document's enum-ish fields against them
+- [x] `src/verify.ts` queries the authority tables once at startup, builds in-memory sets, and validates each document's enum-ish fields against them
   - `Verify:` Manually editing `expected-output.ndjson` to set `streetType: "PL"` causes verify to fail with a clear error
-  - `Evidence:`
-- [ ] Verification report (P4.02) includes a per-field "unknown value count" line for each enum-ish field
+  - `Evidence:` `queryEnumSets()` queries 5 authority tables + VALID_STATES set. `ENUM_FIELD_PATHS` extracts 6 fields. Validation loop in `verify()` populates `enumUnknownCounts`. 7 unit tests pass including "fails when streetType has an abbreviation" test. `build-fixture-only.sh` passes `--db-url` for fixture enum checks.
+- [x] Verification report (P4.02) includes a per-field "unknown value count" line for each enum-ish field
   - `Verify:` `verification.json` artifact contains the new fields
-  - `Evidence:`
-- [ ] Verify is opt-out, not opt-in (default-on, with `--skip-enum-check` flag for the rare case where stale auth tables block a release)
+  - `Evidence:` `verification-report.ts` tracks `enumUnknownCounts` per state (line 77, 148-159). `formatVerificationReport()` renders "Enum Field Validation" table when errors found (lines 234-252). JSON report includes `enumUnknownCounts` per state.
+- [x] Verify is opt-out, not opt-in (default-on, with `--skip-enum-check` flag for the rare case where stale auth tables block a release)
   - `Verify:` Quarterly build runs the check by default
-  - `Evidence:`
+  - `Evidence:` CLI has `--skip-enum-check` flag (opt-out). `build-fixture-only.sh` passes `--db-url` (enum checks on by default). `docker-entrypoint.sh` passes `--db-url` for production builds. Enum checks run whenever DB is available; `--skip-enum-check` overrides.
 
 ## Scope
 
@@ -4437,12 +4437,12 @@ The current versioning scheme is `YYYY.MM` (e.g. `v2026.04`), tied to G-NAF data
 - [x] Patch release notes include a clear "supersedes" notice
   - `Verify:` `v2026.04.1` release body has a "⚠️ Patch release. This is a hotfix for v2026.04..." block
   - `Evidence:` `PATCH_NOTICE` variable in the workflow's release-notes step.
-- [ ] Patch release notes auto-link to the fixing PR(s) (currently a manual edit after running the workflow)
+- [x] Patch release notes auto-link to the fixing PR(s) (currently a manual edit after running the workflow)
   - `Verify:` `v2026.04.1` release body links to PR #67
-  - `Evidence:`
-- [ ] Catalogue (E1.08) groups patch releases under their parent quarterly cut
+  - `Evidence:` `quarterly-build.yml` release notes step queries merged PRs between base version tag and HEAD via `git log --grep='(#'` + `gh pr view`, injects "Fixes" section with PR title + number links. Only runs for patch releases (`IS_PATCH=true`).
+- [x] Catalogue (E1.08) groups patch releases under their parent quarterly cut
   - `Verify:` GitHub Pages catalogue shows `v2026.04.1` nested under `v2026.04`
-  - `Evidence:`
+  - `Evidence:` `generate-catalogue.ts`: `parseVersion()` detects `vYYYY.MM.N` patches; `processReleases()` groups them under parent; `generateHTML()` renders patches as nested sub-entries with `class="release patch"` styling. 6 new tests: parseVersion (4), patch grouping (3), HTML rendering (1). Orphaned patches (no parent) render as top-level.
 - [ ] Existing v2026.04 release notes updated to point at the patch
   - `Verify:` `gh release view v2026.04 --json body --jq '.body'` includes a banner pointing at v2026.04.1
   - `Evidence:` (manual one-time edit by the maintainer when v2026.04.1 publishes)

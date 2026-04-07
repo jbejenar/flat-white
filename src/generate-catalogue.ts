@@ -46,6 +46,8 @@ interface ReleaseData {
   states: StateCount[];
   schemaVersion: string;
   assets: { name: string; url: string; sizeMB: string }[];
+  /** Patch releases grouped under this quarterly release (e.g. v2026.04.1 under v2026.04) */
+  patches?: ReleaseData[];
 }
 
 // --- CLI ---
@@ -120,8 +122,19 @@ function parseMetadataFromAssets(
   return { totalCount, states, schemaVersion };
 }
 
+/**
+ * Parse a version tag into its base (quarterly) version and optional patch number.
+ * e.g. "v2026.04" → { base: "v2026.04", patch: null }
+ *      "v2026.04.1" → { base: "v2026.04", patch: 1 }
+ */
+export function parseVersion(tag: string): { base: string; patch: number | null } {
+  const match = tag.match(/^(v\d{4}\.\d{2})(?:\.(\d+))?$/);
+  if (!match) return { base: tag, patch: null };
+  return { base: match[1], patch: match[2] ? parseInt(match[2], 10) : null };
+}
+
 export function processReleases(releases: GitHubRelease[]): ReleaseData[] {
-  return releases
+  const all = releases
     .filter((r) => r.tag_name.startsWith("v"))
     .map((r) => {
       const metadata = parseMetadataFromAssets(r);
@@ -143,6 +156,48 @@ export function processReleases(releases: GitHubRelease[]): ReleaseData[] {
         assets: dataAssets,
       };
     });
+
+  // Group patch releases under their parent quarterly release
+  const parentMap = new Map<string, ReleaseData>();
+  const patches: ReleaseData[] = [];
+
+  for (const r of all) {
+    const { base, patch } = parseVersion(r.version);
+    if (patch !== null) {
+      patches.push(r);
+    } else {
+      parentMap.set(base, r);
+    }
+  }
+
+  for (const patch of patches) {
+    const { base } = parseVersion(patch.version);
+    const parent = parentMap.get(base);
+    if (parent) {
+      if (!parent.patches) parent.patches = [];
+      parent.patches.push(patch);
+    }
+    // Orphaned patches (no parent release) are kept as top-level entries
+  }
+
+  // Return only top-level releases (parents + orphaned patches)
+  const topLevel: ReleaseData[] = [];
+  const groupedPatchVersions = new Set(
+    patches
+      .filter((p) => {
+        const { base } = parseVersion(p.version);
+        return parentMap.has(base);
+      })
+      .map((p) => p.version),
+  );
+
+  for (const r of all) {
+    if (!groupedPatchVersions.has(r.version)) {
+      topLevel.push(r);
+    }
+  }
+
+  return topLevel;
 }
 
 // --- HTML Generation ---
@@ -165,11 +220,12 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
   const repoUrl = `https://github.com/${repo}`;
   const now = new Date().toISOString().split("T")[0];
 
-  const releasesHTML = releases
-    .map(
-      (r) => `
-      <section class="release">
-        <h2><a href="${esc(r.url)}">${esc(r.version)}</a></h2>
+  function renderRelease(r: ReleaseData, isPatch = false): string {
+    const tag = isPatch ? "h3" : "h2";
+    const cls = isPatch ? "release patch" : "release";
+    return `
+      <section class="${cls}">
+        <${tag}><a href="${esc(r.url)}">${esc(r.version)}</a></${tag}>
         <p class="meta">Released ${esc(r.date)} &middot; ${esc(formatNumber(r.totalCount))} addresses &middot; Schema ${esc(r.schemaVersion)}</p>
         ${
           r.states.length > 0
@@ -187,8 +243,17 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
         </details>`
             : ""
         }
-      </section>`,
-    )
+      </section>`;
+  }
+
+  const releasesHTML = releases
+    .map((r) => {
+      let html = renderRelease(r);
+      if (r.patches && r.patches.length > 0) {
+        html += r.patches.map((p) => renderRelease(p, true)).join("\n");
+      }
+      return html;
+    })
     .join("\n");
 
   return `<!DOCTYPE html>
@@ -240,7 +305,9 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
       margin-bottom: 1rem;
     }
     .release h2 { font-size: 1.25rem; }
-    .release h2 a { color: var(--accent); text-decoration: none; }
+    .release.patch { margin-left: 1.5rem; border-left: 3px solid var(--accent); border-top: none; border-right: none; border-bottom: none; border-radius: 0; padding: 0.75rem 1rem; background: transparent; }
+    .release.patch h3 { font-size: 1rem; }
+    .release h2 a, .release h3 a { color: var(--accent); text-decoration: none; }
     .release h2 a:hover { text-decoration: underline; }
     .meta { color: var(--muted); font-size: 0.875rem; margin-top: 0.25rem; }
     .states { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.875rem; }

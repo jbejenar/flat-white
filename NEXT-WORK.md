@@ -49,17 +49,15 @@
 - [ ] Remove pre-baked `address_principal_admin_boundaries` rows from `seed-postgres.sql`
 - Origin: PR #67 retrospective — fixture has no visibility into shapefile loading or spatial join, which is how both the v2026.04 wards crash and streetType regression slipped past CI
 
-### E1.11 — Consolidate flatten SQL (planned, p1-high)
+### E1.11 — Consolidate flatten SQL (done)
 
-- [ ] Pick one of: generated materialize SQL, single-file with mode flag, templating layer
-- [ ] Eliminate possibility of drift between legacy and materialize paths by construction
-- Origin: PR #67 — root cause of streetType regression was hand-maintained drift between two parallel SQL files
+- [x] Single source of truth: `address_full.sql` → auto-generated `address_full_main.sql`
 
-### E1.12 — Hardened verify checks (planned, p2-medium)
+### E1.12 — Hardened verify checks (done)
 
-- [ ] Validate `streetType`, `flatType`, `levelType`, `streetSuffix`, `localityClass`, `state` against authority tables
-- [ ] Surface unknown values in verification report
-- Origin: PR #67 — Zod schema only constrains type, not content; bug shipped because verify had no opinion on the _value_
+- [x] All 6 enum-ish fields validated against authority tables in verify.ts
+- [x] verification-report.ts includes per-field unknown value counts
+- [x] Production builds now pass `--db-url` to verify (docker-entrypoint.sh)
 
 ### E1.13 — Patch release tooling (in-progress, p1-high)
 
@@ -67,8 +65,9 @@
 - [x] `quarterly-build.yml` `patch_version` input (PR #67)
 - [x] `docs/RELEASING.md` procedure (PR #67)
 - [x] Build-over-build comparison skips count check for patches (PR #67)
-- [ ] Catalogue grouping for patches under parent quarterly cut (E1.08 enhancement)
-- [ ] Auto-link fixing PR(s) in patch release notes (currently manual)
+- [x] Catalogue grouping for patches under parent quarterly cut
+- [x] Auto-link fixing PR(s) in patch release notes
+- [ ] Existing v2026.04 release notes updated to point at the patch (manual one-time edit)
 - Origin: PR #67 — most of this ticket landed in PR #67 because the v2026.04 streetType fix needed it as a prerequisite
 
 ### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (planned, **p0-critical**)
