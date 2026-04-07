@@ -274,6 +274,10 @@ else
 
   # Derive 6-digit geoscape version from GNAF_VERSION (e.g. "2026.05" → "202605")
   GEOSCAPE_VERSION=$(echo "${GNAF_VERSION:-2026.02}" | tr -d '.')
+  if [[ ! "$GEOSCAPE_VERSION" =~ ^[0-9]{6}$ ]]; then
+    log "ERROR: GNAF_VERSION '${GNAF_VERSION}' must be in YYYY.MM format (e.g. 2026.05)"
+    exit 1
+  fi
 
   LOAD_ARGS="--no-boundary-tag --geoscape-version $GEOSCAPE_VERSION"
   if [[ -n "$STATES" ]]; then

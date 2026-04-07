@@ -190,6 +190,20 @@ describe("buildArgs — geoscape version", () => {
   });
 });
 
+describe("buildArgs — geoscape version validation", () => {
+  it("rejects non-6-digit geoscapeVersion", () => {
+    expect(() => buildArgs({ geoscapeVersion: "20265" })).toThrow(
+      /must be a 6-digit YYYYMM string/,
+    );
+  });
+
+  it("rejects alphabetic geoscapeVersion", () => {
+    expect(() => buildArgs({ geoscapeVersion: "abcdef" })).toThrow(
+      /must be a 6-digit YYYYMM string/,
+    );
+  });
+});
+
 describe("resolveAdminBdysPath", () => {
   it("resolves the Admin Boundaries directory", () => {
     const path = resolveAdminBdysPath("./data");
