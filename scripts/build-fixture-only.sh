@@ -47,9 +47,20 @@ sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/fixtures/prep-
 
 # 3d. Run spatial join to populate address_principal_admin_boundaries from polygons
 # This must run BEFORE either flatten path so both legacy and materialize see boundary data.
-# The spatial join fallback is in address_full_prep.sql (lines 1-161). It only runs if the
+# The spatial join fallback is in address_full_prep.sql (lines 1-170). It only runs if the
 # table is empty, so it's safe to re-run during the materialize path.
 echo "[fixture-build] Running spatial join (address → boundary assignment)..."
+
+# Guard: verify the cut point hasn't drifted. Line 170 must be the CREATE UNIQUE INDEX
+# that ends the spatial join block. If someone adds/removes lines above, this catches it.
+CUT_LINE=$(sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/sql/address_full_prep.sql" | sed -n '170p')
+if [[ "$CUT_LINE" != *'CREATE UNIQUE INDEX'* ]]; then
+  echo "[fixture-build] ERROR: head -170 cut point has drifted in address_full_prep.sql"
+  echo "  Expected line 170 to contain 'CREATE UNIQUE INDEX', got: $CUT_LINE"
+  echo "  Update the line count in build-fixture-only.sh step 3d."
+  exit 1
+fi
+
 head -170 "$PROJECT_DIR/sql/address_full_prep.sql" | \
   sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" | \
   docker compose exec -T db psql -U postgres -d gnaf -q
