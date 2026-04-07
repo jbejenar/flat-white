@@ -4408,8 +4408,8 @@ Origin: PR #67 retrospective. The fixture cross-path check catches drift between
 ```yaml
 id: E1.13
 title: Patch release tooling (e.g. v2026.04.1)
-status: planned
-priority: p2-medium
+status: in-progress
+priority: p1-high
 epic: E1.B
 persona: [ops/maintainer]
 depends_on: []
@@ -4418,36 +4418,43 @@ completed: null
 
 ## User Story
 
-As a maintainer, when a critical bug is found in a published release (like the v2026.04 streetType regression), I need a documented and partially-automated workflow to ship a patch release without waiting for the next quarterly build, so that consumers can get the fix in days rather than months.
+As a maintainer, when a critical bug is found in a published release (like the v2026.04 streetType regression), I need a documented and partially-automated workflow to ship a patch release without waiting for the next quarterly build, so that consumers can get the fix in days rather than months. Patch releases must use a NEW tag (`vYYYY.MM.N`) and NEW asset filenames so consumers know their previous downloads are stale.
 
 ## Problem Statement
 
-The current versioning scheme is `YYYY.MM` (e.g. `v2026.04`), tied to G-NAF data versions. There is no convention or tooling for patch releases when a critical bug is found between quarterly cuts. PR #67 fixes a real production bug shipped in v2026.04, but there is no defined path to publish `v2026.04.1` with the fix — manual `quarterly-build.yml` re-trigger is the only option, and it would overwrite the existing v2026.04 release rather than creating a new patched one.
+The current versioning scheme is `YYYY.MM` (e.g. `v2026.04`), tied to G-NAF data versions. There is no convention or tooling for patch releases when a critical bug is found between quarterly cuts. PR #67 fixes a real production bug shipped in v2026.04 — and PR #67 also lands the workflow plumbing for patch releases.
 
 ## Definition of Done
 
 ### Functional
 
-- [ ] Versioning convention documented for patches: `vYYYY.MM.N` (e.g. `v2026.04.1`)
-  - `Verify:` `CHANGELOG.md` and `docs/RELEASING.md` (or equivalent) describe the convention
-  - `Evidence:`
-- [ ] `quarterly-build.yml` accepts a `patch_version` input that, when set, publishes as `vYYYY.MM.N` against the SAME G-NAF data as the original cut
-  - `Verify:` `gh workflow run quarterly-build.yml -f gnaf_version=2026.04 -f patch_version=1` produces `v2026.04.1` release
-  - `Evidence:`
-- [ ] Patch release notes auto-link to the original release and the fixing PR(s)
-  - `Verify:` `v2026.04.1` release body links to `v2026.04` and PR #67
+- [x] Versioning convention documented for patches: `vYYYY.MM.N` (e.g. `v2026.04.1`)
+  - `Verify:` `docs/RELEASING.md` describes the convention; CHANGELOG explains when to bump
+  - `Evidence:` `docs/RELEASING.md` added in PR #67 (this PR) — see "Patch releases" section.
+- [x] `quarterly-build.yml` accepts a `patch_version` input that, when set, publishes as `vYYYY.MM.N` against the SAME G-NAF data as the original cut
+  - `Verify:` `gh workflow run quarterly-build.yml -f gnaf_version=2026.04 -f patch_version=1` produces `v2026.04.1` release with assets named `flat-white-2026.04.1-{state}.ndjson.gz`
+  - `Evidence:` PR #67 splits the workflow's `version` (G-NAF data version, used for build) from `release_version` (patched, used for tag/asset names). Setup job outputs both. Asset collect step renames files. metadata.json includes both `version` (release) and `gnafVersion` (data). Release notes include a "Patch release" notice when applicable. Idempotency guard only deletes the matching tag (so v2026.04.1 republish doesn't touch v2026.04). Build-over-build comparison skips count anomaly check for patches (same data → 0% delta is expected).
+- [x] Patch release notes include a clear "supersedes" notice
+  - `Verify:` `v2026.04.1` release body has a "⚠️ Patch release. This is a hotfix for v2026.04..." block
+  - `Evidence:` `PATCH_NOTICE` variable in the workflow's release-notes step.
+- [ ] Patch release notes auto-link to the fixing PR(s) (currently a manual edit after running the workflow)
+  - `Verify:` `v2026.04.1` release body links to PR #67
   - `Evidence:`
 - [ ] Catalogue (E1.08) groups patch releases under their parent quarterly cut
   - `Verify:` GitHub Pages catalogue shows `v2026.04.1` nested under `v2026.04`
   - `Evidence:`
+- [ ] Existing v2026.04 release notes updated to point at the patch
+  - `Verify:` `gh release view v2026.04 --json body --jq '.body'` includes a banner pointing at v2026.04.1
+  - `Evidence:` (manual one-time edit by the maintainer when v2026.04.1 publishes)
 
 ## Scope
 
 ### In
 
-- Workflow input + release naming convention
-- Catalogue grouping
-- CHANGELOG patch-version section template
+- Workflow input + release naming convention (DONE in PR #67)
+- Documented procedure (DONE in PR #67 — `docs/RELEASING.md`)
+- Catalogue grouping (still TODO)
+- Auto-linking PRs in patch release notes (still TODO — currently manual)
 
 ### Out — Do Not Implement
 
@@ -4457,7 +4464,83 @@ The current versioning scheme is `YYYY.MM` (e.g. `v2026.04`), tied to G-NAF data
 
 ## Notes
 
-Origin: PR #67 retrospective. The streetType bug needs a patch release for v2026.04 but there is no tooling for it; this ticket creates the path.
+Origin: PR #67 retrospective. **Most of this ticket landed in PR #67** because the v2026.04 streetType fix needed it as a prerequisite (per the user's explicit request: "incrementally versioning is better.. so people know their previous downloads are stale"). Remaining work is the catalogue grouping and PR auto-linking; status set to `in-progress` to reflect that the core capability ships but two follow-ups remain.
+
+---
+
+### Ticket E1.16 — Geocode type field consistency
+
+```yaml
+id: E1.16
+title: Standardize geocode.type vs allGeocodes[].type representation
+status: planned
+priority: p3-low
+epic: E1.A
+persona: [downstream-consumer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a downstream consumer of flat-white NDJSON, I need `geocode.type` and `allGeocodes[].type` to use the same representation (both long form OR both short form) so that I don't have to maintain a code-↔-name mapping in my consumer.
+
+## Problem Statement
+
+Today the two geocode type fields are inconsistent — verified by inspection of the released v2026.04 ACT file:
+
+```json
+{
+  "geocode": {
+    "type": "FRONTAGE CENTRE SETBACK", // ← long form (from geocode_type_aut.name)
+    "reliability": 2
+  },
+  "allGeocodes": [
+    { "type": "FCS", "reliability": 2 }, // ← short form (raw geocode_type_code)
+    { "type": "PC", "reliability": 2 }
+  ]
+}
+```
+
+Both `sql/address_full.sql` and `sql/address_full_main.sql` have this inconsistency identically, so it isn't a drift bug — it's been this way since the legacy SQL was first written. The cross-path test in PR #67 doesn't catch it because both paths are wrong in the same way.
+
+The inconsistency forces consumers to either:
+
+- Maintain their own short↔long mapping for the 30 geocode types
+- Treat the two fields as different schemas
+
+## Definition of Done
+
+### Functional
+
+- [ ] Both `geocode.type` and `allGeocodes[].type` use the same representation
+  - `Verify:` Sample addresses show consistent type values across both fields
+  - `Evidence:`
+- [ ] Choice documented (long form preferred — matches `streetType`, `flatType`, etc. convention of "use the human-readable name")
+  - `Verify:` `docs/DOCUMENT-SCHEMA.md` updated
+  - `Evidence:`
+- [ ] If long form chosen, `allGeocodes[].type` joins `geocode_type_aut` in the SQL aggregation
+  - `Verify:` `address_full_prep.sql` (and `address_full.sql`) has the `gt.name` in the `all_geocodes` json_agg too
+  - `Evidence:`
+- [ ] Schema bump (this is a breaking change — consumers may have hardcoded "FCS")
+
+## Scope
+
+### In
+
+- SQL fix in both `address_full.sql` and `address_full_prep.sql` to consistently use long form
+- Schema docs update
+- Schema-baseline regeneration
+- Minor version bump in package.json (additive change to expand the type field)
+
+### Out — Do Not Implement
+
+- Renaming the `type` field
+- Adding both short and long form (e.g. `typeCode` + `typeName`) — too much surface area for a small win
+
+## Notes
+
+Origin: PR #67 round-3 audit. Found while doing comprehensive field-by-field check of the released v2026.04 ACT file. Pre-existing inconsistency, low severity, but worth fixing for schema consistency.
 
 ---
 

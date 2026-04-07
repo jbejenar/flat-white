@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       gnaf_version:
-        description: "G-NAF version (e.g. 2026.05)"
+        description: "G-NAF version (e.g. 2026.05). The underlying G-NAF data version — never has a patch suffix."
+        required: false
+        default: ""
+      patch_version:
+        description: "Patch version for hotfix releases (e.g. '1' produces v2026.04.1). Leave empty for normal quarterly builds. See E1.13 for the design rationale."
         required: false
         default: ""
       runner:
@@ -28,21 +32,39 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      release_version: ${{ steps.version.outputs.release_version }}
     steps:
       - name: Determine version
         id: version
         env:
           GNAF_INPUT: ${{ inputs.gnaf_version }}
+          PATCH_INPUT: ${{ inputs.patch_version }}
         run: |
+          # G-NAF data version (always YYYY.MM, used by gnaf-loader for schema names)
           if [[ -n "$GNAF_INPUT" ]]; then
             if [[ ! "$GNAF_INPUT" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
               echo "ERROR: Invalid gnaf_version format: '$GNAF_INPUT' (expected YYYY.MM)"
               exit 1
             fi
-            echo "version=$GNAF_INPUT" >> "$GITHUB_OUTPUT"
+            VERSION="$GNAF_INPUT"
           else
-            echo "version=$(date +%Y.%m)" >> "$GITHUB_OUTPUT"
+            VERSION="$(date +%Y.%m)"
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # Release version (YYYY.MM or YYYY.MM.N for patches)
+          # Used for tag, asset filenames, release title — anything user-visible
+          if [[ -n "$PATCH_INPUT" ]]; then
+            if [[ ! "$PATCH_INPUT" =~ ^[0-9]+$ ]]; then
+              echo "ERROR: Invalid patch_version format: '$PATCH_INPUT' (expected positive integer)"
+              exit 1
+            fi
+            RELEASE_VERSION="${VERSION}.${PATCH_INPUT}"
+            echo "::notice::Patch release: building v${RELEASE_VERSION} from G-NAF data ${VERSION}"
+          else
+            RELEASE_VERSION="$VERSION"
+          fi
+          echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # Job 1: Build each state in parallel
@@ -237,8 +259,8 @@ jobs:
 
       - name: Concatenate per-state gzips
         run: |
-          VERSION="${{ needs.setup.outputs.version }}"
-          ALL_FILE="flat-white-${VERSION}-all.ndjson.gz"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          ALL_FILE="flat-white-${RELEASE_VERSION}-all.ndjson.gz"
 
           echo "Concatenating per-state files into $ALL_FILE..."
 
@@ -249,8 +271,8 @@ jobs:
 
       - name: Verify all-states file
         run: |
-          VERSION="${{ needs.setup.outputs.version }}"
-          ALL_FILE="flat-white-${VERSION}-all.ndjson.gz"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          ALL_FILE="flat-white-${RELEASE_VERSION}-all.ndjson.gz"
 
           # Verify gzip integrity
           gzip -t "$ALL_FILE"
@@ -308,10 +330,15 @@ jobs:
         id: collect
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           ASSET_DIR="release-assets"
           mkdir -p "$ASSET_DIR"
 
-          # Collect per-state gzips and count files
+          # Collect per-state gzips and count files. Source filenames are
+          # `flat-white-${VERSION}-${state}.ndjson.gz` (built using gnaf data
+          # version). For patch releases, we rename to RELEASE_VERSION here so
+          # downstream consumers see e.g. `flat-white-2026.04.1-act.ndjson.gz`
+          # and know their previous download is stale.
           TOTAL=0
           STATES_JSON="{"
           FIRST=true
@@ -325,7 +352,7 @@ jobs:
               exit 1
             fi
 
-            cp "$GZ_FILE" "$ASSET_DIR/flat-white-${VERSION}-${STATE_LOWER}.ndjson.gz"
+            cp "$GZ_FILE" "$ASSET_DIR/flat-white-${RELEASE_VERSION}-${STATE_LOWER}.ndjson.gz"
 
             COUNT=$(cat "$COUNT_FILE")
             TOTAL=$((TOTAL + COUNT))
@@ -346,9 +373,12 @@ jobs:
           SCHEMA_VERSION=$(node -p "require('./package.json').version")
 
           # Generate metadata.json
+          # `version` is the release version (may have patch); `gnafVersion`
+          # is always the underlying G-NAF data version (no patch).
           cat > "$ASSET_DIR/metadata.json" <<METAEOF
           {
-            "version": "${VERSION}",
+            "version": "${RELEASE_VERSION}",
+            "gnafVersion": "${VERSION}",
             "schemaVersion": "${SCHEMA_VERSION}",
             "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "states": ${STATES_JSON},
@@ -414,6 +444,7 @@ jobs:
         id: compare
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
           HAS_ANOMALIES=false
 
@@ -423,8 +454,13 @@ jobs:
           if [[ -z "$PRIOR_TAG" ]]; then
             echo "No prior release found — skipping comparison"
             echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
-          elif [[ "$PRIOR_TAG" == "v${VERSION}" ]]; then
+          elif [[ "$PRIOR_TAG" == "v${RELEASE_VERSION}" ]]; then
             echo "Prior release is same version (${PRIOR_TAG}) — skipping comparison (manual rebuild)"
+            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$RELEASE_VERSION" != "$VERSION" && "$PRIOR_TAG" == "v${VERSION}" ]]; then
+            # Patch release: prior is the parent quarterly cut. Counts should be ~identical
+            # (same data, same code path). Skip count anomaly comparison.
+            echo "Patch release: prior is parent quarterly v${VERSION} — skipping count comparison (same underlying data)"
             echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
           else
             echo "Comparing against prior release: $PRIOR_TAG"
@@ -456,9 +492,18 @@ jobs:
         id: notes
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           TOTAL="${{ steps.collect.outputs.total }}"
           SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
+
+          # If this is a patch release, build a clear "supersedes" notice
+          IS_PATCH=false
+          PATCH_NOTICE=""
+          if [[ "$RELEASE_VERSION" != "$VERSION" ]]; then
+            IS_PATCH=true
+            PATCH_NOTICE="> ⚠️ **Patch release.** This is a hotfix for v${VERSION}. The underlying G-NAF data is unchanged (still ${VERSION}). Asset filenames are versioned as \`flat-white-${RELEASE_VERSION}-{state}.ndjson.gz\` so consumers can detect that previous downloads are stale. See CHANGELOG.md for the list of fixes."
+          fi
 
           # Try to get prior release metadata for delta calculation (exclude drafts to avoid self-comparison)
           PRIOR_TAG=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
@@ -489,12 +534,14 @@ jobs:
           NOTES_FILE=$(mktemp)
           cat > "$NOTES_FILE" <<NOTESEOF
           Pre-joined, boundary-enriched Australian address data from G-NAF ${VERSION}.
+          ${PATCH_NOTICE}
 
           ## Summary
 
           - **Total addresses:** $(printf "%'d" "$TOTAL")$(if [[ "$HAS_DELTA" == "true" ]]; then echo " (${DELTA_TOTAL_FMT} from ${PRIOR_TAG})"; fi)
-          - **Schema version:** ${SCHEMA_VERSION}
+          - **Release version:** ${RELEASE_VERSION}
           - **G-NAF data version:** ${VERSION}
+          - **Schema version:** ${SCHEMA_VERSION}
           - **gnaf-loader version:** ${GNAF_LOADER_VERSION}
 
           ## Per-State Document Counts
@@ -545,8 +592,9 @@ jobs:
           Each line in the NDJSON files is one JSON document conforming to this schema.
           DLEOF
 
-          # Replace {VERSION} placeholder in download examples
-          sed -i "s/{VERSION}/${VERSION}/g" "$NOTES_FILE"
+          # Replace {VERSION} placeholder in download examples (use release_version
+          # so the gh download commands reference the correct tag and asset names)
+          sed -i "s/{VERSION}/${RELEASE_VERSION}/g" "$NOTES_FILE"
 
           # Remove leading whitespace from heredoc
           sed -i 's/^          //' "$NOTES_FILE"
@@ -561,6 +609,7 @@ jobs:
       - name: Update CHANGELOG.md
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
           TOTAL="${{ steps.collect.outputs.total }}"
           BUILD_DATE=$(date -u +%Y-%m-%d)
@@ -577,13 +626,14 @@ jobs:
           # Use Python to build the entry with real newlines and insert into CHANGELOG
           python3 -c "
           import sys
-          version, build_date, schema_version, total, state_counts = sys.argv[1:6]
+          release_version, gnaf_version, build_date, schema_version, total, state_counts = sys.argv[1:7]
 
-          entry = f'''## [v{version}] - {build_date}
+          entry = f'''## [v{release_version}] - {build_date}
 
           ### Release
 
-          - **G-NAF data version:** {version}
+          - **Release version:** {release_version}
+          - **G-NAF data version:** {gnaf_version}
           - **Schema version:** {schema_version}
           - **Total addresses:** {total}
           - **Per-state counts:**
@@ -596,7 +646,7 @@ jobs:
           content = open('CHANGELOG.md').read()
           content = content.replace('## [Unreleased]', '## [Unreleased]\n\n' + entry, 1)
           open('CHANGELOG.md', 'w').write(content)
-          " "$VERSION" "$BUILD_DATE" "$SCHEMA_VERSION" "$(printf "%'d" "$TOTAL")" "$STATE_COUNTS"
+          " "$RELEASE_VERSION" "$VERSION" "$BUILD_DATE" "$SCHEMA_VERSION" "$(printf "%'d" "$TOTAL")" "$STATE_COUNTS"
 
           # Commit the changelog update (best-effort — release proceeds even if push fails).
           # The release assets are the critical artifacts; a missing CHANGELOG commit
@@ -605,17 +655,19 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           export HUSKY=0
           git add CHANGELOG.md
-          git commit --no-verify -m "docs: update CHANGELOG.md for v${VERSION} release"
+          git commit --no-verify -m "docs: update CHANGELOG.md for v${RELEASE_VERSION} release"
           git push || echo "::warning::CHANGELOG push failed (branch protection). Release still proceeds — push CHANGELOG manually."
 
       - name: Create GitHub Release (draft)
         run: |
-          VERSION="${{ needs.setup.outputs.version }}"
-          TAG="v${VERSION}"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          TAG="v${RELEASE_VERSION}"
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
           NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
 
-          # Idempotency guard: delete any existing release for this tag (re-run safety)
+          # Idempotency guard: delete any existing release for this tag (re-run safety).
+          # For patch releases (e.g. v2026.04.1), this only deletes the patch tag —
+          # the original v2026.04 release is untouched.
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
 
           # Create as draft — only publish after verification passes
@@ -629,8 +681,8 @@ jobs:
 
       - name: Verify release
         run: |
-          VERSION="${{ needs.setup.outputs.version }}"
-          TAG="v${VERSION}"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          TAG="v${RELEASE_VERSION}"
 
           echo "--- Release Details ---"
           gh release view "$TAG"
@@ -672,7 +724,8 @@ jobs:
         if: ${{ success() }}
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
-          TAG="v${VERSION}"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          TAG="v${RELEASE_VERSION}"
           TOTAL="${{ steps.collect.outputs.total }}"
           SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
           REPO_URL="${{ github.server_url }}/${{ github.repository }}"
@@ -686,7 +739,7 @@ jobs:
             "totalCount": ${TOTAL},
             "releaseUrl": "${REPO_URL}/releases/tag/${TAG}",
             "assets": {
-              "all": "${REPO_URL}/releases/download/${TAG}/flat-white-${VERSION}-all.ndjson.gz",
+              "all": "${REPO_URL}/releases/download/${TAG}/flat-white-${RELEASE_VERSION}-all.ndjson.gz",
               "metadata": "${REPO_URL}/releases/download/${TAG}/metadata.json"
             }
           }

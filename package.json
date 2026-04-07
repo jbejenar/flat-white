@@ -1,6 +1,6 @@
 {
   "name": "flat-white",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Australian addresses. Flattened and served.",
   "type": "module",
   "main": "./dist/index.js",

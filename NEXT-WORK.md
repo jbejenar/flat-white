@@ -61,12 +61,15 @@
 - [ ] Surface unknown values in verification report
 - Origin: PR #67 — Zod schema only constrains type, not content; bug shipped because verify had no opinion on the _value_
 
-### E1.13 — Patch release tooling (planned, p2-medium)
+### E1.13 — Patch release tooling (in-progress, p1-high)
 
-- [ ] Versioning convention for `vYYYY.MM.N` patch releases
-- [ ] `quarterly-build.yml` `patch_version` input
-- [ ] Catalogue grouping for patches under parent quarterly cut
-- Origin: PR #67 — v2026.04 needs a patch release for the streetType fix but there is no tooling for it
+- [x] Versioning convention for `vYYYY.MM.N` patch releases (PR #67)
+- [x] `quarterly-build.yml` `patch_version` input (PR #67)
+- [x] `docs/RELEASING.md` procedure (PR #67)
+- [x] Build-over-build comparison skips count check for patches (PR #67)
+- [ ] Catalogue grouping for patches under parent quarterly cut (E1.08 enhancement)
+- [ ] Auto-link fixing PR(s) in patch release notes (currently manual)
+- Origin: PR #67 — most of this ticket landed in PR #67 because the v2026.04 streetType fix needed it as a prerequisite
 
 ### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (planned, **p0-critical**)
 
