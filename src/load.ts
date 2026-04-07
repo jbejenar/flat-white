@@ -41,8 +41,6 @@ export interface LoadOptions {
   srid?: number;
   /** Max parallel processes for gnaf-loader. Default: 4 */
   maxProcesses?: number;
-  /** Skip admin boundary tagging. Default: false */
-  noBoundaryTag?: boolean;
   /**
    * The path the Postgres SERVER sees for the data directory.
    * When Postgres runs in Docker with ./data mounted as /data,
@@ -163,10 +161,6 @@ export function buildArgs(opts: LoadOptions): string[] {
     args.push("--states", ...opts.states);
   }
 
-  if (opts.noBoundaryTag) {
-    args.push("--no-boundary-tag");
-  }
-
   return args;
 }
 
@@ -266,9 +260,6 @@ async function main(): Promise<void> {
         break;
       case "--max-processes":
         opts.maxProcesses = Number(args[++i]);
-        break;
-      case "--no-boundary-tag":
-        opts.noBoundaryTag = true;
         break;
       case "--pghost":
         opts.pgHost = args[++i];

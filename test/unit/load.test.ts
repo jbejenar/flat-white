@@ -94,11 +94,6 @@ describe("buildArgs", () => {
     expect(args).not.toContain("--states");
   });
 
-  it("includes --no-boundary-tag when set", () => {
-    const args = buildArgs({ noBoundaryTag: true });
-    expect(args).toContain("--no-boundary-tag");
-  });
-
   it("uses custom postgres connection", () => {
     const args = buildArgs({
       pgHost: "db.example.com",

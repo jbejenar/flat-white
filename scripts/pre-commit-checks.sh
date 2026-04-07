@@ -5,7 +5,10 @@ set -e
 
 # 1. Reject empty (0-byte) staged files (new or modified).
 #    Uses git cat-file on the staged blob, not the working tree file.
+#    Skips submodule entries (mode 160000) — their gitlink objects have size 0.
 for f in $(git diff --cached --name-only --diff-filter=ACMR); do
+  staged_mode=$(git ls-files --stage -- "$f" | head -1 | cut -d' ' -f1)
+  if [ "$staged_mode" = "160000" ]; then continue; fi
   staged_size=$(git cat-file -s ":$f" 2>/dev/null || echo "0")
   if [ "$staged_size" = "0" ]; then
     echo "ERROR: Empty (0-byte) file staged for commit: $f"
