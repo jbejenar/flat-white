@@ -4176,6 +4176,743 @@ Free GitHub Actions runners have 7GB RAM and 2-core CPUs. While sufficient for t
 
 ---
 
+### Ticket E1.10 — Shapefile Fixtures + Spatial Join Regression Test
+
+```yaml
+id: E1.10
+title: Shapefile Fixtures + Spatial Join Regression Test
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need the fixture build to exercise the shapefile loading and spatial join steps so that regressions in gnaf-loader's admin boundary pipeline (or in our wiring of it) are caught by CI before they ship to a release.
+
+## Problem Statement
+
+Today's fixture (`fixtures/seed-postgres.sql`) is a post-transformation snapshot — it loads pre-baked rows into `gnaf_202602.address_principal_admin_boundaries`, `admin_bdys_202602.abs_2021_mb_lookup`, etc., and skips shapefile loading entirely. This means CI never runs:
+
+- shp2pgsql ingest of `{state}_*.shp` → `raw_admin_bdys_202602.aus_*` tables
+- gnaf-loader's prep SQL (`02-02a-prep-admin-bdys-tables.sql`) that builds `commonwealth_electorates`, `state_bdys`, `wards`, `abs_2021_mb` from the raw tables
+- The address → boundary spatial join that populates `address_principal_admin_boundaries`
+- The per-state-file `aus_*` rename pattern in `geoscape.load_raw_admin_boundaries()`
+
+Two real bugs slipped past CI as a direct result:
+
+1. **v2026.04 wards crash** — gnaf-loader failed loading `aus_wards` and we shipped a `--no-boundary-tag` workaround in the entrypoint. Fixture build couldn't see this.
+2. **v2026.04 streetType regression** (PR #67) — though caught by adding cross-path testing, the underlying issue (drift between `address_full.sql` and `address_full_main.sql`) was only one of several places where the materialize/production path silently diverged from the legacy/fixture path. The boundary spatial join is the next biggest blind spot.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Tiny shapefile fixtures committed under `fixtures/admin-bdys/` covering the 451 fixture-address footprint
+  - `Verify:` `find fixtures/admin-bdys -name '*.shp'` lists wards, LGA, commonwealth electorate, state electorate, and ABS mesh-block shapefiles for at least one VIC LGA
+  - `Evidence:`
+- [ ] `scripts/seed-shapefiles.sh` (or equivalent step inside `build-fixture-only.sh`) runs `shp2pgsql` against the dev container to populate `raw_admin_bdys_202602.aus_*` from the committed shapefiles
+  - `Verify:` `psql -c '\dt raw_admin_bdys_202602.aus_*'` lists the expected tables after the script runs
+  - `Evidence:`
+- [ ] Fixture build runs the relevant gnaf-loader prep SQL scripts (or a trimmed equivalent) against the seeded raw tables to produce `admin_bdys_202602.*`
+  - `Verify:` `admin_bdys_202602.commonwealth_electorates`, `state_bdys`, `wards`, `abs_2021_mb` are non-empty after seeding
+  - `Evidence:`
+- [ ] Address → boundary spatial join runs against the fixture and populates `address_principal_admin_boundaries` from polygons (not from pre-baked rows)
+  - `Verify:` Pre-baked `address_principal_admin_boundaries` block removed from `seed-postgres.sql`; fixture flatten still produces byte-identical `expected-output.ndjson`
+  - `Evidence:`
+- [ ] Both flatten paths (legacy and `--materialize`) continue to produce byte-identical output against the new derived data
+  - `Verify:` `scripts/build-fixture-only.sh` exits 0 with cross-path PASS
+  - `Evidence:`
+
+### Performance
+
+- [ ] Fixture dev loop stays under 90 seconds end-to-end (from <30s today)
+  - `Verify:` `time scripts/build-fixture-only.sh` reports < 90s on a clean container
+  - `Evidence:`
+
+### Documentation
+
+- [ ] `fixtures/SCHEMA-REFERENCE.md` updated to note which tables are now derived vs pre-seeded
+- [ ] `AGENTS.md` "Fixture-first development" principle updated to reflect that fixtures now exercise the spatial join
+
+## Scope
+
+### In
+
+- Minimal clipped shapefiles (one VIC LGA covering the fixture footprint)
+- shp2pgsql wiring + selective gnaf-loader prep SQL execution against fixtures
+- Removal of pre-baked `address_principal_admin_boundaries` rows from `seed-postgres.sql` (replaced by derivation)
+- Cross-path regression check (already in place from PR #67) extended to cover the new derived data
+
+### Out — Do Not Implement
+
+- Full nationwide shapefile fixtures (size + complexity)
+- Reproducing macOS Python 3.9 multiprocessing fork-safety failures (environmental, not a flat-white concern; pin Python ≥3.10 upstream if desired)
+- Generating shapefile fixtures from live data on every build (commit them once, regenerate manually when boundaries change)
+- Replacing `--no-boundary-tag` workaround in production entrypoint (separate fix, upstream in gnaf-loader)
+
+## Notes
+
+Origin: surfaced during PR #67 retrospective. The streetType regression and the wards crash both shipped in v2026.04 because the fixture has no visibility into anything below the flatten layer. This ticket closes that gap.
+
+---
+
+### Ticket E1.11 — Consolidate flatten SQL into single source of truth
+
+```yaml
+id: E1.11
+title: Consolidate flatten SQL (eliminate legacy/materialize drift)
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need a single SQL source of truth for the flatten query so that the legacy CTE-based path and the production materialize path cannot drift apart.
+
+## Problem Statement
+
+`sql/address_full.sql` (legacy CTE-based) and `sql/address_full_main.sql` (production, used with `--materialize`) are maintained as parallel files. They MUST stay semantically equivalent but there is no structural enforcement — only the cross-path byte-equality check added in PR #67. The v2026.04 streetType regression is a direct consequence of this drift: the materialize file was created in PR #29 from a copy of the pre-PR-#23 query and silently carried the broken `street_type_aut` join for two months. The same drift could happen for any future change.
+
+The right structural fix is one of:
+
+1. Generate `address_full_main.sql` from `address_full.sql` at build time (e.g. a small script that rewrites CTEs into temp-table references).
+2. Make `address_full.sql` produce the temp tables directly when run with a flag, eliminating the second file.
+3. Use a templating layer (`pg-promise` named queries, sqlc, or similar) so the SELECT body is shared and only the FROM/WITH header differs.
+
+Whichever approach is chosen, the goal is: **one human-edited SQL source, no possibility of silent drift.**
+
+## Definition of Done
+
+### Functional
+
+- [ ] Single human-edited SQL source for the flatten query
+  - `Verify:` `git log` shows changes to flatten field set touch only one file
+  - `Evidence:`
+- [ ] The materialize-mode SQL is either generated or derived at build time, not hand-maintained
+  - `Verify:` Editing the source file and running build automatically updates both paths
+  - `Evidence:`
+- [ ] Cross-path byte-equality check from PR #67 still passes
+  - `Verify:` `scripts/build-fixture-only.sh` exits 0 with cross-path PASS
+  - `Evidence:`
+- [ ] No regression in cursor-based streaming memory profile (must stay < 500MB for NSW)
+  - `Verify:` `docs/PERFORMANCE.md` updated with new measurement
+  - `Evidence:`
+
+### Documentation
+
+- [ ] `AGENTS.md` updated to describe the new single-source pattern
+- [ ] `docs/FIELD-PROVENANCE.md` updated to point at the canonical source
+
+## Scope
+
+### In
+
+- Choosing one of the three approaches above (or another) and implementing it
+- Removing the cross-path guard from `build-fixture-only.sh` IF the new structure makes drift impossible by construction (otherwise keep the guard as belt-and-braces)
+
+### Out — Do Not Implement
+
+- Rewriting the flatten query semantically — pure structural refactor
+- Switching to a query builder / ORM (overkill, breaks the SQL-first principle)
+
+## Notes
+
+Origin: PR #67 retrospective. Without this, every bug fix to the flatten SQL has to be applied to both files manually and the cross-path test is the only safety net.
+
+---
+
+### Ticket E1.12 — Hardened verify checks (enum-ish field validation)
+
+```yaml
+id: E1.12
+title: Hardened verify checks against authority tables
+status: planned
+priority: p2-medium
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need `verify.ts` to detect when output fields contain values that don't match the authority table conventions, so that future bugs like the v2026.04 streetType regression are caught at verification time even if they bypass the cross-path SQL check.
+
+## Problem Statement
+
+The Zod schema in `src/schema.ts` only constrains `streetType` (and similar fields) to `z.string().nullable()`. Any string passes — including the abbreviation `"PL"` instead of the long form `"PLACE"`. The bug shipped in v2026.04 because verify.ts had no opinion on the _content_ of these fields, only their type and nullability.
+
+A defense-in-depth check would compare each enum-ish output field against the authoritative source:
+
+- `streetType` should match a value in `raw_gnaf_202602.street_type_aut.code` (the long-form column for this reversed table)
+- `flatType` should match `flat_type_aut.name`
+- `levelType` should match `level_type_aut.name`
+- `streetSuffix` should match `street_suffix_aut.name`
+- `localityClass` should match `locality_class_aut.name`
+- `state` should be one of `{NSW, VIC, QLD, WA, SA, TAS, ACT, NT, OT}`
+
+Any mismatch is either a bug in flatten or a stale auth table, both worth surfacing.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `src/verify.ts` queries the authority tables once at startup, builds in-memory sets, and validates each document's enum-ish fields against them
+  - `Verify:` Manually editing `expected-output.ndjson` to set `streetType: "PL"` causes verify to fail with a clear error
+  - `Evidence:`
+- [ ] Verification report (P4.02) includes a per-field "unknown value count" line for each enum-ish field
+  - `Verify:` `verification.json` artifact contains the new fields
+  - `Evidence:`
+- [ ] Verify is opt-out, not opt-in (default-on, with `--skip-enum-check` flag for the rare case where stale auth tables block a release)
+  - `Verify:` Quarterly build runs the check by default
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- Authority-table-driven validation for the six enum-ish fields above
+- Clear failure messages pointing at the offending document `_id` and field
+- Performance: validation must add < 5s to verify time on the largest state (NSW, ~4.6M rows)
+
+### Out — Do Not Implement
+
+- Validating freeform fields (street_name, locality_name, etc) — too much false positive risk
+- Auto-fixing mismatches — verify reports, doesn't mutate
+
+## Notes
+
+Origin: PR #67 retrospective. The fixture cross-path check catches drift between SQL files; this catches drift between SQL output and the source-of-truth authority tables, which is a different (and broader) class of bug.
+
+---
+
+### Ticket E1.13 — Patch release tooling for hotfix releases
+
+```yaml
+id: E1.13
+title: Patch release tooling (e.g. v2026.04.1)
+status: in-progress
+priority: p1-high
+epic: E1.B
+persona: [ops/maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, when a critical bug is found in a published release (like the v2026.04 streetType regression), I need a documented and partially-automated workflow to ship a patch release without waiting for the next quarterly build, so that consumers can get the fix in days rather than months. Patch releases must use a NEW tag (`vYYYY.MM.N`) and NEW asset filenames so consumers know their previous downloads are stale.
+
+## Problem Statement
+
+The current versioning scheme is `YYYY.MM` (e.g. `v2026.04`), tied to G-NAF data versions. There is no convention or tooling for patch releases when a critical bug is found between quarterly cuts. PR #67 fixes a real production bug shipped in v2026.04 — and PR #67 also lands the workflow plumbing for patch releases.
+
+## Definition of Done
+
+### Functional
+
+- [x] Versioning convention documented for patches: `vYYYY.MM.N` (e.g. `v2026.04.1`)
+  - `Verify:` `docs/RELEASING.md` describes the convention; CHANGELOG explains when to bump
+  - `Evidence:` `docs/RELEASING.md` added in PR #67 (this PR) — see "Patch releases" section.
+- [x] `quarterly-build.yml` accepts a `patch_version` input that, when set, publishes as `vYYYY.MM.N` against the SAME G-NAF data as the original cut
+  - `Verify:` `gh workflow run quarterly-build.yml -f gnaf_version=2026.04 -f patch_version=1` produces `v2026.04.1` release with assets named `flat-white-2026.04.1-{state}.ndjson.gz`
+  - `Evidence:` PR #67 splits the workflow's `version` (G-NAF data version, used for build) from `release_version` (patched, used for tag/asset names). Setup job outputs both. Asset collect step renames files. metadata.json includes both `version` (release) and `gnafVersion` (data). Release notes include a "Patch release" notice when applicable. Idempotency guard only deletes the matching tag (so v2026.04.1 republish doesn't touch v2026.04). Build-over-build comparison skips count anomaly check for patches (same data → 0% delta is expected).
+- [x] Patch release notes include a clear "supersedes" notice
+  - `Verify:` `v2026.04.1` release body has a "⚠️ Patch release. This is a hotfix for v2026.04..." block
+  - `Evidence:` `PATCH_NOTICE` variable in the workflow's release-notes step.
+- [ ] Patch release notes auto-link to the fixing PR(s) (currently a manual edit after running the workflow)
+  - `Verify:` `v2026.04.1` release body links to PR #67
+  - `Evidence:`
+- [ ] Catalogue (E1.08) groups patch releases under their parent quarterly cut
+  - `Verify:` GitHub Pages catalogue shows `v2026.04.1` nested under `v2026.04`
+  - `Evidence:`
+- [ ] Existing v2026.04 release notes updated to point at the patch
+  - `Verify:` `gh release view v2026.04 --json body --jq '.body'` includes a banner pointing at v2026.04.1
+  - `Evidence:` (manual one-time edit by the maintainer when v2026.04.1 publishes)
+
+## Scope
+
+### In
+
+- Workflow input + release naming convention (DONE in PR #67)
+- Documented procedure (DONE in PR #67 — `docs/RELEASING.md`)
+- Catalogue grouping (still TODO)
+- Auto-linking PRs in patch release notes (still TODO — currently manual)
+
+### Out — Do Not Implement
+
+- Auto-detection of "this PR fixes a critical bug, trigger patch release" — patch decision stays human
+- Yanking / deleting the original release — patches are additive
+- Breaking-change patch releases (those need a new quarterly cut)
+
+## Notes
+
+Origin: PR #67 retrospective. **Most of this ticket landed in PR #67** because the v2026.04 streetType fix needed it as a prerequisite (per the user's explicit request: "incrementally versioning is better.. so people know their previous downloads are stale"). Remaining work is the catalogue grouping and PR auto-linking; status set to `in-progress` to reflect that the core capability ships but two follow-ups remain.
+
+---
+
+### Ticket E1.17 — De-hardcode G-NAF Feb 2026 (URLs, schema names, CLI defaults)
+
+```yaml
+id: E1.17
+title: De-hardcode G-NAF Feb 2026 from download URLs, schema names, and CLI defaults
+status: planned
+priority: p0-critical
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need flat-white to work with any G-NAF data version (not just February 2026), so that the next quarterly release in May 2026 doesn't ship Feb 2026 data labeled as 2026.05.
+
+## Problem Statement
+
+The G-NAF Feb 2026 release is **hardcoded in FOUR places** across the flat-white codebase. The most severe is the download URLs — `version` is documented as "informational only".
+
+### Hardcoded site #1: download URLs (`src/download.ts`) — STRICTLY WORST
+
+```ts
+// src/download.ts:48-61
+export const DATA_SOURCES: DataSource[] = [
+  {
+    name: "G-NAF GDA2020",
+    url: "https://data.gov.au/.../download/g-naf_feb26_allstates_gda2020_psv_1022.zip",
+    extractedDir: "G-NAF",
+    sentinelPaths: ["G-NAF FEBRUARY 2026/Standard", "G-NAF FEBRUARY 2026/Authority Code"],
+  },
+  {
+    name: "Administrative Boundaries GDA2020",
+    url: "https://data.gov.au/.../download/feb26_adminbounds_gda_2020_shp.zip",
+    extractedDir: "FEB26_AdminBounds_GDA_2020_SHP",
+    sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+  },
+];
+```
+
+The `version` parameter to `download()` is **literally documented as "informational only"** (line 70). It's used for logging at line 278 but does not select between versions. The URLs, `extractedDir` (`"FEB26_AdminBounds_GDA_2020_SHP"`), and `sentinelPaths` (`"G-NAF FEBRUARY 2026/Standard"`) are all Feb-2026-pinned.
+
+**This is the worst of the four sites because URLs aren't templatable.** Each Geoscape release publishes new dataset/resource UUIDs (`5be5278c-fe66-459e-845a-bea553f46b4b` would be different for May 2026). The fix requires either querying data.gov.au's CKAN API (`https://data.gov.au/data/api/3/action/package_show?id=...`) at build time to discover the latest resource, or surfacing the URL as a workflow input.
+
+### Hardcoded site #2: load CLI default (`src/load.ts:111`)
+
+`opts.geoscapeVersion ?? "202602"`. Used as `--geoscape-version` flag passed to gnaf-loader. There is no CLI argument to override this — `node dist/load.js` does not accept `--geoscape-version`. Every build invokes gnaf-loader with `--geoscape-version 202602`, regardless of the `GNAF_VERSION` environment variable.
+
+### Hardcoded site #3: SQL schema names (`sql/address_full*.sql`)
+
+Schema names `gnaf_202602`, `raw_gnaf_202602`, `admin_bdys_202602`, `raw_admin_bdys_202602` appear ~30 times across the three files. These are loaded as raw strings by `flatten.ts` (`readFileSync` then `sql.unsafe(query).cursor()`); there is no template substitution.
+
+### Hardcoded site #4: fixture seed (`fixtures/seed-postgres.sql`)
+
+Fixture data is committed with `gnaf_202602` schema names baked in. **This is correct for the fixture** (Feb 2026 is a frozen snapshot) but contributes to the assumption that 202602 is the only supported version. Out of scope to fix — document and move on.
+
+### What actually happens for v2026.05 (next quarterly cron, 2026-05-15)
+
+1. Workflow input `gnaf_version=2026.05` → docker env `GNAF_VERSION=2026.05`
+2. `docker-entrypoint.sh` calls `node dist/download.js`, which uses **hardcoded Feb 2026 URLs** → downloads Feb 2026 data into `data/G-NAF/G-NAF FEBRUARY 2026/Standard/`
+3. `docker-entrypoint.sh` calls `node dist/load.js --no-boundary-tag --states VIC` (no version arg)
+4. `load.ts` defaults `geoscapeVersion` to `202602`
+5. gnaf-loader is invoked with `--geoscape-version 202602`, loading **Feb 2026 data** into `gnaf_202602` schemas
+6. flatten.ts queries 202602 schemas — works
+7. **Released v2026.05 contains Feb 2026 data, labeled as `_version: "2026.05"`.**
+
+Consumers think they're getting May 2026 data (3 months newer) but actually get the same Feb 2026 data they already had. **CI succeeds. Verification passes. Release publishes. No warning.**
+
+The download bug is **strictly worse** than the schema bug because it ships the wrong data, not just mislabels what's there.
+
+### What breaks first
+
+1. **The 2026-05-15 quarterly cron** publishes stale data labeled as new (silent).
+2. **Two G-NAF versions cannot coexist** in the same Postgres instance (collision on `gnaf_202602` schemas).
+3. **A maintainer testing against a different G-NAF version** has to manually edit ~33 file references.
+4. **A future Geoscape format change** silently breaks flat-white because the SQL is pinned to one specific version.
+
+### What needs to change
+
+1. **`download.ts`** — query data.gov.au's CKAN API to discover the latest resource for each dataset, OR accept a `DOWNLOAD_URL_GNAF` / `DOWNLOAD_URL_ADMIN_BDYS` env var, OR accept a `--gnaf-version` CLI arg that selects from a hardcoded map of `{ "2026.02": {...}, "2026.05": {...} }` (least clean but simplest). Also derive `extractedDir` and `sentinelPaths` from the chosen version.
+2. **`load.ts`** — accept `--geoscape-version` CLI arg; derive default from `GNAF_VERSION` env (`2026.05` → `202605`).
+3. **`docker-entrypoint.sh`** — pass `GNAF_VERSION` through to `node dist/load.js --geoscape-version YYYYMM`.
+4. **`sql/address_full.sql`, `sql/address_full_main.sql`, `sql/address_full_prep.sql`** — replace hardcoded `202602` with a placeholder (e.g. `${SCHEMA_VERSION}`) and substitute at load time in `flatten.ts`. OR set Postgres `search_path` to make schema names unqualified (cleaner but requires testing all queries).
+5. **Tests** — add a test that runs the flatten path against a 202605-named schema (artificially renamed from the fixture) and verifies it still works.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `download.ts` selects the right G-NAF / Admin Bdys URLs based on version (CKAN API discovery, env var, or hardcoded map — designer's choice)
+  - `Verify:` `GNAF_VERSION=2026.05 node dist/download.js` downloads May 2026 data, not Feb 2026
+  - `Evidence:`
+- [ ] `load.ts` accepts `--geoscape-version` arg and uses it (no fallback to hardcoded value)
+  - `Verify:` `node dist/load.js --geoscape-version 202605 --states VIC` invokes gnaf-loader with `--geoscape-version 202605`
+  - `Evidence:`
+- [ ] `docker-entrypoint.sh` derives the schema version from `GNAF_VERSION` and passes it to load
+  - `Verify:` Setting `GNAF_VERSION=2026.05` in docker run produces schemas named `gnaf_202605`
+  - `Evidence:`
+- [ ] SQL files use schema version substitution (template variable or `search_path`)
+  - `Verify:` `grep -c '202602' sql/address_full*.sql` returns 0
+  - `Evidence:`
+- [ ] End-to-end build cycle test against a non-Feb-2026 G-NAF dataset
+  - `Verify:` Quarterly build with `gnaf_version=2026.05` produces release `v2026.05` with **May 2026 data** (verified via row count change vs v2026.04 — should be non-zero delta)
+  - `Evidence:`
+- [ ] `fixtures/seed-postgres.sql` continues to work (frozen at 202602 — documented)
+  - `Verify:` `./scripts/build-fixture-only.sh` still passes
+  - `Evidence:`
+
+### Documentation
+
+- [ ] CHANGELOG entry documenting the fix
+- [ ] `docs/RELEASING.md` updated
+- [ ] AGENTS.md updated to remove the hardcoded `202602` references
+
+## Scope
+
+### In
+
+- `download.ts`, `load.ts`, `docker-entrypoint.sh`, three SQL files
+- A focused regression test
+- Documentation updates
+
+### Out — Do Not Implement
+
+- Changing `fixtures/seed-postgres.sql` (frozen snapshot)
+- Multi-version concurrent builds (still one G-NAF version per docker run)
+- Migrating existing v2026.04 release
+
+## Notes
+
+Origin: PR #67 audit (round 5 found schema name hardcoding in load.ts/SQL; round 6 found the strictly-worse download URL hardcoding in download.ts). Both share the root cause: nothing in flat-white actually uses the G-NAF version dynamically — everything is pinned to Feb 2026 in different ways.
+
+**This should be fixed before the v2026.05 quarterly build (scheduled 2026-05-15)** or every release after Feb 2026 will silently ship stale data labeled as new.
+
+---
+
+### Ticket E1.18 — CHANGELOG `[Unreleased]` not cleared on release
+
+```yaml
+id: E1.18
+title: Workflow CHANGELOG release step does not clear [Unreleased] section
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need the workflow's CHANGELOG update step to MOVE the `[Unreleased]` section's content into the new versioned section, so that successive releases don't accumulate stale entries under `[Unreleased]`.
+
+## Problem Statement
+
+The current workflow step (`quarterly-build.yml`, "Update CHANGELOG.md") inserts a new versioned entry **after** the `[Unreleased]` header but does NOT remove the existing `[Unreleased]` content. The Python script:
+
+```python
+content = content.replace('## [Unreleased]', '## [Unreleased]\n\n' + entry, 1)
+```
+
+This produces:
+
+```markdown
+## [Unreleased]
+
+## [v2026.04.1] - 2026-04-07
+
+### Release
+
+- ...
+
+### Added ← these stale entries should have moved into v2026.04.1
+
+- E1.06 Build Cache: ...
+- P4.01 First Production Release: ...
+```
+
+The standard Keep-a-Changelog convention is that `[Unreleased]` content describes upcoming features/fixes; when a release happens, that content moves into the new versioned section and `[Unreleased]` is left empty (or removed).
+
+The current behaviour is harmless (CHANGELOG is just a markdown file) but confusing — every quarterly release accumulates more "[Unreleased]" entries that have actually been released long ago.
+
+## Definition of Done
+
+- [ ] Workflow CHANGELOG step extracts content between `## [Unreleased]` and the next `## [` heading, moves it into the new versioned section, and leaves `## [Unreleased]` empty (or with a placeholder)
+  - `Verify:` After a release runs, `awk '/## \[Unreleased\]/,/## \[v/' CHANGELOG.md` shows only the header and a blank section
+  - `Evidence:`
+- [ ] Idempotent: re-running the workflow on the same release doesn't duplicate entries
+  - `Verify:` Run the workflow twice with the same `gnaf_version` input; CHANGELOG diff after the second run is empty
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- `.github/workflows/quarterly-build.yml` — Update CHANGELOG.md step
+
+### Out
+
+- One-time cleanup of the existing CHANGELOG (separate manual edit if desired)
+
+## Notes
+
+Origin: PR #67 round-5 audit. Pre-existing bug, low severity, but a real cleanliness issue that makes CHANGELOG.md less useful over time.
+
+---
+
+### Ticket E1.16 — Geocode type field consistency
+
+```yaml
+id: E1.16
+title: Standardize geocode.type vs allGeocodes[].type representation
+status: planned
+priority: p3-low
+epic: E1.A
+persona: [downstream-consumer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a downstream consumer of flat-white NDJSON, I need `geocode.type` and `allGeocodes[].type` to use the same representation (both long form OR both short form) so that I don't have to maintain a code-↔-name mapping in my consumer.
+
+## Problem Statement
+
+Today the two geocode type fields are inconsistent — verified by inspection of the released v2026.04 ACT file:
+
+```json
+{
+  "geocode": {
+    "type": "FRONTAGE CENTRE SETBACK", // ← long form (from geocode_type_aut.name)
+    "reliability": 2
+  },
+  "allGeocodes": [
+    { "type": "FCS", "reliability": 2 }, // ← short form (raw geocode_type_code)
+    { "type": "PC", "reliability": 2 }
+  ]
+}
+```
+
+Both `sql/address_full.sql` and `sql/address_full_main.sql` have this inconsistency identically, so it isn't a drift bug — it's been this way since the legacy SQL was first written. The cross-path test in PR #67 doesn't catch it because both paths are wrong in the same way.
+
+The inconsistency forces consumers to either:
+
+- Maintain their own short↔long mapping for the 30 geocode types
+- Treat the two fields as different schemas
+
+## Definition of Done
+
+### Functional
+
+- [ ] Both `geocode.type` and `allGeocodes[].type` use the same representation
+  - `Verify:` Sample addresses show consistent type values across both fields
+  - `Evidence:`
+- [ ] Choice documented (long form preferred — matches `streetType`, `flatType`, etc. convention of "use the human-readable name")
+  - `Verify:` `docs/DOCUMENT-SCHEMA.md` updated
+  - `Evidence:`
+- [ ] If long form chosen, `allGeocodes[].type` joins `geocode_type_aut` in the SQL aggregation
+  - `Verify:` `address_full_prep.sql` (and `address_full.sql`) has the `gt.name` in the `all_geocodes` json_agg too
+  - `Evidence:`
+- [ ] Schema bump (this is a breaking change — consumers may have hardcoded "FCS")
+
+## Scope
+
+### In
+
+- SQL fix in both `address_full.sql` and `address_full_prep.sql` to consistently use long form
+- Schema docs update
+- Schema-baseline regeneration
+- Minor version bump in package.json (additive change to expand the type field)
+
+### Out — Do Not Implement
+
+- Renaming the `type` field
+- Adding both short and long form (e.g. `typeCode` + `typeName`) — too much surface area for a small win
+
+## Notes
+
+Origin: PR #67 round-3 audit. Found while doing comprehensive field-by-field check of the released v2026.04 ACT file. Pre-existing inconsistency, low severity, but worth fixing for schema consistency.
+
+---
+
+### Ticket E1.14 — Restore LGA / ward / state / commonwealth electorate fields
+
+```yaml
+id: E1.14
+title: Restore LGA, ward, state electorate, commonwealth electorate boundary fields
+status: planned
+priority: p0-critical
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a downstream consumer of flat-white NDJSON, I need the `lga`, `ward`, `stateElectorate`, and `commonwealthElectorate` boundary fields to be populated so that I can group addresses by jurisdiction. **Today every document in v2026.04 has all four of these fields set to `null`** — verified by inspecting the released ACT file. This is a much bigger quality regression than the streetType bug fixed in PR #67.
+
+## Problem Statement
+
+Three things compound to produce the all-null boundary fields in v2026.04:
+
+1. **gnaf-loader's wards/LGA shapefile loading failed** during the v2026.04 build cycle, blocking the release.
+2. **`--no-boundary-tag` was added to `docker-entrypoint.sh`** as a workaround, which tells gnaf-loader to skip the prep step that would build `admin_bdys_202602.commonwealth_electorates`, `local_government_areas`, `local_government_wards`, and `state_lower_house_electorates`.
+3. **PR #66 added a spatial join fallback** in `address_full_prep.sql` that runs when `address_principal_admin_boundaries` is empty — but the fallback only works if the boundary tables (built by gnaf-loader's prep) exist. With `--no-boundary-tag` set, those tables don't exist, so the fallback inserts NULL for all four boundary fields.
+
+Net result: ALL addresses in v2026.04 have `lga: null`, `ward: null`, `stateElectorate: null`, `commonwealthElectorate: null`. SA1–4 / GCCSA / mesh block fields work fine because they come from a different code path (`abs_2021_mb`, populated independently).
+
+The shp2pgsql failure mode (observed in local Mac replication, **not yet root-caused** — see PR #67 audit notes): gnaf-loader's `multiprocess_shapefile_load()` calls `shp2pgsql` for each `{state}_*.shp` file, but in some configurations the calls silently no-op and the resulting `aus_*` tables don't exist, causing prep SQL to fail. Direct invocation of `shp2pgsql` against the same files works fine on Mac, so the bug is somewhere in the worker pool layer.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Root cause identified and documented (specific failing code path in gnaf-loader's `geoscape.multiprocess_shapefile_load()` or `import_shapefile_to_postgres()`)
+  - `Verify:` Reproducible test case in a clean environment
+  - `Evidence:`
+- [ ] Fix landed: either upstream PR to `minus34/gnaf-loader` accepted, or local patch applied to the vendored submodule with upstream PR open
+  - `Verify:` Running gnaf-loader without `--no-boundary-tag` succeeds for VIC + NSW + QLD + ACT
+  - `Evidence:`
+- [ ] `--no-boundary-tag` removed from `docker-entrypoint.sh`
+  - `Verify:` `grep no-boundary-tag docker-entrypoint.sh` returns nothing
+  - `Evidence:`
+- [ ] All four boundary fields populated in next release for at least 95% of addresses (some addresses legitimately fall outside any ward boundary)
+  - `Verify:` `verification.json` shows `boundaryCoverage.lga / total > 0.99`, `ward / total > 0.95`, `stateElectorate / total > 0.99`, `commonwealthElectorate / total > 0.99`
+  - `Evidence:`
+- [ ] Verification report (P4.02) hard-fails if any of the four boundary coverage rates drops below threshold — this regression should not silently ship again
+  - `Verify:` Manually setting all `lga` fields to null in a test fixture causes verify to exit non-zero
+  - `Evidence:`
+
+### Documentation
+
+- [ ] CHANGELOG entry under `Fixed` describing the resolution
+- [ ] `docs/RUNBOOK.md` updated to remove the workaround section
+- [ ] v2026.04 release notes updated (or patch release published per E1.13) to call out the missing boundary data
+
+## Scope
+
+### In
+
+- gnaf-loader / geoscape.py investigation and fix
+- Removal of the `--no-boundary-tag` workaround in `docker-entrypoint.sh`
+- Hardened verification that fails the build if boundary coverage drops below threshold
+- End-to-end verification that all 4 boundary fields are populated
+
+### Out — Do Not Implement
+
+- Changes to PR #66's spatial join fallback (covered by E1.15 — depends on the underlying multi-polygon issue being fixed first)
+- Replacing gnaf-loader with a custom loader (out of scope by principle: "gnaf-loader is a submodule, do NOT modify it" — exception is the targeted bug fix above, which goes upstream)
+
+## Notes
+
+Origin: PR #67 audit (round 3). Initial scope was just "wards" but verification of the released ACT file showed ALL FOUR boundary fields are null. This is the LARGEST quality regression in v2026.04 — bigger than the streetType bug.
+
+---
+
+### Ticket E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join fallback
+
+```yaml
+id: E1.15
+title: Fix multi-polygon row multiplication in spatial join fallback
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [maintainer]
+depends_on: [E1.10]
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need PR #66's spatial join fallback to produce exactly one row per address, so that addresses on boundary lines don't get duplicated in the output NDJSON when the fallback runs.
+
+## Problem Statement
+
+PR #66 added a fallback in `sql/address_full_prep.sql` that populates `gnaf_202602.address_principal_admin_boundaries` via four `LEFT JOIN ... ST_Intersects(...)` clauses (commonwealth electorates, LGAs, wards, state lower-house electorates). The pattern looks like:
+
+```sql
+INSERT INTO gnaf_202602.address_principal_admin_boundaries (...)
+SELECT ap.gnaf_pid, ..., ce.ce_pid, lga.lga_pid, ward.ward_pid, se.se_lower_pid
+FROM gnaf_202602.address_principals ap
+LEFT JOIN admin_bdys_202602.commonwealth_electorates ce ON ST_Intersects(ap.geom, ce.geom)
+LEFT JOIN admin_bdys_202602.local_government_areas lga ON ST_Intersects(ap.geom, lga.geom)
+LEFT JOIN admin_bdys_202602.local_government_wards ward ON ST_Intersects(ap.geom, ward.geom)
+LEFT JOIN admin_bdys_202602.state_lower_house_electorates se ON ST_Intersects(ap.geom, se.geom)
+```
+
+Two compounding problems:
+
+1. **`ST_Intersects` returns true for points on a polygon edge.** A point that lies exactly on a boundary between two LGAs matches BOTH LGAs.
+2. **Four `LEFT JOIN`s cartesian-multiply.** A point on a boundary between 2 LGAs and 2 wards yields 2 × 2 = 4 rows. There is no UNIQUE constraint on `gnaf_pid` in `address_principal_admin_boundaries` to catch this.
+
+Then `address_full_main.sql` does `LEFT JOIN address_principal_admin_boundaries ab ON ab.gnaf_pid = ap.gnaf_pid`, which propagates the duplicates into the output NDJSON. The verify step's PID-uniqueness check would catch this AT verification time, but only after the broken NDJSON has been generated and processed.
+
+**Why this hasn't blown up yet:** the fallback only runs when the boundary tables exist AND `address_principal_admin_boundaries` is empty. In v2026.04, `--no-boundary-tag` (E1.14) means the boundary tables don't exist at all, so the fallback inserts NULL for all four fields and produces exactly one row per address (no multiplication possible). The bug is **latent** — it activates the moment E1.14 is fixed and the boundary tables get populated.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Spatial join produces exactly one row per `gnaf_pid`
+  - `Verify:` `SELECT gnaf_pid, COUNT(*) FROM address_principal_admin_boundaries GROUP BY 1 HAVING COUNT(*) > 1` returns zero rows after the fallback runs
+  - `Evidence:`
+- [ ] `gnaf_pid` is unique by construction (PRIMARY KEY or UNIQUE constraint on `address_principal_admin_boundaries.gnaf_pid`)
+  - `Verify:` Re-running the fallback against the same data does not produce duplicate-key errors (use `ON CONFLICT DO NOTHING` or rebuild the table)
+  - `Evidence:`
+- [ ] Boundary points are assigned deterministically (same input → same output across runs)
+  - `Verify:` Run the spatial join twice; output is byte-identical
+  - `Evidence:`
+- [ ] Performance: spatial join completes for full ACT (~245k addresses) in under 5 minutes
+  - `Verify:` Timing on free GitHub runner
+  - `Evidence:`
+
+### Implementation options
+
+Three approaches, in increasing order of correctness:
+
+1. **`DISTINCT ON (ap.gnaf_pid)`** with deterministic `ORDER BY` — simplest, but the chosen polygon is arbitrary for boundary points (lowest pid).
+2. **`ST_Within(ap.geom, X.geom)` instead of `ST_Intersects`** — semantically right (point strictly inside polygon), but ambiguous for points exactly on the boundary (matches neither). Combine with #1 as a fallback.
+3. **`LATERAL` subqueries** with `ORDER BY ST_Distance(ap.geom, ST_Centroid(X.geom)) LIMIT 1` — picks the polygon whose centroid is closest to the address. Most defensible for boundary points but slowest.
+
+Recommend #2 + #1 as fallback.
+
+## Scope
+
+### In
+
+- The four spatial join clauses in `sql/address_full_prep.sql`
+- A regression test in `test/regression/` that loads a deliberately-edge-case fixture (point on boundary) and verifies single-row output
+- Adding UNIQUE constraint on `gnaf_pid` in the table definition
+
+### Out — Do Not Implement
+
+- Replacing the spatial join fallback entirely (the fallback exists because gnaf-loader's prep can fail; that's a different problem covered by E1.14)
+- Rewriting the entire spatial join (this is a targeted fix to one query)
+
+## Notes
+
+Origin: PR #67 audit (round 3). Found while tracing why v2026.04 has all-null boundary fields. The latent bug doesn't trigger today because E1.14's workaround means the fallback is a no-op. As soon as E1.14 lands and boundary tables get loaded, this bug becomes active in production. Depends on E1.10 for fixture coverage to land first (so the regression test has somewhere to live).
+
+---
+
 ## Phase P5 — AWS Mirror (Deferred)
 
 **Target:** Post-M4 · **Status:** Planned · **Rationale:** GitHub Releases is the primary distribution. S3 is redundancy — valuable but not required for the first release. Deferred from Phase P3 to avoid overloading the first release week.
