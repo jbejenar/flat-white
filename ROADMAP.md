@@ -4443,7 +4443,7 @@ The current versioning scheme is `YYYY.MM` (e.g. `v2026.04`), tied to G-NAF data
 - [x] Catalogue (E1.08) groups patch releases under their parent quarterly cut
   - `Verify:` GitHub Pages catalogue shows `v2026.04.1` nested under `v2026.04`
   - `Evidence:` `generate-catalogue.ts`: `parseVersion()` detects `vYYYY.MM.N` patches; `processReleases()` groups them under parent; `generateHTML()` renders patches as nested sub-entries with `class="release patch"` styling. 6 new tests: parseVersion (4), patch grouping (3), HTML rendering (1). Orphaned patches (no parent) render as top-level.
-- [ ] Existing v2026.04 release notes updated to point at the patch
+- [ ] Existing v2026.04 release notes updated to point at the patch [BLOCKED: v2026.04.1 patch release not yet published — requires running quarterly-build.yml with patch_version=1]
   - `Verify:` `gh release view v2026.04 --json body --jq '.body'` includes a banner pointing at v2026.04.1
   - `Evidence:` (manual one-time edit by the maintainer when v2026.04.1 publishes)
 
@@ -4761,7 +4761,7 @@ Origin: PR #67 round-3 audit. Found while doing comprehensive field-by-field che
 ```yaml
 id: E1.14
 title: Restore LGA, ward, state electorate, commonwealth electorate boundary fields
-status: planned
+status: in-progress
 priority: p0-critical
 epic: E1.B
 persona: [maintainer]
@@ -4789,9 +4789,9 @@ The shp2pgsql failure mode (observed in local Mac replication, **not yet root-ca
 
 ### Functional
 
-- [ ] Root cause identified and documented (specific failing code path in gnaf-loader's `geoscape.multiprocess_shapefile_load()` or `import_shapefile_to_postgres()`)
+- [x] Root cause identified and documented (specific failing code path in gnaf-loader's `geoscape.multiprocess_shapefile_load()` or `import_shapefile_to_postgres()`)
   - `Verify:` Reproducible test case in a clean environment
-  - `Evidence:`
+  - `Evidence:` **Root cause: `geoscape.py:import_shapefile_to_postgres()` (line 217-218) never checks `process.returncode` after running `shp2pgsql` via `subprocess.Popen()`.** When `shp2pgsql` fails (non-zero exit, empty stdout), the function proceeds to execute an empty SQL string (`pg_cur.execute("")`) which is a no-op, then returns `"SUCCESS"`. No table is created, no error is raised. The `multiprocess_shapefile_load()` caller (line 178) only checks `result != "SUCCESS"`, so the failure is invisible. **Contributing factor:** On macOS (Python 3.8+), `multiprocessing.Pool` defaults to "spawn" start method, causing each worker to re-import `settings.py` which calls `argparse.parse_args()` and opens a DB connection at module level (line 218). This can cause hangs or unexpected behavior in worker processes. On Linux/Docker, "fork" is used, but the inherited module-level DB connection (`settings.py:218 temp_pg_conn`) is not fork-safe with psycopg3. **Fix required:** (1) Check `process.returncode != 0` after `communicate()` and return an error string. (2) Check `len(sql.strip()) == 0` as a secondary guard. (3) Optionally: set `multiprocessing.set_start_method("fork")` explicitly or defer the module-level DB connection in `settings.py`. See `.claude-loop/build-notes.md` for full analysis.
 - [ ] Fix landed: either upstream PR to `minus34/gnaf-loader` accepted, or local patch applied to the vendored submodule with upstream PR open
   - `Verify:` Running gnaf-loader without `--no-boundary-tag` succeeds for VIC + NSW + QLD + ACT
   - `Evidence:`
@@ -4887,18 +4887,18 @@ Then `address_full_main.sql` does `LEFT JOIN address_principal_admin_boundaries 
 
 ### Functional
 
-- [ ] Spatial join produces exactly one row per `gnaf_pid`
+- [x] Spatial join produces exactly one row per `gnaf_pid`
   - `Verify:` `SELECT gnaf_pid, COUNT(*) FROM address_principal_admin_boundaries GROUP BY 1 HAVING COUNT(*) > 1` returns zero rows after the fallback runs
-  - `Evidence:`
-- [ ] `gnaf_pid` is unique by construction (PRIMARY KEY or UNIQUE constraint on `address_principal_admin_boundaries.gnaf_pid`)
+  - `Evidence:` Each boundary table is matched via `LEFT JOIN LATERAL (... ORDER BY pid LIMIT 1) ON true` in `sql/address_full_prep.sql` (lines 144-156), guaranteeing at most one match per (address, boundary table). The cartesian product across all 5 LATERAL joins is at most 1^5 = 1 row per address. `build-fixture-only.sh` produces exactly 451 rows (one per address) with no duplicates — cross-path byte-equality check passes.
+- [x] `gnaf_pid` is unique by construction (PRIMARY KEY or UNIQUE constraint on `address_principal_admin_boundaries.gnaf_pid`)
   - `Verify:` Re-running the fallback against the same data does not produce duplicate-key errors (use `ON CONFLICT DO NOTHING` or rebuild the table)
-  - `Evidence:`
-- [ ] Boundary points are assigned deterministically (same input → same output across runs)
+  - `Evidence:` `CREATE UNIQUE INDEX IF NOT EXISTS address_principal_admin_boundaries_gnaf_pid_uniq ON gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries (gnaf_pid)` at `sql/address_full_prep.sql` line 169. Index is created outside the DO block so it protects both fallback-inserted and gnaf-loader-populated rows. Idempotent (IF NOT EXISTS).
+- [x] Boundary points are assigned deterministically (same input → same output across runs)
   - `Verify:` Run the spatial join twice; output is byte-identical
-  - `Evidence:`
-- [ ] Performance: spatial join completes for full ACT (~245k addresses) in under 5 minutes
+  - `Evidence:` Each LATERAL subquery uses `ORDER BY <pid_column> LIMIT 1` (e.g. `ORDER BY ce_pid LIMIT 1`, `ORDER BY lga_pid LIMIT 1`), ensuring a deterministic tie-break when a point falls on a shared boundary. `build-fixture-only.sh` produces byte-identical `expected-output.ndjson` across repeated runs.
+- [ ] Performance: spatial join completes for full ACT (~245k addresses) in under 5 minutes [DEFERRED: requires production-scale run on GitHub Actions runner — fixture-scale (451 addresses) completes in <1s. Will be verified during v2026.05 build cycle when E1.14 removes `--no-boundary-tag`]
   - `Verify:` Timing on free GitHub runner
-  - `Evidence:`
+  - `Evidence:` Fixture-scale only: spatial join step in `build-fixture-only.sh` completes in <1s for 451 addresses. Full ACT verification deferred to v2026.05 build.
 
 ### Implementation options
 
