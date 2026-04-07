@@ -4801,9 +4801,9 @@ The shp2pgsql failure mode (observed in local Mac replication, **not yet root-ca
 - [ ] All four boundary fields populated in next release for at least 95% of addresses (some addresses legitimately fall outside any ward boundary)
   - `Verify:` `verification.json` shows `boundaryCoverage.lga / total > 0.99`, `ward / total > 0.95`, `stateElectorate / total > 0.99`, `commonwealthElectorate / total > 0.99`
   - `Evidence:`
-- [ ] Verification report (P4.02) hard-fails if any of the four boundary coverage rates drops below threshold — this regression should not silently ship again
+- [x] Verification report (P4.02) hard-fails if any of the four boundary coverage rates drops below threshold — this regression should not silently ship again
   - `Verify:` Manually setting all `lga` fields to null in a test fixture causes verify to exit non-zero
-  - `Evidence:`
+  - `Evidence:` `verify.ts` accepts `boundaryCoverageThresholds` option with `DEFAULT_BOUNDARY_THRESHOLDS` (LGA ≥99%, ward ≥95%, state electorate ≥99%, commonwealth electorate ≥99%). CLI flag `--check-boundary-coverage` enables defaults. 7 unit tests cover: threshold violation → fail, above threshold → pass, backward-compatible skip, partial thresholds, actual-vs-threshold reporting. `build-fixture-only.sh` passes `--check-boundary-coverage` (fixture passes at 100/99.6/100/100%). Production builds get `--check-boundary-coverage` once E1.14 removes `--no-boundary-tag`.
 
 ### Documentation
 

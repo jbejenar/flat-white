@@ -355,6 +355,8 @@ if [[ ! -s "$FLATTEN_OUTPUT" ]]; then
   exit 4
 fi
 
+# TODO(E1.14): Add --check-boundary-coverage once --no-boundary-tag is removed
+# and gnaf-loader populates boundary tables in production builds.
 DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
   node /app/dist/verify.js "$FLATTEN_OUTPUT" --expected-count "$LINE_COUNT" \
     --db-url "postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" || {
