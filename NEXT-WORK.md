@@ -95,6 +95,14 @@
 - [ ] Idempotency: re-running shouldn't duplicate entries
 - Origin: PR #67 round-5 audit — pre-existing workflow bug, makes CHANGELOG accumulate stale entries
 
+### E1.16 — Geocode type field consistency (planned, p3-low)
+
+- [ ] `geocode.type` is long form (`"FRONTAGE CENTRE SETBACK"`) but `allGeocodes[].type` is short form (`"FCS"`)
+- [ ] Pre-existing inconsistency in BOTH legacy and materialize SQL — cross-path test passes because both are wrong identically
+- [ ] Standardize on long form (matches streetType, flatType, levelType convention)
+- [ ] Schema bump (technically a breaking change for hardcoded "FCS" consumers)
+- Origin: PR #67 round-3 field audit — found during comprehensive v2026.04 ACT inspection
+
 ### E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join (planned, p1-high)
 
 - [ ] PR #66's spatial join fallback uses `LEFT JOIN ... ST_Intersects` four times — boundary points cartesian-multiply
