@@ -132,7 +132,16 @@ export function buildArgs(opts: LoadOptions): string[] {
     "--pguser",
     opts.pgUser ?? "postgres",
     "--geoscape-version",
-    validateGeoscapeVersion(opts.geoscapeVersion ?? deriveGeoscapeVersion() ?? "202602"),
+    validateGeoscapeVersion(
+      opts.geoscapeVersion ??
+        deriveGeoscapeVersion() ??
+        (() => {
+          throw new Error(
+            "Geoscape version is required. Set GNAF_VERSION env var (e.g. GNAF_VERSION=2026.05) " +
+              "or pass --geoscape-version YYYYMM.",
+          );
+        })(),
+    ),
     "--srid",
     String(opts.srid ?? 7844),
     "--max-processes",

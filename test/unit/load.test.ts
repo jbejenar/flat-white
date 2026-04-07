@@ -44,6 +44,21 @@ beforeEach(() => {
 });
 
 describe("buildArgs", () => {
+  const originalGnafVersion = process.env.GNAF_VERSION;
+
+  beforeEach(() => {
+    // Most tests need a valid GNAF_VERSION since the fallback was removed
+    process.env.GNAF_VERSION = "2026.02";
+  });
+
+  afterEach(() => {
+    if (originalGnafVersion === undefined) {
+      delete process.env.GNAF_VERSION;
+    } else {
+      process.env.GNAF_VERSION = originalGnafVersion;
+    }
+  });
+
   it("builds correct default args for VIC", () => {
     const args = buildArgs({ states: ["VIC"] });
 
@@ -182,11 +197,9 @@ describe("buildArgs — geoscape version", () => {
     expect(args[idx + 1]).toBe("202605");
   });
 
-  it("falls back to 202602 when neither option nor env var set", () => {
+  it("throws when neither option nor env var set", () => {
     delete process.env.GNAF_VERSION;
-    const args = buildArgs({});
-    const idx = args.indexOf("--geoscape-version");
-    expect(args[idx + 1]).toBe("202602");
+    expect(() => buildArgs({})).toThrow(/Geoscape version is required/);
   });
 });
 

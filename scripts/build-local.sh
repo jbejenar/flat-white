@@ -15,7 +15,7 @@ cd "$PROJECT_DIR"
 STATES="VIC"
 SKIP_LOAD=false
 OUTPUT_DIR="./output"
-VERSION="2026.02"
+VERSION="${GNAF_VERSION:-}"
 
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
@@ -27,6 +27,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
+
+if [[ -z "$VERSION" ]]; then
+  echo "ERROR: Version is required. Set GNAF_VERSION env var or pass --version YYYY.MM"
+  exit 1
+fi
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -61,7 +66,7 @@ if [ "$SKIP_LOAD" = false ]; then
   echo ""
   echo "[build] Step 1: Running gnaf-loader for states: $STATES"
   LOAD_START=$(date +%s)
-  node dist/load.js --states $STATES --server-data-dir /data
+  GNAF_VERSION="$VERSION" node dist/load.js --states $STATES --server-data-dir /data
   LOAD_END=$(date +%s)
   echo "[build] Load completed in $((LOAD_END - LOAD_START)) seconds"
 else

@@ -165,6 +165,21 @@ if [[ -n "$RESTORE_DB" && "$SKIP_DOWNLOAD" == "true" ]]; then
   exit 1
 fi
 
+# ── Require GNAF_VERSION for non-fixture builds ──────────────────────────────
+# The version must be supplied explicitly to prevent shipping stale data.
+# Fixture mode uses frozen 202602 data from seed-postgres.sql, so it defaults.
+
+if [[ "$MODE" != "fixture" && -z "${GNAF_VERSION:-}" ]]; then
+  log "ERROR: GNAF_VERSION environment variable is required for production builds."
+  log "Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.05)"
+  exit 1
+fi
+
+# Fixture mode: default to the frozen fixture version
+if [[ "$MODE" == "fixture" ]]; then
+  export GNAF_VERSION="${GNAF_VERSION:-2026.02}"
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 # ── Postgres cleanup trap ────────────────────────────────────────────────────
@@ -258,7 +273,7 @@ else
 
     export GNAF_DATA_PATH="${GNAF_PATH:-}"
     export ADMIN_BDYS_PATH="${ADMIN_PATH:-}"
-    export GNAF_VERSION="${GNAF_VERSION:-2026.02}"
+    # GNAF_VERSION is already validated/set above
 
     if ! node /app/dist/download.js; then
       log "ERROR: Download failed"
@@ -273,7 +288,7 @@ else
   stage_start "load"
 
   # Derive 6-digit geoscape version from GNAF_VERSION (e.g. "2026.05" → "202605")
-  GEOSCAPE_VERSION=$(echo "${GNAF_VERSION:-2026.02}" | tr -d '.')
+  GEOSCAPE_VERSION=$(echo "$GNAF_VERSION" | tr -d '.')
   if [[ ! "$GEOSCAPE_VERSION" =~ ^[0-9]{6}$ ]]; then
     log "ERROR: GNAF_VERSION '${GNAF_VERSION}' must be in YYYY.MM format (e.g. 2026.05)"
     exit 1
@@ -284,7 +299,7 @@ else
     LOAD_ARGS="$LOAD_ARGS --states $STATES"
   fi
 
-  if ! GNAF_VERSION="${GNAF_VERSION:-2026.02}" node /app/dist/load.js $LOAD_ARGS; then
+  if ! GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS; then
     log "ERROR: gnaf-loader failed"
     exit 2
   fi
@@ -319,7 +334,7 @@ else
   MATERIALIZE_FLAG="--materialize"
 fi
 
-GNAF_VERSION="${GNAF_VERSION:-2026.02}" \
+GNAF_VERSION="$GNAF_VERSION" \
   DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
   node /app/dist/flatten.js "$FLATTEN_OUTPUT" $MATERIALIZE_FLAG || {
   log "ERROR: Flatten failed"
@@ -368,7 +383,7 @@ if [[ "$SPLIT_STATES" == "true" && "$MODE" != "fixture" ]]; then
   stage_start "split"
   SPLIT_INPUT="$FLATTEN_OUTPUT" \
   SPLIT_OUTPUT_DIR="$OUTPUT_DIR" \
-  SPLIT_VERSION="${GNAF_VERSION:-2026.02}" \
+  SPLIT_VERSION="$GNAF_VERSION" \
   node --input-type=module -e "
     import { split } from '/app/dist/split.js';
     const r = await split({

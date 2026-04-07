@@ -51,6 +51,8 @@ npm run typecheck               # Type-check (tsc --noEmit)
 docker compose up db            # Start local Postgres + PostGIS
 ```
 
+**GNAF_VERSION:** Production builds (docker-entrypoint.sh, build-local.sh) require `GNAF_VERSION` env var (e.g. `GNAF_VERSION=2026.05`). Fixture builds default to `2026.02` (the frozen fixture snapshot). See `docs/RELEASING.md` for download URL configuration.
+
 ## Principles (MUST follow)
 
 1. **Fixture-first development.** Use `scripts/build-fixture-only.sh` for all dev work. NEVER require a 6.5GB download or gnaf-loader run for testing.

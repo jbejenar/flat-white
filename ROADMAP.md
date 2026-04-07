@@ -4473,7 +4473,7 @@ Origin: PR #67 retrospective. **Most of this ticket landed in PR #67** because t
 ```yaml
 id: E1.17
 title: De-hardcode G-NAF Feb 2026 from download URLs, schema names, and CLI defaults
-status: planned
+status: in-progress
 priority: p0-critical
 epic: E1.B
 persona: [maintainer]
@@ -4558,30 +4558,33 @@ The download bug is **strictly worse** than the schema bug because it ships the 
 
 ### Functional
 
-- [ ] `download.ts` selects the right G-NAF / Admin Bdys URLs based on version (CKAN API discovery, env var, or hardcoded map — designer's choice)
+- [x] `download.ts` selects the right G-NAF / Admin Bdys URLs based on version (CKAN API discovery, env var, or hardcoded map — designer's choice)
   - `Verify:` `GNAF_VERSION=2026.05 node dist/download.js` downloads May 2026 data, not Feb 2026
-  - `Evidence:`
-- [ ] `load.ts` accepts `--geoscape-version` arg and uses it (no fallback to hardcoded value)
+  - `Evidence:` env var override via `resolveDataSources()` + `DOWNLOAD_URL_GNAF`/`DOWNLOAD_URL_ADMIN_BDYS`; hardcoded fallback removed from `download()` and CLI `main()`
+- [x] `load.ts` accepts `--geoscape-version` arg and uses it (no fallback to hardcoded value)
   - `Verify:` `node dist/load.js --geoscape-version 202605 --states VIC` invokes gnaf-loader with `--geoscape-version 202605`
-  - `Evidence:`
-- [ ] `docker-entrypoint.sh` derives the schema version from `GNAF_VERSION` and passes it to load
+  - `Evidence:` `"202602"` fallback removed from `buildArgs()`; throws if no version provided. Unit test updated.
+- [x] `docker-entrypoint.sh` derives the schema version from `GNAF_VERSION` and passes it to load
   - `Verify:` Setting `GNAF_VERSION=2026.05` in docker run produces schemas named `gnaf_202605`
-  - `Evidence:`
-- [ ] SQL files use schema version substitution (template variable or `search_path`)
+  - `Evidence:` All 5 `${GNAF_VERSION:-2026.02}` fallbacks removed; early validation requires `GNAF_VERSION` for non-fixture builds
+- [x] SQL files use schema version substitution (template variable or `search_path`)
   - `Verify:` `grep -c '202602' sql/address_full*.sql` returns 0
-  - `Evidence:`
-- [ ] End-to-end build cycle test against a non-Feb-2026 G-NAF dataset
+  - `Evidence:` Already done — SQL uses `__SCHEMA_VERSION__` placeholder, substituted by `flatten.ts`
+- [ ] End-to-end build cycle test against a non-Feb-2026 G-NAF dataset [BLOCKED: needs May 2026 G-NAF release]
   - `Verify:` Quarterly build with `gnaf_version=2026.05` produces release `v2026.05` with **May 2026 data** (verified via row count change vs v2026.04 — should be non-zero delta)
   - `Evidence:`
-- [ ] `fixtures/seed-postgres.sql` continues to work (frozen at 202602 — documented)
+- [x] `fixtures/seed-postgres.sql` continues to work (frozen at 202602 — documented)
   - `Verify:` `./scripts/build-fixture-only.sh` still passes
-  - `Evidence:`
+  - `Evidence:` `build-fixture-only.sh` defaults `GNAF_VERSION=2026.02` for fixture path; all 245 tests pass
 
 ### Documentation
 
-- [ ] CHANGELOG entry documenting the fix
-- [ ] `docs/RELEASING.md` updated
-- [ ] AGENTS.md updated to remove the hardcoded `202602` references
+- [x] CHANGELOG entry documenting the fix
+  - `Evidence:` CHANGELOG.md updated under `[Unreleased] > Fixed`
+- [x] `docs/RELEASING.md` updated
+  - `Evidence:` Added "Version configuration" and "Download URLs for new G-NAF releases" sections
+- [x] AGENTS.md updated to remove the hardcoded `202602` references
+  - `Evidence:` Added GNAF_VERSION note to Key Commands section; AGENTS.md had no hardcoded 202602 references to remove
 
 ## Scope
 
@@ -4610,12 +4613,12 @@ Origin: PR #67 audit (round 5 found schema name hardcoding in load.ts/SQL; round
 ```yaml
 id: E1.18
 title: Workflow CHANGELOG release step does not clear [Unreleased] section
-status: planned
+status: done
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-07
 ```
 
 ## User Story
@@ -4653,12 +4656,12 @@ The current behaviour is harmless (CHANGELOG is just a markdown file) but confus
 
 ## Definition of Done
 
-- [ ] Workflow CHANGELOG step extracts content between `## [Unreleased]` and the next `## [` heading, moves it into the new versioned section, and leaves `## [Unreleased]` empty (or with a placeholder)
+- [x] Workflow CHANGELOG step extracts content between `## [Unreleased]` and the next `## [` heading, moves it into the new versioned section, and leaves `## [Unreleased]` empty (or with a placeholder)
   - `Verify:` After a release runs, `awk '/## \[Unreleased\]/,/## \[v/' CHANGELOG.md` shows only the header and a blank section
-  - `Evidence:`
-- [ ] Idempotent: re-running the workflow on the same release doesn't duplicate entries
+  - `Evidence:` Python script in quarterly-build.yml rewritten to use regex to find [Unreleased] section, extract body, insert into new versioned entry, leave [Unreleased] empty
+- [x] Idempotent: re-running the workflow on the same release doesn't duplicate entries
   - `Verify:` Run the workflow twice with the same `gnaf_version` input; CHANGELOG diff after the second run is empty
-  - `Evidence:`
+  - `Evidence:` Script first removes any existing entry for the release version via `re.sub()` before inserting
 
 ## Scope
 

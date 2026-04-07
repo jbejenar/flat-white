@@ -15,6 +15,11 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **E1.17 De-hardcode G-NAF Feb 2026:** removed all hardcoded `2026.02` / `202602` defaults from production code paths (`src/download.ts`, `src/load.ts`, `src/flatten.ts`, `docker-entrypoint.sh`, `scripts/build-local.sh`). `GNAF_VERSION` env var is now required for production builds — prevents v2026.05 from silently shipping Feb 2026 data. Fixture scripts retain the `2026.02` default since fixtures are frozen. SQL files were already parameterized with `__SCHEMA_VERSION__`. Download URLs for non-Feb-2026 releases are set via `DOWNLOAD_URL_GNAF` / `DOWNLOAD_URL_ADMIN_BDYS` env vars. `docs/RELEASING.md` updated with version configuration and URL discovery instructions.
+- **E1.18 Workflow CHANGELOG `[Unreleased]` not cleared on release:** the Python script in `quarterly-build.yml`'s "Update CHANGELOG.md" step now extracts existing `[Unreleased]` content, moves it into the new versioned entry, and leaves `[Unreleased]` empty. Idempotent on re-run.
+
 ### Added
 
 - Cross-path regression guard in `scripts/build-fixture-only.sh`: both flatten paths (legacy and `--materialize`) now run against the fixture and must produce byte-identical output. Future drift between `sql/address_full.sql` and `sql/address_full_main.sql` fails CI immediately. (PR #67)
