@@ -144,14 +144,22 @@ describe("expected-output.ndjson", () => {
     const content = readFileSync(EXPECTED_OUTPUT, "utf-8").trimEnd();
     const lines = content.split("\n");
     const offenders: Array<{ pid: string; streetType: string }> = [];
+    let nonNullCount = 0;
 
     for (const line of lines) {
       const doc = JSON.parse(line) as Record<string, unknown>;
       const streetType = doc.streetType as string | null;
-      if (streetType && FORBIDDEN.has(streetType)) {
-        offenders.push({ pid: doc._id as string, streetType });
+      if (streetType) {
+        nonNullCount++;
+        if (FORBIDDEN.has(streetType)) {
+          offenders.push({ pid: doc._id as string, streetType });
+        }
       }
     }
+
+    // Positive assertion — guard against the test passing trivially if
+    // expected-output.ndjson is somehow gutted of streetType values.
+    expect(nonNullCount).toBeGreaterThan(50);
 
     if (offenders.length > 0) {
       const summary = offenders
