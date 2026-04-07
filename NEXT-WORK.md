@@ -73,10 +73,12 @@
 ### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (in-progress, **p0-critical**)
 
 - [x] Root-cause the gnaf-loader shapefile loading failure — **FOUND:** `geoscape.py:import_shapefile_to_postgres()` never checks `process.returncode` after `shp2pgsql`. Empty stdout → empty SQL → no-op → returns "SUCCESS". Secondary: module-level DB connection in `settings.py` is not fork-safe with psycopg3.
-- [ ] Upstream fix PR to minus34/gnaf-loader OR local submodule patch with upstream PR open
-- [ ] Remove `--no-boundary-tag` from `docker-entrypoint.sh`
+- [x] Upstream fix PR to minus34/gnaf-loader OR local submodule patch with upstream PR open — **DONE:** [minus34/gnaf-loader#100](https://github.com/minus34/gnaf-loader/pull/100), submodule pinned to fork commit 45bd25f
+- [x] Remove `--no-boundary-tag` from `docker-entrypoint.sh` — **DONE:** commit b9c07e8
 - [x] Hardened verify check that fails the build if any of the four boundary coverage rates drops below threshold
-- [ ] Restore lga / ward / stateElectorate / commonwealthElectorate population in next release
+- [x] CHANGELOG entry + RUNBOOK updated
+- [ ] Restore lga / ward / stateElectorate / commonwealthElectorate population in next release [BLOCKED: needs v2026.05 build]
+- [ ] v2026.04 release notes updated [BLOCKED: v2026.04.1 not published]
 - Origin: PR #67 audit — **all four** boundary fields are null in v2026.04 (verified in released ACT file). Bigger quality regression than the streetType bug.
 
 ### E1.17 — De-hardcode G-NAF Feb 2026 (in-progress, **p0-critical**, blocks v2026.05) — code shipped, awaiting production validation

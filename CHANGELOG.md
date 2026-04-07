@@ -18,7 +18,7 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 ### Fixed
 
 - **README download example:** `STATE="vic"; VERSION="2026.02"` → `VERSION="2026.04"`. The previous example referenced a filename (`flat-white-2026.02-vic.ndjson.gz`) that doesn't exist in any release — copy-pasting the verification snippet would fail with "no such file". (PR #77)
-- **E1.14 Root-cause identified:** gnaf-loader's `geoscape.py:import_shapefile_to_postgres()` never checks `process.returncode` after running `shp2pgsql` via `subprocess.Popen()`. When `shp2pgsql` fails, empty stdout is decoded to an empty SQL string, executed as a no-op, and the function returns "SUCCESS" — silently failing to create boundary tables. This is the root cause of all four boundary fields being null in v2026.04. Fix requires upstream PR to `minus34/gnaf-loader`.
+- **E1.14 gnaf-loader shapefile fix landed:** Upstream PR [minus34/gnaf-loader#100](https://github.com/minus34/gnaf-loader/pull/100) adds `process.returncode` check after `shp2pgsql` in `geoscape.py:import_shapefile_to_postgres()`, plus a guard against empty SQL output. Submodule pinned to fork commit with the fix. `--no-boundary-tag` workaround removed from `docker-entrypoint.sh`. Production verify now runs `--check-boundary-coverage` to hard-fail if LGA/ward/stateElectorate/commonwealthElectorate coverage drops below threshold. Boundary fields (LGA, ward, stateElectorate, commonwealthElectorate) will be populated starting with v2026.05.
 
 ### Changed
 
