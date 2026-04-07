@@ -43,7 +43,7 @@ export function encodeWKBPoint(longitude: number, latitude: number): Buffer {
  * Same columns as ADDRESS_PARQUET_SCHEMA plus a `geometry` BYTE_ARRAY
  * column for WKB-encoded POINT geometries.
  */
-export const GEOPARQUET_SCHEMA = new ParquetSchema({
+const GEOPARQUET_SCHEMA = new ParquetSchema({
   _id: { type: "UTF8" },
   _version: { type: "UTF8" },
   addressLabel: { type: "UTF8" },

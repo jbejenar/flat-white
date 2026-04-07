@@ -106,9 +106,6 @@ export function resolveDataSources(): DataSource[] {
   return sources;
 }
 
-/** @deprecated Use resolveDataSources() instead. Kept for backward compatibility in tests. */
-export const DATA_SOURCES = DEFAULT_DATA_SOURCES;
-
 // --- Types ---
 
 export interface DownloadOptions {

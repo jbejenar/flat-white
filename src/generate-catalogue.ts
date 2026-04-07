@@ -202,7 +202,7 @@ export function processReleases(releases: GitHubRelease[]): ReleaseData[] {
 
 // --- HTML Generation ---
 
-export function esc(s: string): string {
+function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

@@ -789,7 +789,6 @@ jobs:
             "totalCount": ${TOTAL},
             "releaseUrl": "${REPO_URL}/releases/tag/${TAG}",
             "assets": {
-              "all": "${REPO_URL}/releases/download/${TAG}/flat-white-${RELEASE_VERSION}-all.ndjson.gz",
               "metadata": "${REPO_URL}/releases/download/${TAG}/metadata.json"
             }
           }
