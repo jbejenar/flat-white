@@ -14,7 +14,7 @@ import {
   formatSpeed,
   formatProgress,
   retryDelay,
-  DATA_SOURCES,
+  DEFAULT_DATA_SOURCES,
   DEFAULT_STALL_TIMEOUT_MS,
   isExtractionComplete,
   resolveOutputDir,
@@ -81,13 +81,13 @@ describe("retryDelay", () => {
   });
 });
 
-describe("DATA_SOURCES", () => {
+describe("DEFAULT_DATA_SOURCES", () => {
   it("has two data sources", () => {
-    expect(DATA_SOURCES).toHaveLength(2);
+    expect(DEFAULT_DATA_SOURCES).toHaveLength(2);
   });
 
   it("has G-NAF source with sentinel paths", () => {
-    const gnaf = DATA_SOURCES.find((s) => s.name.includes("G-NAF"));
+    const gnaf = DEFAULT_DATA_SOURCES.find((s) => s.name.includes("G-NAF"));
     expect(gnaf).toBeDefined();
     expect(gnaf!.url).toContain("data.gov.au");
     expect(gnaf!.extractedDir).toBe("G-NAF");
@@ -95,7 +95,7 @@ describe("DATA_SOURCES", () => {
   });
 
   it("has Admin Boundaries source with sentinel paths", () => {
-    const admin = DATA_SOURCES.find((s) => s.name.includes("Administrative"));
+    const admin = DEFAULT_DATA_SOURCES.find((s) => s.name.includes("Administrative"));
     expect(admin).toBeDefined();
     expect(admin!.url).toContain("data.gov.au");
     expect(admin!.extractedDir).toBe("FEB26_AdminBounds_GDA_2020_SHP");
@@ -217,7 +217,7 @@ describe("resolveDataSources", () => {
   it("does not mutate DEFAULT_DATA_SOURCES", () => {
     process.env.DOWNLOAD_URL_GNAF = "https://example.com/override.zip";
     resolveDataSources();
-    expect(DATA_SOURCES[0].url).toContain("data.gov.au");
+    expect(DEFAULT_DATA_SOURCES[0].url).toContain("data.gov.au");
   });
 });
 

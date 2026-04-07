@@ -167,7 +167,7 @@ export function buildArgs(opts: LoadOptions): string[] {
 /**
  * Validate prerequisites before running gnaf-loader.
  */
-export async function validatePrerequisites(opts: LoadOptions): Promise<void> {
+async function validatePrerequisites(opts: LoadOptions): Promise<void> {
   const dataDir = resolve(opts.dataDir ?? resolve(PROJECT_ROOT, "data"));
 
   // Check gnaf-loader exists

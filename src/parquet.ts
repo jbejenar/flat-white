@@ -25,7 +25,7 @@ export interface ParquetConvertOptions {
  * Complex fields (geocode, allGeocodes, locality, street, boundaries,
  * aliases, secondaries) → UTF8 JSON strings.
  */
-export const ADDRESS_PARQUET_SCHEMA = new ParquetSchema({
+const ADDRESS_PARQUET_SCHEMA = new ParquetSchema({
   _id: { type: "UTF8" },
   _version: { type: "UTF8" },
   addressLabel: { type: "UTF8" },

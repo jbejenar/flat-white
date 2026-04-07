@@ -75,7 +75,6 @@ docker compose up db            # Start local Postgres + PostGIS
 
 - **Framework:** Vitest
 - **Unit tests:** `test/unit/` — flatten logic, schema validation, verify logic
-- **Integration tests:** `test/integration/` — full fixture → NDJSON pipeline
 - **Regression tests:** `test/regression/` — byte-for-byte against committed fixtures
 
 ## Do NOT
