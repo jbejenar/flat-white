@@ -167,9 +167,19 @@ Every line in the NDJSON is one address document. This schema IS the contract. B
     "reliability": 2
   },
   "allGeocodes": [
-    { "lat": -37.79815294, "lng": 144.89719303, "type": "FCS", "reliability": 2 },
-    { "lat": -37.798211, "lng": 144.897254, "type": "PC", "reliability": 2 },
-    { "lat": -37.798105, "lng": 144.897122, "type": "PAP", "reliability": 2 }
+    {
+      "lat": -37.79815294,
+      "lng": 144.89719303,
+      "type": "FRONTAGE CENTRE SETBACK",
+      "reliability": 2
+    },
+    { "lat": -37.798211, "lng": 144.897254, "type": "PROPERTY CENTROID", "reliability": 2 },
+    {
+      "lat": -37.798105,
+      "lng": 144.897122,
+      "type": "PROPERTY ACCESS POINT SETBACK",
+      "reliability": 2
+    }
   ],
   "locality": {
     "pid": "loc67a11408d754",
@@ -4767,15 +4777,15 @@ Today the two geocode type fields are inconsistent — verified by inspection of
     "reliability": 2
   },
   "allGeocodes": [
-    { "type": "FCS", "reliability": 2 }, // ← short form (raw geocode_type_code)
-    { "type": "PC", "reliability": 2 }
+    { "type": "FRONTAGE CENTRE SETBACK", "reliability": 2 }, // ← now long form (fixed in E1.16, PR #70)
+    { "type": "PROPERTY CENTROID", "reliability": 2 }
   ]
 }
 ```
 
-Both `sql/address_full.sql` and `sql/address_full_main.sql` have this inconsistency identically, so it isn't a drift bug — it's been this way since the legacy SQL was first written. The cross-path test in PR #67 doesn't catch it because both paths are wrong in the same way.
+**Resolved in E1.16 (PR #70).** Both `sql/address_full.sql` and `sql/address_full_main.sql` now join `geocode_type_aut` for the `all_geocodes` aggregation, producing long-form type descriptions consistent with `geocode.type`. Prior to that fix, both paths had the same inconsistency — it wasn't a drift bug.
 
-The inconsistency forces consumers to either:
+Previously, the inconsistency forced consumers to either:
 
 - Maintain their own short↔long mapping for the 30 geocode types
 - Treat the two fields as different schemas

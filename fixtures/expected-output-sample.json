@@ -32,13 +32,13 @@
     {
       "lat": -37.89180933,
       "lng": 145.01510717,
-      "type": "FCS",
+      "type": "FRONTAGE CENTRE SETBACK",
       "reliability": 2
     },
     {
       "lat": -37.89180905,
       "lng": 145.01490263,
-      "type": "PC",
+      "type": "PROPERTY CENTROID",
       "reliability": 2
     }
   ],
