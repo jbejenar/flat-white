@@ -15,14 +15,22 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
-### Fixed
-
-- `streetType` field returned the abbreviation (e.g. `"PL"`) instead of the long form (e.g. `"PLACE"`) in the production (`--materialize`) flatten path. `sql/address_full_main.sql` joined `raw_gnaf_202602.street_type_aut`, which is the only G-NAF authority table with a reversed convention (`code` = long form, `name` = abbreviation). The legacy CTE-based path was fixed in PR #23 but `address_full_main.sql` (added in PR #29) carried the pre-fix join logic. Affects v2026.04 — release will be republished after merge. `addressLabelSearch` was also affected since `composeSearchLabel` reads `streetTypeName`. (PR #67)
-
 ### Added
 
-- Cross-path regression guard in `scripts/build-fixture-only.sh`: both flatten paths (legacy and `--materialize`) now run against the fixture and must produce byte-identical output. Future drift between `sql/address_full.sql` and `sql/address_full_main.sql` fails CI immediately.
-- `fixtures/seed-postgres.sql` mirrors `abs_2021_mb_lookup` into a stub `admin_bdys_202602.abs_2021_mb` so the materialize path (which reads the table name gnaf-loader populates in production) sees the same SA1–4/GCC data the legacy path reads from `abs_2021_mb_lookup`. Mirror has no `geom` column — to be added by E1.10 (shapefile fixtures).
+- Cross-path regression guard in `scripts/build-fixture-only.sh`: both flatten paths (legacy and `--materialize`) now run against the fixture and must produce byte-identical output. Future drift between `sql/address_full.sql` and `sql/address_full_main.sql` fails CI immediately. (PR #67)
+- Defense-in-depth regression test in `test/regression/expected-output.test.ts`: asserts no document has `streetType` in a known-abbreviation set (`ST`, `AV`, `PL`, `RD`, `CR`, `CL`, `DR`, `CT`, `CCT`, `TCE`, `PDE`, `GDNS`, …). Catches the v2026.04 bug class even if the SQL guard is bypassed. (PR #67)
+- `fixtures/seed-postgres.sql` mirrors `abs_2021_mb_lookup` into a stub `admin_bdys_202602.abs_2021_mb` so the materialize path (which reads the table name gnaf-loader populates in production) sees the same SA1–4/GCC data the legacy path reads from `abs_2021_mb_lookup`. Mirror has no `geom` column — to be added by E1.10 (shapefile fixtures). (PR #67)
+- E1.10 Shapefile Fixtures + Spatial Join Regression Test: roadmap ticket for clipped shapefile fixtures + shp2pgsql wiring + derivation of admin boundary tables, so CI exercises gnaf-loader's shapefile loading and spatial join. (PR #67)
+- E1.11 Consolidate flatten SQL: roadmap ticket to eliminate hand-maintained drift between `address_full.sql` and `address_full_main.sql` by construction. (PR #67)
+- E1.12 Hardened verify checks: roadmap ticket to validate enum-ish output fields (`streetType`, `flatType`, `levelType`, `streetSuffix`, `localityClass`, `state`) against authority tables in `verify.ts`. (PR #67)
+- E1.13 Patch release tooling: roadmap ticket for `vYYYY.MM.N` patch releases, needed to ship the v2026.04 streetType fix without overwriting the original release. (PR #67)
+- **E1.14 Restore LGA / ward / stateElectorate / commonwealthElectorate boundary fields (p0-critical)**: roadmap ticket to root-cause the gnaf-loader shapefile loading failure and restore all four boundary fields in the next release. **All four are null in v2026.04** — verified by inspecting the released ACT file. This is a much bigger quality regression than the streetType bug. (PR #67)
+- E1.15 Fix multi-polygon row multiplication in PR #66 spatial join fallback: roadmap ticket — `ST_Intersects` × four `LEFT JOIN`s can cartesian-multiply for boundary points; latent today because the fallback is a no-op in v2026.04, but becomes active the moment E1.14 lands. (PR #67)
+
+### Fixed
+
+- `streetType` field returned the abbreviation (e.g. `"PL"`) instead of the long form (e.g. `"PLACE"`) in the production (`--materialize`) flatten path. `sql/address_full_main.sql` joined `raw_gnaf_202602.street_type_aut`, which is the only G-NAF authority table with a reversed convention (`code` = long form, `name` = abbreviation). The legacy CTE-based path was fixed in PR #23 but `address_full_main.sql` (added in PR #29) carried the pre-fix join logic. **Affects v2026.04** — release needs to be republished (blocked on E1.13 patch release tooling, or republish in place). `addressLabelSearch` was also affected since `composeSearchLabel` reads `streetTypeName` — verified in v2026.04 ACT file (`"9 WYNN ST"` instead of `"9 WYNN STREET"`). (PR #67)
+- Documentation drift in `docs/FIELD-PROVENANCE.md` and `AGENTS.md`: both files described or implied the broken `street_type_aut` join. Updated to clearly document that `street_type_aut` is intentionally NOT joined, and that it has reversed column conventions. (PR #67)
 
 - E1.06 Build Cache: `--dump-db` and `--restore-db` flags in docker-entrypoint.sh for gnaf-loader database dump caching. `quarterly-build.yml` uses `actions/cache@v4` keyed by G-NAF version + state + gnaf-loader hash. Cache hit skips download + gnaf-loader (~30 min per state).
 - E1.08 GitHub Pages Catalogue: `src/generate-catalogue.ts` generates static HTML site from GitHub Release API data. `.github/workflows/catalogue.yml` deploys to GitHub Pages on release publish. Includes release history, per-state counts, download links, schema reference, dark mode.

@@ -4461,13 +4461,13 @@ Origin: PR #67 retrospective. The streetType bug needs a patch release for v2026
 
 ---
 
-### Ticket E1.14 — Root-cause and remove `--no-boundary-tag` workaround
+### Ticket E1.14 — Restore LGA / ward / state / commonwealth electorate fields
 
 ```yaml
 id: E1.14
-title: Remove `--no-boundary-tag` workaround for wards loading
+title: Restore LGA, ward, state electorate, commonwealth electorate boundary fields
 status: planned
-priority: p1-high
+priority: p0-critical
 epic: E1.B
 persona: [maintainer]
 depends_on: []
@@ -4476,13 +4476,19 @@ completed: null
 
 ## User Story
 
-As a downstream consumer of flat-white NDJSON, I need the `wardName` field to be populated so that I can group addresses by local government ward. Today every document in v2026.04 has `wardName: null` because of the `--no-boundary-tag` workaround in `docker-entrypoint.sh`.
+As a downstream consumer of flat-white NDJSON, I need the `lga`, `ward`, `stateElectorate`, and `commonwealthElectorate` boundary fields to be populated so that I can group addresses by jurisdiction. **Today every document in v2026.04 has all four of these fields set to `null`** — verified by inspecting the released ACT file. This is a much bigger quality regression than the streetType bug fixed in PR #67.
 
 ## Problem Statement
 
-`docker-entrypoint.sh` runs gnaf-loader with `--no-boundary-tag` because gnaf-loader's wards loading was failing during the v2026.04 build cycle. The workaround unblocked the release but means **every address in v2026.04 has `wardName: null`** — a real data quality regression compared to expectations.
+Three things compound to produce the all-null boundary fields in v2026.04:
 
-The failure mode (observed in local Mac replication, though not yet root-caused — see PR #67 audit notes): gnaf-loader's `multiprocess_shapefile_load()` calls `shp2pgsql` for each `{state}_*.shp` file, but in some configurations the shp2pgsql calls silently no-op and the resulting `aus_*` tables don't exist, causing prep SQL to fail. Direct invocation of `shp2pgsql` against the same files works fine, so the bug is somewhere in the worker pool layer (likely `spawn`-mode worker re-import of `settings.py` losing argv/env, but not confirmed).
+1. **gnaf-loader's wards/LGA shapefile loading failed** during the v2026.04 build cycle, blocking the release.
+2. **`--no-boundary-tag` was added to `docker-entrypoint.sh`** as a workaround, which tells gnaf-loader to skip the prep step that would build `admin_bdys_202602.commonwealth_electorates`, `local_government_areas`, `local_government_wards`, and `state_lower_house_electorates`.
+3. **PR #66 added a spatial join fallback** in `address_full_prep.sql` that runs when `address_principal_admin_boundaries` is empty — but the fallback only works if the boundary tables (built by gnaf-loader's prep) exist. With `--no-boundary-tag` set, those tables don't exist, so the fallback inserts NULL for all four boundary fields.
+
+Net result: ALL addresses in v2026.04 have `lga: null`, `ward: null`, `stateElectorate: null`, `commonwealthElectorate: null`. SA1–4 / GCCSA / mesh block fields work fine because they come from a different code path (`abs_2021_mb`, populated independently).
+
+The shp2pgsql failure mode (observed in local Mac replication, **not yet root-caused** — see PR #67 audit notes): gnaf-loader's `multiprocess_shapefile_load()` calls `shp2pgsql` for each `{state}_*.shp` file, but in some configurations the calls silently no-op and the resulting `aus_*` tables don't exist, causing prep SQL to fail. Direct invocation of `shp2pgsql` against the same files works fine on Mac, so the bug is somewhere in the worker pool layer.
 
 ## Definition of Done
 
@@ -4492,36 +4498,127 @@ The failure mode (observed in local Mac replication, though not yet root-caused 
   - `Verify:` Reproducible test case in a clean environment
   - `Evidence:`
 - [ ] Fix landed: either upstream PR to `minus34/gnaf-loader` accepted, or local patch applied to the vendored submodule with upstream PR open
-  - `Verify:` Running gnaf-loader without `--no-boundary-tag` succeeds for VIC + NSW + QLD
+  - `Verify:` Running gnaf-loader without `--no-boundary-tag` succeeds for VIC + NSW + QLD + ACT
   - `Evidence:`
 - [ ] `--no-boundary-tag` removed from `docker-entrypoint.sh`
   - `Verify:` `grep no-boundary-tag docker-entrypoint.sh` returns nothing
   - `Evidence:`
-- [ ] `wardName` populated in next release for at least 90% of addresses (some addresses legitimately fall outside any ward boundary)
-  - `Verify:` `verification.json` shows `boundaryCoverage.ward / total > 0.9`
+- [ ] All four boundary fields populated in next release for at least 95% of addresses (some addresses legitimately fall outside any ward boundary)
+  - `Verify:` `verification.json` shows `boundaryCoverage.lga / total > 0.99`, `ward / total > 0.95`, `stateElectorate / total > 0.99`, `commonwealthElectorate / total > 0.99`
+  - `Evidence:`
+- [ ] Verification report (P4.02) hard-fails if any of the four boundary coverage rates drops below threshold — this regression should not silently ship again
+  - `Verify:` Manually setting all `lga` fields to null in a test fixture causes verify to exit non-zero
   - `Evidence:`
 
 ### Documentation
 
 - [ ] CHANGELOG entry under `Fixed` describing the resolution
-- [ ] `docs/RUNBOOK.md` updated to remove the wards workaround section
+- [ ] `docs/RUNBOOK.md` updated to remove the workaround section
+- [ ] v2026.04 release notes updated (or patch release published per E1.13) to call out the missing boundary data
 
 ## Scope
 
 ### In
 
 - gnaf-loader / geoscape.py investigation and fix
-- Removal of the workaround in flat-white
-- Verification that ward data is populated end-to-end
+- Removal of the `--no-boundary-tag` workaround in `docker-entrypoint.sh`
+- Hardened verification that fails the build if boundary coverage drops below threshold
+- End-to-end verification that all 4 boundary fields are populated
 
 ### Out — Do Not Implement
 
-- Changes to flat-white's spatial join logic (E1.10 covers fixture coverage for the spatial join; this ticket is about the _load_ failing before the spatial join even runs)
+- Changes to PR #66's spatial join fallback (covered by E1.15 — depends on the underlying multi-polygon issue being fixed first)
 - Replacing gnaf-loader with a custom loader (out of scope by principle: "gnaf-loader is a submodule, do NOT modify it" — exception is the targeted bug fix above, which goes upstream)
 
 ## Notes
 
-Origin: PR #67 audit. The wards crash is the OTHER half of the v2026.04 quality issue (streetType is fixed in PR #67; wards is still null). E1.10 (shapefile fixtures) gives CI visibility into this class of failure but does not fix it; this ticket is the actual fix.
+Origin: PR #67 audit (round 3). Initial scope was just "wards" but verification of the released ACT file showed ALL FOUR boundary fields are null. This is the LARGEST quality regression in v2026.04 — bigger than the streetType bug.
+
+---
+
+### Ticket E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join fallback
+
+```yaml
+id: E1.15
+title: Fix multi-polygon row multiplication in spatial join fallback
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [maintainer]
+depends_on: [E1.10]
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need PR #66's spatial join fallback to produce exactly one row per address, so that addresses on boundary lines don't get duplicated in the output NDJSON when the fallback runs.
+
+## Problem Statement
+
+PR #66 added a fallback in `sql/address_full_prep.sql` that populates `gnaf_202602.address_principal_admin_boundaries` via four `LEFT JOIN ... ST_Intersects(...)` clauses (commonwealth electorates, LGAs, wards, state lower-house electorates). The pattern looks like:
+
+```sql
+INSERT INTO gnaf_202602.address_principal_admin_boundaries (...)
+SELECT ap.gnaf_pid, ..., ce.ce_pid, lga.lga_pid, ward.ward_pid, se.se_lower_pid
+FROM gnaf_202602.address_principals ap
+LEFT JOIN admin_bdys_202602.commonwealth_electorates ce ON ST_Intersects(ap.geom, ce.geom)
+LEFT JOIN admin_bdys_202602.local_government_areas lga ON ST_Intersects(ap.geom, lga.geom)
+LEFT JOIN admin_bdys_202602.local_government_wards ward ON ST_Intersects(ap.geom, ward.geom)
+LEFT JOIN admin_bdys_202602.state_lower_house_electorates se ON ST_Intersects(ap.geom, se.geom)
+```
+
+Two compounding problems:
+
+1. **`ST_Intersects` returns true for points on a polygon edge.** A point that lies exactly on a boundary between two LGAs matches BOTH LGAs.
+2. **Four `LEFT JOIN`s cartesian-multiply.** A point on a boundary between 2 LGAs and 2 wards yields 2 × 2 = 4 rows. There is no UNIQUE constraint on `gnaf_pid` in `address_principal_admin_boundaries` to catch this.
+
+Then `address_full_main.sql` does `LEFT JOIN address_principal_admin_boundaries ab ON ab.gnaf_pid = ap.gnaf_pid`, which propagates the duplicates into the output NDJSON. The verify step's PID-uniqueness check would catch this AT verification time, but only after the broken NDJSON has been generated and processed.
+
+**Why this hasn't blown up yet:** the fallback only runs when the boundary tables exist AND `address_principal_admin_boundaries` is empty. In v2026.04, `--no-boundary-tag` (E1.14) means the boundary tables don't exist at all, so the fallback inserts NULL for all four fields and produces exactly one row per address (no multiplication possible). The bug is **latent** — it activates the moment E1.14 is fixed and the boundary tables get populated.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Spatial join produces exactly one row per `gnaf_pid`
+  - `Verify:` `SELECT gnaf_pid, COUNT(*) FROM address_principal_admin_boundaries GROUP BY 1 HAVING COUNT(*) > 1` returns zero rows after the fallback runs
+  - `Evidence:`
+- [ ] `gnaf_pid` is unique by construction (PRIMARY KEY or UNIQUE constraint on `address_principal_admin_boundaries.gnaf_pid`)
+  - `Verify:` Re-running the fallback against the same data does not produce duplicate-key errors (use `ON CONFLICT DO NOTHING` or rebuild the table)
+  - `Evidence:`
+- [ ] Boundary points are assigned deterministically (same input → same output across runs)
+  - `Verify:` Run the spatial join twice; output is byte-identical
+  - `Evidence:`
+- [ ] Performance: spatial join completes for full ACT (~245k addresses) in under 5 minutes
+  - `Verify:` Timing on free GitHub runner
+  - `Evidence:`
+
+### Implementation options
+
+Three approaches, in increasing order of correctness:
+
+1. **`DISTINCT ON (ap.gnaf_pid)`** with deterministic `ORDER BY` — simplest, but the chosen polygon is arbitrary for boundary points (lowest pid).
+2. **`ST_Within(ap.geom, X.geom)` instead of `ST_Intersects`** — semantically right (point strictly inside polygon), but ambiguous for points exactly on the boundary (matches neither). Combine with #1 as a fallback.
+3. **`LATERAL` subqueries** with `ORDER BY ST_Distance(ap.geom, ST_Centroid(X.geom)) LIMIT 1` — picks the polygon whose centroid is closest to the address. Most defensible for boundary points but slowest.
+
+Recommend #2 + #1 as fallback.
+
+## Scope
+
+### In
+
+- The four spatial join clauses in `sql/address_full_prep.sql`
+- A regression test in `test/regression/` that loads a deliberately-edge-case fixture (point on boundary) and verifies single-row output
+- Adding UNIQUE constraint on `gnaf_pid` in the table definition
+
+### Out — Do Not Implement
+
+- Replacing the spatial join fallback entirely (the fallback exists because gnaf-loader's prep can fail; that's a different problem covered by E1.14)
+- Rewriting the entire spatial join (this is a targeted fix to one query)
+
+## Notes
+
+Origin: PR #67 audit (round 3). Found while tracing why v2026.04 has all-null boundary fields. The latent bug doesn't trigger today because E1.14's workaround means the fallback is a no-op. As soon as E1.14 lands and boundary tables get loaded, this bug becomes active in production. Depends on E1.10 for fixture coverage to land first (so the regression test has somewhere to live).
 
 ---
 

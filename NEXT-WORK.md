@@ -68,13 +68,22 @@
 - [ ] Catalogue grouping for patches under parent quarterly cut
 - Origin: PR #67 — v2026.04 needs a patch release for the streetType fix but there is no tooling for it
 
-### E1.14 — Remove `--no-boundary-tag` workaround (planned, p1-high)
+### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (planned, **p0-critical**)
 
-- [ ] Root-cause the gnaf-loader wards loading failure (suspected: worker-pool issue in `multiprocess_shapefile_load`, unconfirmed)
+- [ ] Root-cause the gnaf-loader shapefile loading failure (suspected: worker-pool issue in `multiprocess_shapefile_load`, unconfirmed)
 - [ ] Upstream fix PR to minus34/gnaf-loader OR local submodule patch with upstream PR open
 - [ ] Remove `--no-boundary-tag` from `docker-entrypoint.sh`
-- [ ] Restore `wardName` population in next release
-- Origin: PR #67 audit — every v2026.04 document has `wardName: null` because of this workaround
+- [ ] Hardened verify check that fails the build if any of the four boundary coverage rates drops below threshold
+- [ ] Restore lga / ward / stateElectorate / commonwealthElectorate population in next release
+- Origin: PR #67 audit — **all four** boundary fields are null in v2026.04 (verified in released ACT file). Bigger quality regression than the streetType bug.
+
+### E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join (planned, p1-high)
+
+- [ ] PR #66's spatial join fallback uses `LEFT JOIN ... ST_Intersects` four times — boundary points cartesian-multiply
+- [ ] No UNIQUE constraint on `address_principal_admin_boundaries.gnaf_pid` to catch duplicates
+- [ ] Currently latent (the fallback is a no-op in v2026.04 because boundary tables don't exist); becomes active the moment E1.14 lands
+- [ ] Fix: `ST_Within` + `DISTINCT ON (gnaf_pid)` fallback, plus a UNIQUE constraint
+- Origin: PR #67 audit — found while tracing the all-null boundary fields in v2026.04
 
 ### E1.02 — Delta Builds (planned, p2-medium)
 
