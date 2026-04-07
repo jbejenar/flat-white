@@ -14,7 +14,7 @@ address_geocodes AS (
       json_build_object(
         'lat', asg.latitude,
         'lng', asg.longitude,
-        'type', asg.geocode_type_code,
+        'type', COALESCE(gt_all.name, asg.geocode_type_code),
         'reliability', asg.reliability_code
       )
       ORDER BY asg.reliability_code, asg.geocode_type_code
@@ -45,6 +45,8 @@ address_geocodes AS (
   JOIN raw_gnaf___SCHEMA_VERSION__.address_site_geocode asg
     ON asg.address_site_pid = ad.address_site_pid
     AND asg.date_retired IS NULL
+  LEFT JOIN raw_gnaf___SCHEMA_VERSION__.geocode_type_aut gt_all
+    ON gt_all.code = asg.geocode_type_code
   WHERE ad.date_retired IS NULL
   GROUP BY ad.address_detail_pid, ad.address_site_pid
 ),

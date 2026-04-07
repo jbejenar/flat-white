@@ -125,7 +125,12 @@ describe("convertToGeoparquet", () => {
     writeFileSync(
       ndjsonPath,
       makeDoc({
-        geocode: { latitude: -33.8688, longitude: 151.2093, type: "PC", reliability: 2 },
+        geocode: {
+          latitude: -33.8688,
+          longitude: 151.2093,
+          type: "PROPERTY CENTROID",
+          reliability: 2,
+        },
       }) + "\n",
     );
 
@@ -177,11 +182,11 @@ describe("convertToGeoparquet", () => {
     const lines = [
       makeDoc({
         _id: "A1",
-        geocode: { latitude: -33.0, longitude: 151.0, type: "PC", reliability: 2 },
+        geocode: { latitude: -33.0, longitude: 151.0, type: "PROPERTY CENTROID", reliability: 2 },
       }),
       makeDoc({
         _id: "A2",
-        geocode: { latitude: -38.0, longitude: 144.0, type: "PC", reliability: 2 },
+        geocode: { latitude: -38.0, longitude: 144.0, type: "PROPERTY CENTROID", reliability: 2 },
       }),
     ];
     writeFileSync(ndjsonPath, lines.join("\n") + "\n");
