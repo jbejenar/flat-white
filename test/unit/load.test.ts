@@ -4,7 +4,7 @@
  * Uses mocked filesystem so tests work without the 6.5GB data directory.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock node:fs before importing the module under test
 vi.mock("node:fs", async (importOriginal) => {
@@ -32,7 +32,12 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-import { buildArgs, resolveGnafTablesPath, resolveAdminBdysPath } from "../../src/load.js";
+import {
+  buildArgs,
+  resolveGnafTablesPath,
+  resolveAdminBdysPath,
+  deriveGeoscapeVersion,
+} from "../../src/load.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -123,6 +128,65 @@ describe("resolveGnafTablesPath", () => {
   it("throws if G-NAF base directory does not exist", () => {
     // The mock returns false for paths not matching known patterns
     expect(() => resolveGnafTablesPath("/nonexistent/path")).toThrow("G-NAF directory not found");
+  });
+});
+
+describe("deriveGeoscapeVersion", () => {
+  const originalEnv = process.env.GNAF_VERSION;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.GNAF_VERSION;
+    } else {
+      process.env.GNAF_VERSION = originalEnv;
+    }
+  });
+
+  it("derives 6-digit version from GNAF_VERSION env var", () => {
+    process.env.GNAF_VERSION = "2026.05";
+    expect(deriveGeoscapeVersion()).toBe("202605");
+  });
+
+  it("returns null when GNAF_VERSION is not set", () => {
+    delete process.env.GNAF_VERSION;
+    expect(deriveGeoscapeVersion()).toBeNull();
+  });
+
+  it("returns null for invalid GNAF_VERSION format", () => {
+    process.env.GNAF_VERSION = "bad";
+    expect(deriveGeoscapeVersion()).toBeNull();
+  });
+});
+
+describe("buildArgs — geoscape version", () => {
+  const originalEnv = process.env.GNAF_VERSION;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.GNAF_VERSION;
+    } else {
+      process.env.GNAF_VERSION = originalEnv;
+    }
+  });
+
+  it("uses explicit geoscapeVersion option when provided", () => {
+    const args = buildArgs({ geoscapeVersion: "202605" });
+    const idx = args.indexOf("--geoscape-version");
+    expect(args[idx + 1]).toBe("202605");
+  });
+
+  it("derives from GNAF_VERSION env var when no explicit option", () => {
+    process.env.GNAF_VERSION = "2026.05";
+    const args = buildArgs({});
+    const idx = args.indexOf("--geoscape-version");
+    expect(args[idx + 1]).toBe("202605");
+  });
+
+  it("falls back to 202602 when neither option nor env var set", () => {
+    delete process.env.GNAF_VERSION;
+    const args = buildArgs({});
+    const idx = args.indexOf("--geoscape-version");
+    expect(args[idx + 1]).toBe("202602");
   });
 });
 

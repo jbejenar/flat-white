@@ -39,13 +39,17 @@ export interface DataSource {
 }
 
 /**
- * Data sources for the Feb 2026 G-NAF release.
+ * Default data sources for the Feb 2026 G-NAF release.
  * URLs verified via HEAD request — see memory/project_data_sources.md.
  *
  * sentinelPaths are well-known files/dirs within each extracted dataset.
  * Their presence confirms a complete extraction vs. a partial/interrupted one.
+ *
+ * For newer releases, override via DOWNLOAD_URL_GNAF / DOWNLOAD_URL_ADMIN_BDYS
+ * env vars — each Geoscape release publishes new dataset UUIDs on data.gov.au,
+ * so URLs are not templatable.
  */
-export const DATA_SOURCES: DataSource[] = [
+export const DEFAULT_DATA_SOURCES: DataSource[] = [
   {
     name: "G-NAF GDA2020",
     url: "https://data.gov.au/data/dataset/19432f89-dc3a-4ef3-b943-5326ef1dbecc/resource/5be5278c-fe66-459e-845a-bea553f46b4b/download/g-naf_feb26_allstates_gda2020_psv_1022.zip",
@@ -60,6 +64,51 @@ export const DATA_SOURCES: DataSource[] = [
   },
 ];
 
+/**
+ * Resolve data sources, applying env var URL overrides if set.
+ *
+ * Env vars:
+ * - DOWNLOAD_URL_GNAF — overrides the G-NAF download URL
+ * - DOWNLOAD_URL_ADMIN_BDYS — overrides the Admin Boundaries download URL
+ * - ADMIN_BDYS_EXTRACTED_DIR — overrides extractedDir for Admin Boundaries
+ *   (each Geoscape release uses a different directory name, e.g. "MAY26_AdminBounds_GDA_2020_SHP")
+ *
+ * sentinelPaths for G-NAF are relaxed to a wildcard when URLs are overridden
+ * (the versioned directory name inside the zip changes per release).
+ */
+export function resolveDataSources(): DataSource[] {
+  const gnafUrl = process.env.DOWNLOAD_URL_GNAF;
+  const adminUrl = process.env.DOWNLOAD_URL_ADMIN_BDYS;
+  const adminExtractedDir = process.env.ADMIN_BDYS_EXTRACTED_DIR;
+
+  const sources = DEFAULT_DATA_SOURCES.map((s) => ({ ...s, sentinelPaths: [...s.sentinelPaths] }));
+
+  if (gnafUrl) {
+    const gnaf = sources.find((s) => s.name.includes("G-NAF"));
+    if (gnaf) {
+      gnaf.url = gnafUrl;
+      // The versioned subdirectory name changes per release (e.g. "G-NAF MAY 2026"),
+      // so relax sentinels to match any "G-NAF *" directory with Standard/Authority Code.
+      gnaf.sentinelPaths = ["G-NAF */Standard", "G-NAF */Authority Code"];
+    }
+  }
+
+  if (adminUrl) {
+    const admin = sources.find((s) => s.name.includes("Administrative"));
+    if (admin) {
+      admin.url = adminUrl;
+      if (adminExtractedDir) {
+        admin.extractedDir = adminExtractedDir;
+      }
+    }
+  }
+
+  return sources;
+}
+
+/** @deprecated Use resolveDataSources() instead. Kept for backward compatibility in tests. */
+export const DATA_SOURCES = DEFAULT_DATA_SOURCES;
+
 // --- Types ---
 
 export interface DownloadOptions {
@@ -67,7 +116,7 @@ export interface DownloadOptions {
   outputDir?: string;
   /** Skip download if extracted data already exists */
   skipIfExists?: boolean;
-  /** G-NAF data version label (informational only) */
+  /** G-NAF data version label (e.g. "2026.02"). Used for logging. */
   version?: string;
 }
 
@@ -127,6 +176,14 @@ export function isExtractionComplete(extractedPath: string, sentinelPaths: strin
   const hasGlob = sentinelPaths.some((s) => s.includes("*"));
   const entries = hasGlob ? readdirSync(extractedPath) : [];
   return sentinelPaths.every((sentinel) => {
+    if (sentinel.includes("/") && sentinel.includes("*")) {
+      // Path-segment wildcard: "G-NAF */Standard" — first segment has a wildcard, rest is literal
+      const [globSegment, ...rest] = sentinel.split("/");
+      const prefix = globSegment.replace("*", "");
+      const matchingDirs = entries.filter((entry) => entry.startsWith(prefix));
+      const subPath = rest.join("/");
+      return matchingDirs.some((dir) => existsSync(resolve(extractedPath, dir, subPath)));
+    }
     if (sentinel.endsWith("*")) {
       // Trailing wildcard: "LocalGovernmentAreas_*" matches any entry starting with the prefix
       const prefix = sentinel.slice(0, -1);
@@ -281,8 +338,9 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
   mkdirSync(outputDir, { recursive: true });
 
   const results: DownloadResult[] = [];
+  const dataSources = resolveDataSources();
 
-  for (const source of DATA_SOURCES) {
+  for (const source of dataSources) {
     const extractedPath = resolve(outputDir, source.extractedDir);
 
     // Skip only if all sentinel paths are present — a partial/interrupted extraction
@@ -402,8 +460,9 @@ export function resolveOutputDir(): string {
     return resolve("./data");
   }
 
-  const gnafSource = DATA_SOURCES.find((s) => s.name.includes("G-NAF"));
-  const adminSource = DATA_SOURCES.find((s) => s.name.includes("Administrative"));
+  const sources = resolveDataSources();
+  const gnafSource = sources.find((s) => s.name.includes("G-NAF"));
+  const adminSource = sources.find((s) => s.name.includes("Administrative"));
 
   if (!gnafSource || !adminSource) {
     throw new Error("DATA_SOURCES is missing expected G-NAF or Administrative Boundaries entry");

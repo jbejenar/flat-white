@@ -54,6 +54,19 @@ export interface LoadOptions {
 const VALID_STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"];
 
 /**
+ * Derive the 6-digit geoscape version from GNAF_VERSION env var.
+ * e.g. GNAF_VERSION="2026.05" → "202605"
+ * Returns null if GNAF_VERSION is not set.
+ */
+export function deriveGeoscapeVersion(): string | null {
+  const gnafVersion = process.env.GNAF_VERSION;
+  if (!gnafVersion) return null;
+  const stripped = gnafVersion.replace(/\./g, "");
+  if (!/^\d{6}$/.test(stripped)) return null;
+  return stripped;
+}
+
+/**
  * Resolve the G-NAF PSV tables path from the data directory.
  * gnaf-loader uses os.walk() and needs the parent directory that contains
  * BOTH "Standard/" (state PSV files) and "Authority Code/" (authority tables).
@@ -108,7 +121,7 @@ export function buildArgs(opts: LoadOptions): string[] {
     "--pguser",
     opts.pgUser ?? "postgres",
     "--geoscape-version",
-    opts.geoscapeVersion ?? "202602",
+    opts.geoscapeVersion ?? deriveGeoscapeVersion() ?? "202602",
     "--srid",
     String(opts.srid ?? 7844),
     "--max-processes",
@@ -245,6 +258,9 @@ async function main(): Promise<void> {
         break;
       case "--pgdb":
         opts.pgDb = args[++i];
+        break;
+      case "--geoscape-version":
+        opts.geoscapeVersion = args[++i];
         break;
       case "--server-data-dir":
         opts.serverDataDir = args[++i];

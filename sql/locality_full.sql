@@ -3,7 +3,7 @@
 -- Designed to run against both fixture data and full state loads.
 --
 -- Usage: Called from src/flatten-localities.ts via cursor-based streaming.
--- Schema: gnaf_202602
+-- Schema: gnaf___SCHEMA_VERSION__
 
 WITH
 -- Aggregate locality neighbours
@@ -15,8 +15,8 @@ locality_neighbours AS (
       FILTER (WHERE l2.locality_name IS NOT NULL),
       '[]'::json
     ) AS neighbours
-  FROM gnaf_202602.locality_neighbour_lookup ln
-  JOIN gnaf_202602.localities l2 ON l2.locality_pid = ln.neighbour_locality_pid
+  FROM gnaf___SCHEMA_VERSION__.locality_neighbour_lookup ln
+  JOIN gnaf___SCHEMA_VERSION__.localities l2 ON l2.locality_pid = ln.neighbour_locality_pid
   GROUP BY ln.locality_pid
 ),
 
@@ -29,7 +29,7 @@ locality_alias_agg AS (
       FILTER (WHERE la.locality_alias_name IS NOT NULL),
       '[]'::json
     ) AS aliases
-  FROM gnaf_202602.locality_aliases la
+  FROM gnaf___SCHEMA_VERSION__.locality_aliases la
   GROUP BY la.locality_pid
 )
 
@@ -44,10 +44,10 @@ SELECT
   loc.latitude,
   loc.longitude
 
-FROM gnaf_202602.localities loc
+FROM gnaf___SCHEMA_VERSION__.localities loc
 
 -- Locality class name expansion
-LEFT JOIN raw_gnaf_202602.locality_class_aut lc_aut
+LEFT JOIN raw_gnaf___SCHEMA_VERSION__.locality_class_aut lc_aut
   ON lc_aut.name = loc.locality_class
 
 -- Neighbours

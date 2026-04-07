@@ -258,6 +258,7 @@ else
 
     export GNAF_DATA_PATH="${GNAF_PATH:-}"
     export ADMIN_BDYS_PATH="${ADMIN_PATH:-}"
+    export GNAF_VERSION="${GNAF_VERSION:-2026.02}"
 
     if ! node /app/dist/download.js; then
       log "ERROR: Download failed"
@@ -271,12 +272,15 @@ else
   # Stage 3: gnaf-loader
   stage_start "load"
 
-  LOAD_ARGS="--no-boundary-tag"
+  # Derive 6-digit geoscape version from GNAF_VERSION (e.g. "2026.05" → "202605")
+  GEOSCAPE_VERSION=$(echo "${GNAF_VERSION:-2026.02}" | tr -d '.')
+
+  LOAD_ARGS="--no-boundary-tag --geoscape-version $GEOSCAPE_VERSION"
   if [[ -n "$STATES" ]]; then
     LOAD_ARGS="$LOAD_ARGS --states $STATES"
   fi
 
-  if ! node /app/dist/load.js $LOAD_ARGS; then
+  if ! GNAF_VERSION="${GNAF_VERSION:-2026.02}" node /app/dist/load.js $LOAD_ARGS; then
     log "ERROR: gnaf-loader failed"
     exit 2
   fi

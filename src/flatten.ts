@@ -24,6 +24,27 @@ const SQL_PATH = resolve(__dirname, "..", "sql", "address_full.sql");
 const PREP_SQL_PATH = resolve(__dirname, "..", "sql", "address_full_prep.sql");
 const MAIN_SQL_PATH = resolve(__dirname, "..", "sql", "address_full_main.sql");
 
+/**
+ * Derive the 6-digit schema version from a human-readable G-NAF version.
+ * e.g. "2026.02" → "202602", "2026.05" → "202605"
+ */
+export function deriveSchemaVersion(version: string): string {
+  const stripped = version.replace(/\./g, "");
+  if (!/^\d{6}$/.test(stripped)) {
+    throw new Error(
+      `Invalid G-NAF version "${version}": expected format "YYYY.MM" (e.g. "2026.02"), got "${stripped}" after stripping dots`,
+    );
+  }
+  return stripped;
+}
+
+/**
+ * Replace __SCHEMA_VERSION__ placeholders in SQL with the actual schema version.
+ */
+function applySchemaVersion(sql: string, schemaVersion: string): string {
+  return sql.replaceAll("__SCHEMA_VERSION__", schemaVersion);
+}
+
 export interface FlattenOptions {
   /** Postgres connection URL */
   connectionString: string;
@@ -228,18 +249,19 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
     },
   });
 
+  const schemaVersion = deriveSchemaVersion(version);
   let flattenSql: string;
 
   if (materialize) {
     // Production mode: pre-materialize aggregations as temp tables, then stream the simple join
-    const prepSql = readFileSync(PREP_SQL_PATH, "utf-8");
+    const prepSql = applySchemaVersion(readFileSync(PREP_SQL_PATH, "utf-8"), schemaVersion);
     console.log("[flatten] Materializing aggregation tables...");
     await sql.unsafe(prepSql); // DDL: creates temp tables, no cursor needed
     console.log("[flatten] Aggregation tables ready. Starting cursor stream...");
-    flattenSql = readFileSync(MAIN_SQL_PATH, "utf-8");
+    flattenSql = applySchemaVersion(readFileSync(MAIN_SQL_PATH, "utf-8"), schemaVersion);
   } else {
     // Fixture mode: use the CTE-based query (fine for small datasets)
-    flattenSql = readFileSync(SQL_PATH, "utf-8");
+    flattenSql = applySchemaVersion(readFileSync(SQL_PATH, "utf-8"), schemaVersion);
   }
 
   let count = 0;

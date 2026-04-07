@@ -3,12 +3,12 @@
 -- so the main SELECT (address_full_main.sql) is a simple multi-join that streams efficiently.
 --
 -- Usage: Run once before cursor-based streaming of address_full_main.sql.
--- Schema: gnaf_202602, raw_gnaf_202602, admin_bdys_202602
+-- Schema: gnaf___SCHEMA_VERSION__, raw_gnaf___SCHEMA_VERSION__, admin_bdys___SCHEMA_VERSION__
 
 -- 0. Ensure admin boundary tables exist (empty stubs if --no-boundary-tag or partial load).
--- Both schemas (gnaf_202602 and admin_bdys_202602) are created by gnaf-loader.
-CREATE SCHEMA IF NOT EXISTS admin_bdys_202602;
-CREATE TABLE IF NOT EXISTS admin_bdys_202602.abs_2021_mb (
+-- Both schemas (gnaf___SCHEMA_VERSION__ and admin_bdys___SCHEMA_VERSION__) are created by gnaf-loader.
+CREATE SCHEMA IF NOT EXISTS admin_bdys___SCHEMA_VERSION__;
+CREATE TABLE IF NOT EXISTS admin_bdys___SCHEMA_VERSION__.abs_2021_mb (
   gid integer,
   mb21_code bigint,
   mb_cat text,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS admin_bdys_202602.abs_2021_mb (
   gcc_21name text,
   state text
 );
-CREATE TABLE IF NOT EXISTS gnaf_202602.address_principal_admin_boundaries (
+CREATE TABLE IF NOT EXISTS gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries (
   gid integer,
   gnaf_pid text,
   locality_pid text,
@@ -71,7 +71,7 @@ DECLARE
   has_ward boolean;
   has_se boolean;
 BEGIN
-  SELECT COUNT(*) INTO bdy_count FROM gnaf_202602.address_principal_admin_boundaries;
+  SELECT COUNT(*) INTO bdy_count FROM gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries;
 
   IF bdy_count > 0 THEN
     RAISE NOTICE 'admin_boundaries already populated (% rows) — skipping spatial join fallback', bdy_count;
@@ -79,13 +79,13 @@ BEGIN
   END IF;
 
   SELECT EXISTS (SELECT 1 FROM information_schema.tables
-                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'commonwealth_electorates') INTO has_ce;
+                 WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'commonwealth_electorates') INTO has_ce;
   SELECT EXISTS (SELECT 1 FROM information_schema.tables
-                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'local_government_areas') INTO has_lga;
+                 WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'local_government_areas') INTO has_lga;
   SELECT EXISTS (SELECT 1 FROM information_schema.tables
-                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'local_government_wards') INTO has_ward;
+                 WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'local_government_wards') INTO has_ward;
   SELECT EXISTS (SELECT 1 FROM information_schema.tables
-                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'state_lower_house_electorates') INTO has_se;
+                 WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'state_lower_house_electorates') INTO has_se;
 
   IF NOT (has_ce OR has_lga OR has_ward OR has_se) THEN
     RAISE NOTICE 'No admin boundary tables found — skipping spatial join fallback';
@@ -99,7 +99,7 @@ BEGIN
   -- prevent multi-polygon row multiplication on boundary points (see comment
   -- block above).
   EXECUTE format($sql$
-    INSERT INTO gnaf_202602.address_principal_admin_boundaries
+    INSERT INTO gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries
       (gnaf_pid, locality_pid, locality_name, postcode, state,
        ce_pid, ce_name, lga_pid, lga_name, ward_pid, ward_name,
        se_lower_pid, se_lower_name, se_upper_pid, se_upper_name)
@@ -114,7 +114,7 @@ BEGIN
       %s AS ward_pid, %s AS ward_name,
       %s AS se_lower_pid, %s AS se_lower_name,
       NULL::text AS se_upper_pid, NULL::text AS se_upper_name
-    FROM gnaf_202602.address_principals ap
+    FROM gnaf___SCHEMA_VERSION__.address_principals ap
     %s
     %s
     %s
@@ -134,16 +134,16 @@ BEGIN
     CASE WHEN has_se THEN 'se.name' ELSE 'NULL::text' END,
     -- joins (LATERAL + LIMIT 1 + deterministic ORDER BY)
     CASE WHEN has_ce THEN
-      'LEFT JOIN LATERAL (SELECT ce_pid, name FROM admin_bdys_202602.commonwealth_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY ce_pid LIMIT 1) ce ON true'
+      'LEFT JOIN LATERAL (SELECT ce_pid, name FROM admin_bdys___SCHEMA_VERSION__.commonwealth_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY ce_pid LIMIT 1) ce ON true'
       ELSE '' END,
     CASE WHEN has_lga THEN
-      'LEFT JOIN LATERAL (SELECT lga_pid, full_name FROM admin_bdys_202602.local_government_areas WHERE ST_Intersects(ap.geom, geom) ORDER BY lga_pid LIMIT 1) lga ON true'
+      'LEFT JOIN LATERAL (SELECT lga_pid, full_name FROM admin_bdys___SCHEMA_VERSION__.local_government_areas WHERE ST_Intersects(ap.geom, geom) ORDER BY lga_pid LIMIT 1) lga ON true'
       ELSE '' END,
     CASE WHEN has_ward THEN
-      'LEFT JOIN LATERAL (SELECT ward_pid, name FROM admin_bdys_202602.local_government_wards WHERE ST_Intersects(ap.geom, geom) ORDER BY ward_pid LIMIT 1) ward ON true'
+      'LEFT JOIN LATERAL (SELECT ward_pid, name FROM admin_bdys___SCHEMA_VERSION__.local_government_wards WHERE ST_Intersects(ap.geom, geom) ORDER BY ward_pid LIMIT 1) ward ON true'
       ELSE '' END,
     CASE WHEN has_se THEN
-      'LEFT JOIN LATERAL (SELECT se_lower_pid, name FROM admin_bdys_202602.state_lower_house_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY se_lower_pid LIMIT 1) se ON true'
+      'LEFT JOIN LATERAL (SELECT se_lower_pid, name FROM admin_bdys___SCHEMA_VERSION__.state_lower_house_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY se_lower_pid LIMIT 1) se ON true'
       ELSE '' END
   );
 
@@ -157,7 +157,7 @@ END $$;
 -- the constraint protects gnaf-loader-populated rows too. Idempotent: re-runs
 -- against an already-indexed table are no-ops.
 CREATE UNIQUE INDEX IF NOT EXISTS address_principal_admin_boundaries_gnaf_pid_uniq
-  ON gnaf_202602.address_principal_admin_boundaries (gnaf_pid);
+  ON gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries (gnaf_pid);
 
 -- 1a. Best geocode per address (using window function instead of correlated subquery)
 DROP TABLE IF EXISTS tmp_best_geocode;
@@ -183,11 +183,11 @@ FROM (
           ELSE 4
         END ASC
     ) AS rn
-  FROM raw_gnaf_202602.address_detail ad
-  JOIN raw_gnaf_202602.address_site_geocode g
+  FROM raw_gnaf___SCHEMA_VERSION__.address_detail ad
+  JOIN raw_gnaf___SCHEMA_VERSION__.address_site_geocode g
     ON g.address_site_pid = ad.address_site_pid
     AND g.date_retired IS NULL
-  LEFT JOIN raw_gnaf_202602.geocode_type_aut gt ON gt.code = g.geocode_type_code
+  LEFT JOIN raw_gnaf___SCHEMA_VERSION__.geocode_type_aut gt ON gt.code = g.geocode_type_code
   WHERE ad.date_retired IS NULL
 ) ranked
 WHERE rn = 1;
@@ -208,8 +208,8 @@ SELECT
     )
     ORDER BY asg.reliability_code, asg.geocode_type_code
   ) AS all_geocodes
-FROM raw_gnaf_202602.address_detail ad
-JOIN raw_gnaf_202602.address_site_geocode asg
+FROM raw_gnaf___SCHEMA_VERSION__.address_detail ad
+JOIN raw_gnaf___SCHEMA_VERSION__.address_site_geocode asg
   ON asg.address_site_pid = ad.address_site_pid
   AND asg.date_retired IS NULL
 WHERE ad.date_retired IS NULL
@@ -242,8 +242,8 @@ SELECT
     FILTER (WHERE l2.locality_name IS NOT NULL),
     '[]'::json
   ) AS neighbours
-FROM gnaf_202602.locality_neighbour_lookup ln
-JOIN gnaf_202602.localities l2 ON l2.locality_pid = ln.neighbour_locality_pid
+FROM gnaf___SCHEMA_VERSION__.locality_neighbour_lookup ln
+JOIN gnaf___SCHEMA_VERSION__.localities l2 ON l2.locality_pid = ln.neighbour_locality_pid
 GROUP BY ln.locality_pid;
 
 CREATE INDEX ON tmp_locality_neighbours (locality_pid);
@@ -258,7 +258,7 @@ SELECT
     FILTER (WHERE la.locality_alias_name IS NOT NULL),
     '[]'::json
   ) AS aliases
-FROM gnaf_202602.locality_aliases la
+FROM gnaf___SCHEMA_VERSION__.locality_aliases la
 GROUP BY la.locality_pid;
 
 CREATE INDEX ON tmp_locality_alias_agg (locality_pid);
@@ -273,7 +273,7 @@ SELECT
     FILTER (WHERE sa.full_alias_street_name IS NOT NULL),
     '[]'::json
   ) AS aliases
-FROM gnaf_202602.street_aliases sa
+FROM gnaf___SCHEMA_VERSION__.street_aliases sa
 GROUP BY sa.street_locality_pid;
 
 CREATE INDEX ON tmp_street_alias_agg (street_locality_pid);
@@ -291,8 +291,8 @@ SELECT
     )
     ORDER BY aa.gnaf_pid
   ) AS aliases
-FROM gnaf_202602.address_alias_lookup aal
-JOIN gnaf_202602.address_aliases aa ON aa.gnaf_pid = aal.alias_pid
+FROM gnaf___SCHEMA_VERSION__.address_alias_lookup aal
+JOIN gnaf___SCHEMA_VERSION__.address_aliases aa ON aa.gnaf_pid = aal.alias_pid
 GROUP BY aal.principal_pid;
 
 CREATE INDEX ON tmp_address_alias_agg (principal_pid);
@@ -309,8 +309,8 @@ SELECT
     )
     ORDER BY ap2.gnaf_pid
   ) AS secondaries
-FROM gnaf_202602.address_secondary_lookup asl
-JOIN gnaf_202602.address_principals ap2 ON ap2.gnaf_pid = asl.secondary_pid
+FROM gnaf___SCHEMA_VERSION__.address_secondary_lookup asl
+JOIN gnaf___SCHEMA_VERSION__.address_principals ap2 ON ap2.gnaf_pid = asl.secondary_pid
 GROUP BY asl.primary_pid;
 
 CREATE INDEX ON tmp_address_secondary_agg (primary_pid);

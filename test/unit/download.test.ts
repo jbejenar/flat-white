@@ -18,6 +18,7 @@ import {
   DEFAULT_STALL_TIMEOUT_MS,
   isExtractionComplete,
   resolveOutputDir,
+  resolveDataSources,
 } from "../../src/download.js";
 
 describe("formatBytes", () => {
@@ -177,6 +178,49 @@ describe("resolveOutputDir", () => {
   });
 });
 
+describe("resolveDataSources", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    delete process.env.DOWNLOAD_URL_GNAF;
+    delete process.env.DOWNLOAD_URL_ADMIN_BDYS;
+    delete process.env.ADMIN_BDYS_EXTRACTED_DIR;
+    Object.assign(process.env, originalEnv);
+  });
+
+  it("returns default sources when no env vars are set", () => {
+    delete process.env.DOWNLOAD_URL_GNAF;
+    delete process.env.DOWNLOAD_URL_ADMIN_BDYS;
+    const sources = resolveDataSources();
+    const gnaf = sources.find((s) => s.name.includes("G-NAF"));
+    expect(gnaf!.url).toContain("data.gov.au");
+  });
+
+  it("overrides G-NAF URL from DOWNLOAD_URL_GNAF env var", () => {
+    process.env.DOWNLOAD_URL_GNAF = "https://example.com/gnaf-may26.zip";
+    const sources = resolveDataSources();
+    const gnaf = sources.find((s) => s.name.includes("G-NAF"));
+    expect(gnaf!.url).toBe("https://example.com/gnaf-may26.zip");
+    // Sentinel paths should be relaxed to wildcard
+    expect(gnaf!.sentinelPaths[0]).toContain("G-NAF */");
+  });
+
+  it("overrides Admin Boundaries URL and extractedDir from env vars", () => {
+    process.env.DOWNLOAD_URL_ADMIN_BDYS = "https://example.com/admin-may26.zip";
+    process.env.ADMIN_BDYS_EXTRACTED_DIR = "MAY26_AdminBounds_GDA_2020_SHP";
+    const sources = resolveDataSources();
+    const admin = sources.find((s) => s.name.includes("Administrative"));
+    expect(admin!.url).toBe("https://example.com/admin-may26.zip");
+    expect(admin!.extractedDir).toBe("MAY26_AdminBounds_GDA_2020_SHP");
+  });
+
+  it("does not mutate DEFAULT_DATA_SOURCES", () => {
+    process.env.DOWNLOAD_URL_GNAF = "https://example.com/override.zip";
+    resolveDataSources();
+    expect(DATA_SOURCES[0].url).toContain("data.gov.au");
+  });
+});
+
 describe("isExtractionComplete", () => {
   const testDir = resolve(tmpdir(), "flat-white-test-extraction");
 
@@ -219,5 +263,20 @@ describe("isExtractionComplete", () => {
   it("supports nested sentinel paths", () => {
     mkdirSync(resolve(testDir, "G-NAF FEBRUARY 2026/Standard"), { recursive: true });
     expect(isExtractionComplete(testDir, ["G-NAF FEBRUARY 2026/Standard"])).toBe(true);
+  });
+
+  it("supports path-segment wildcards (G-NAF */Standard)", () => {
+    mkdirSync(resolve(testDir, "G-NAF MAY 2026/Standard"), { recursive: true });
+    mkdirSync(resolve(testDir, "G-NAF MAY 2026/Authority Code"), { recursive: true });
+    expect(isExtractionComplete(testDir, ["G-NAF */Standard", "G-NAF */Authority Code"])).toBe(
+      true,
+    );
+  });
+
+  it("returns false for path-segment wildcard when subdirectory is missing", () => {
+    mkdirSync(resolve(testDir, "G-NAF MAY 2026/Standard"), { recursive: true });
+    expect(isExtractionComplete(testDir, ["G-NAF */Standard", "G-NAF */Authority Code"])).toBe(
+      false,
+    );
   });
 });
