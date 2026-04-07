@@ -1,6 +1,6 @@
 # Community Announcement Plan
 
-Target: first quarterly release (`v2026.02` or later).
+Target: first quarterly release (`v2026.04` shipped — announcement pending).
 
 ## Channels
 

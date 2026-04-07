@@ -13,7 +13,7 @@ Every line in the NDJSON output is one JSON document conforming to this schema. 
 | Field                | Type    | Nullable | Description                                                                               | Example                               | G-NAF Source                                                                |
 | -------------------- | ------- | -------- | ----------------------------------------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
 | `_id`                | string  | No       | G-NAF address persistent identifier (PID)                                                 | `"GAVIC425181432"`                    | `gnaf.address_principals.address_detail_pid`                                |
-| `_version`           | string  | No       | G-NAF data release version (YYYY.MM)                                                      | `"2026.02"`                           | Build parameter                                                             |
+| `_version`           | string  | No       | G-NAF data release version (YYYY.MM)                                                      | `"2026.04"`                           | Build parameter                                                             |
 | `addressLabel`       | string  | No       | Canonical address label using G-NAF abbreviations                                         | `"1 MCNAB AV, FOOTSCRAY VIC 3011"`    | Composed from address components                                            |
 | `addressLabelSearch` | string  | No       | Search-optimised label with expanded street/flat types                                    | `"1 MCNAB AVENUE FOOTSCRAY VIC 3011"` | Composed; street type expanded via authority codes                          |
 | `addressSiteName`    | string  | Yes      | Site name (e.g. shopping centre, hospital)                                                | `"FOOTSCRAY MARKET"`                  | `gnaf.address_principals.address_site_name`                                 |
@@ -187,7 +187,7 @@ When running with `--locality-only`, flat-white produces a `localities.ndjson` f
 | Field          | Type     | Nullable | Description                                                    | Example                        | G-NAF Source                                    |
 | -------------- | -------- | -------- | -------------------------------------------------------------- | ------------------------------ | ----------------------------------------------- |
 | `_id`          | string   | No       | Locality persistent identifier                                 | `"loc67a11408d754"`            | `gnaf.localities.locality_pid`                  |
-| `_version`     | string   | No       | G-NAF data release version (YYYY.MM)                           | `"2026.02"`                    | Build parameter                                 |
+| `_version`     | string   | No       | G-NAF data release version (YYYY.MM)                           | `"2026.04"`                    | Build parameter                                 |
 | `localityName` | string   | No       | Suburb/locality name                                           | `"FOOTSCRAY"`                  | `gnaf.localities.locality_name`                 |
 | `state`        | string   | No       | State/territory code                                           | `"VIC"`                        | `gnaf.localities.state`                         |
 | `postcode`     | string   | Yes      | Postcode                                                       | `"3011"`                       | `gnaf.localities.postcode`                      |
@@ -221,7 +221,7 @@ Available via `--format parquet`. Produces an Apache Parquet file with the same 
 import pandas as pd
 import json
 
-df = pd.read_parquet("flat-white-2026.02.parquet")
+df = pd.read_parquet("flat-white-2026.04.parquet")
 # Scalar fields work directly
 print(df["state"].value_counts())
 
@@ -232,7 +232,7 @@ df["geocode_parsed"] = df["geocode"].apply(lambda x: json.loads(x) if x else Non
 ```sql
 -- DuckDB
 SELECT _id, state, json_extract(geocode, '$.latitude') as lat
-FROM 'flat-white-2026.02.parquet';
+FROM 'flat-white-2026.04.parquet';
 ```
 
 ### Geoparquet
@@ -251,7 +251,7 @@ Available via `--format geoparquet`. Produces a [Geoparquet v1.1.0](https://geop
 ```python
 import geopandas as gpd
 
-gdf = gpd.read_parquet("flat-white-2026.02.geoparquet")
+gdf = gpd.read_parquet("flat-white-2026.04.geoparquet")
 # geometry column is automatically parsed as shapely Points
 print(gdf.geometry.head())
 # Spatial queries work natively
@@ -262,7 +262,7 @@ melbourne = gdf.cx[144.9:145.0, -37.9:-37.7]
 -- DuckDB with spatial extension
 INSTALL spatial; LOAD spatial;
 SELECT _id, state, ST_AsText(geometry) as wkt
-FROM 'flat-white-2026.02.geoparquet'
+FROM 'flat-white-2026.04.geoparquet'
 WHERE ST_Within(geometry, ST_GeomFromText('POLYGON((144 -38, 145 -38, 145 -37, 144 -37, 144 -38))'));
 ```
 

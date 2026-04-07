@@ -174,3 +174,14 @@ Independent of release versioning, the NDJSON schema has its own version in `pac
 | Bug fix to existing field value | Patch (`0.2.0` → `0.2.1`) | The v2026.04.1 streetType fix is a patch |
 
 The release tag (`vYYYY.MM[.N]`) and schema version (`X.Y.Z`) are tracked independently. A patch release can ship a schema patch bump, or no schema change at all.
+
+## Version references in documentation
+
+Documentation files use two conventions for version numbers:
+
+| Doc type                                                                             | Convention                                                               | Rationale                                                                                                      |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| **Consumer-facing** (`DOCUMENT-SCHEMA.md`, `COMMUNITY-ANNOUNCEMENT.md`, `README.md`) | Use the latest release version as illustrative examples (e.g. `2026.04`) | Helps users understand what real data looks like                                                               |
+| **Operational** (`RUNBOOK.md`)                                                       | Use `${VERSION}` shell variable placeholders                             | Operators copy-paste commands and substitute their target version — hardcoded versions are a copy-paste hazard |
+
+When a new quarterly release ships, update the consumer-facing examples to reference the new version. Operational docs do not need updating because the placeholder is version-agnostic.
