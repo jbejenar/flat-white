@@ -15,7 +15,7 @@ cd "$PROJECT_DIR"
 STATES="VIC"
 SKIP_LOAD=false
 OUTPUT_DIR="./output"
-VERSION="2026.02"
+VERSION="${GNAF_VERSION:-}"
 
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
@@ -27,6 +27,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
+
+if [[ -z "$VERSION" ]]; then
+  echo "ERROR: Version is required. Set GNAF_VERSION env var or pass --version YYYY.MM"
+  exit 1
+fi
 
 mkdir -p "$OUTPUT_DIR"
 

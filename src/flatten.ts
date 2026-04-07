@@ -325,7 +325,12 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
 async function main() {
   const connectionString =
     process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/gnaf";
-  const version = process.env.GNAF_VERSION ?? "2026.02";
+  const version = process.env.GNAF_VERSION;
+  if (!version) {
+    console.error("[flatten] ERROR: GNAF_VERSION environment variable is required.");
+    console.error("[flatten] Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.05)");
+    process.exit(3);
+  }
   const localityOnly = process.argv.includes("--locality-only");
 
   if (localityOnly) {

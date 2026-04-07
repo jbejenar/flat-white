@@ -38,16 +38,21 @@ docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-postgres
 echo "[fixture-build] Building TypeScript..."
 npm run build --silent
 
+# Fixture data is frozen at the Feb 2026 G-NAF release — default to 2026.02.
+# Production builds (docker-entrypoint.sh) require GNAF_VERSION explicitly.
+GNAF_VERSION="${GNAF_VERSION:-2026.02}"
+export GNAF_VERSION
+
 # 5a. Run flatten — legacy path (CTE-based, sql/address_full.sql)
 echo "[fixture-build] Running flatten (legacy CTE path)..."
-GNAF_VERSION="${GNAF_VERSION:-2026.02}" DATABASE_URL="$DB_URL" node "$PROJECT_DIR/dist/flatten.js" "$OUTPUT_FILE"
+DATABASE_URL="$DB_URL" node "$PROJECT_DIR/dist/flatten.js" "$OUTPUT_FILE"
 
 # 5b. Run flatten — materialize path (sql/address_full_prep.sql + address_full_main.sql)
 # This is what production uses. Must produce byte-identical output to the legacy path
 # against the fixture — guards against drift between the two SQL files (e.g. PR #29
 # regressed streetType in this path while the legacy fixture path stayed correct).
 echo "[fixture-build] Running flatten (materialize path)..."
-GNAF_VERSION="${GNAF_VERSION:-2026.02}" DATABASE_URL="$DB_URL" node "$PROJECT_DIR/dist/flatten.js" "$OUTPUT_FILE_MAT" --materialize
+DATABASE_URL="$DB_URL" node "$PROJECT_DIR/dist/flatten.js" "$OUTPUT_FILE_MAT" --materialize
 
 # 6. Validate output
 LINE_COUNT=$(wc -l < "$OUTPUT_FILE" | tr -d ' ')

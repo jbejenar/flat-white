@@ -9,7 +9,7 @@
  *
  * Or as a module:
  *   import { download } from './download.js';
- *   await download({ version: '2026.02', outputDir: './data' });
+ *   await download({ version: '2026.05', outputDir: './data' });
  */
 
 import {
@@ -116,7 +116,7 @@ export interface DownloadOptions {
   outputDir?: string;
   /** Skip download if extracted data already exists */
   skipIfExists?: boolean;
-  /** G-NAF data version label (e.g. "2026.02"). Used for logging. */
+  /** G-NAF data version label (e.g. "2026.05"). Falls back to GNAF_VERSION env var. Required. */
   version?: string;
 }
 
@@ -330,7 +330,13 @@ function extractZip(zipPath: string, outputDir: string): Promise<void> {
 export async function download(options: DownloadOptions = {}): Promise<DownloadResult[]> {
   const outputDir = resolve(options.outputDir ?? "./data");
   const skipIfExists = options.skipIfExists ?? false;
-  const version = options.version ?? "2026.02";
+  const version = options.version ?? process.env.GNAF_VERSION;
+  if (!version) {
+    throw new Error(
+      "G-NAF version is required. Set the GNAF_VERSION environment variable (e.g. GNAF_VERSION=2026.05) " +
+        "or pass { version } in DownloadOptions.",
+    );
+  }
 
   console.error(`[download] G-NAF version: ${version}`);
   console.error(`[download] Output directory: ${outputDir}`);
@@ -523,7 +529,12 @@ export function resolveOutputDir(): string {
 async function main() {
   const args = process.argv.slice(2);
   const skipIfExists = args.includes("--skip-download");
-  const version = process.env.GNAF_VERSION ?? "2026.02";
+  const version = process.env.GNAF_VERSION;
+  if (!version) {
+    console.error("[download] ERROR: GNAF_VERSION environment variable is required.");
+    console.error("[download] Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.05)");
+    process.exit(1);
+  }
   const outputDir = resolveOutputDir();
 
   const results = await download({ outputDir, skipIfExists, version });

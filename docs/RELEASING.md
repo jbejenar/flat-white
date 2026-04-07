@@ -10,6 +10,35 @@ To trigger a quarterly build manually:
 gh workflow run quarterly-build.yml -f gnaf_version=2026.05
 ```
 
+### Version configuration
+
+`GNAF_VERSION` is **required** for all production builds — there is no hardcoded default. The workflow sets it automatically from the `gnaf_version` input (or `date +%Y.%m` if omitted). For local builds, set it explicitly:
+
+```bash
+# Local build
+GNAF_VERSION=2026.05 ./scripts/build-local.sh --version 2026.05 --states VIC
+
+# Fixture builds default to 2026.02 (frozen fixture data) — no GNAF_VERSION needed
+./scripts/build-fixture-only.sh
+```
+
+### Download URLs for new G-NAF releases
+
+Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. The Feb 2026 URLs are built-in as a fallback. For newer releases, set these env vars before triggering the build:
+
+```bash
+# In the workflow dispatch, or in docker run -e flags:
+DOWNLOAD_URL_GNAF="https://data.gov.au/data/dataset/.../download/g-naf_may26_....zip"
+DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/may26_adminbounds_....zip"
+ADMIN_BDYS_EXTRACTED_DIR="MAY26_AdminBounds_GDA_2020_SHP"
+```
+
+Find the correct URLs by browsing the G-NAF dataset page on data.gov.au, or by querying the CKAN API:
+
+```bash
+curl -s 'https://data.gov.au/data/api/3/action/package_show?id=19432f89-dc3a-4ef3-b943-5326ef1dbecc' | jq '.result.resources[] | {name, url}'
+```
+
 ## Patch releases
 
 When a critical bug is found in a published release between quarterly cuts, ship a patch release. **Patch releases use new asset filenames so consumers can detect that previous downloads are stale.**

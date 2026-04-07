@@ -625,9 +625,11 @@ jobs:
             STATE_COUNTS+="  - ${state}: ${COUNT_FMT}"$'\n'
           done
 
-          # Use Python to build the entry with real newlines and insert into CHANGELOG
+          # Use Python to build the entry, move [Unreleased] content into it, and
+          # leave [Unreleased] empty. Idempotent: re-running on the same version
+          # replaces the existing entry rather than duplicating it.
           python3 -c "
-          import sys
+          import sys, re, textwrap
           release_version, gnaf_version, build_date, schema_version, total, state_counts = sys.argv[1:7]
 
           entry = f'''## [v{release_version}] - {build_date}
@@ -641,12 +643,34 @@ jobs:
           - **Per-state counts:**
           {state_counts}'''
 
-          # Remove leading whitespace from triple-quoted string
-          import textwrap
           entry = textwrap.dedent(entry)
 
           content = open('CHANGELOG.md').read()
-          content = content.replace('## [Unreleased]', '## [Unreleased]\n\n' + entry, 1)
+
+          # Idempotency: if this version entry already exists, remove it first
+          content = re.sub(
+              r'## \[v' + re.escape(release_version) + r'\] - \d{4}-\d{2}-\d{2}\n(?:(?!## \[).)*',
+              '',
+              content,
+              count=1,
+              flags=re.DOTALL,
+          )
+
+          # Find [Unreleased] section and extract its body
+          unreleased_pattern = r'(## \[Unreleased\]\n)(.*?)((?=\n## \[)|\Z)'
+          m = re.search(unreleased_pattern, content, re.DOTALL)
+          if m:
+              unreleased_body = m.group(2).strip()
+              # Replace [Unreleased] section: keep header, clear body, insert new entry
+              replacement = m.group(1) + '\n' + entry
+              if unreleased_body:
+                  replacement += '\n\n' + unreleased_body
+              replacement += '\n'
+              content = content[:m.start()] + replacement + content[m.end():]
+          else:
+              # No [Unreleased] header found — just prepend entry
+              content = entry + '\n\n' + content
+
           open('CHANGELOG.md', 'w').write(content)
           " "$RELEASE_VERSION" "$VERSION" "$BUILD_DATE" "$SCHEMA_VERSION" "$(printf "%'d" "$TOTAL")" "$STATE_COUNTS"
 
