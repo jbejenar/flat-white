@@ -79,7 +79,12 @@ END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 echo "[fixture-build] Done in ${ELAPSED}s ($LINE_COUNT documents)"
 
-# 8. Compare with expected output if it exists
+# 8. Run verify with enum-ish field validation against authority tables
+echo "[fixture-build] Running verify with enum checks..."
+node "$PROJECT_DIR/dist/verify.js" "$OUTPUT_FILE" --expected-count "$LINE_COUNT" --db-url "$DB_URL"
+echo "[fixture-build] Verify: PASS (including enum field checks)"
+
+# 9. Compare with expected output if it exists
 EXPECTED="$PROJECT_DIR/fixtures/expected-output.ndjson"
 if [ -f "$EXPECTED" ]; then
   EXPECTED_COUNT=$(wc -l < "$EXPECTED" | tr -d ' ')

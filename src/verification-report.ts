@@ -19,6 +19,8 @@ import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
 import { AddressDocumentSchema } from "./schema.js";
 import type { BuildMetadata } from "./metadata.js";
+import { ENUM_FIELD_PATHS } from "./verify.js";
+import type { EnumSets, EnumUnknownCounts } from "./verify.js";
 
 const STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
 
@@ -31,6 +33,7 @@ export interface StateVerification {
   qualityErrors: number;
   qualityWarnings: number;
   duplicatePids: number;
+  enumUnknownCounts: EnumUnknownCounts;
   passed: boolean;
 }
 
@@ -48,7 +51,11 @@ export interface VerificationReport {
  * Since verify() expects a file path, we decompress to a temp pipeline.
  * Instead, we directly stream and apply the same checks.
  */
-async function verifyGzippedState(gzPath: string, state: string): Promise<StateVerification> {
+async function verifyGzippedState(
+  gzPath: string,
+  state: string,
+  enumSets?: EnumSets,
+): Promise<StateVerification> {
   let rowCount = 0;
   let schemaErrors = 0;
   const boundaryCounts: Record<string, number> = {
@@ -67,6 +74,7 @@ async function verifyGzippedState(gzPath: string, state: string): Promise<StateV
   // step uses --max-old-space-size=512 to provide headroom.
   const pids = new Set<string>();
   let duplicatePids = 0;
+  const enumUnknownCounts: EnumUnknownCounts = {};
 
   const gunzip = createGunzip();
   const passthrough = new PassThrough();
@@ -136,6 +144,19 @@ async function verifyGzippedState(gzPath: string, state: string): Promise<StateV
     if (postcode && docState !== state && docState) {
       qualityWarnings++;
     }
+
+    // Enum-ish field validation
+    if (enumSets) {
+      for (const { field, path } of ENUM_FIELD_PATHS) {
+        const value = path(doc);
+        if (value === null || value === undefined) continue;
+        const validSet = enumSets[field];
+        if (!validSet) continue;
+        if (!validSet.has(value)) {
+          enumUnknownCounts[field] = (enumUnknownCounts[field] ?? 0) + 1;
+        }
+      }
+    }
   }
 
   const boundaryCoverage: Record<string, number> = {};
@@ -144,6 +165,8 @@ async function verifyGzippedState(gzPath: string, state: string): Promise<StateV
       boundaryCoverage[key] = Math.round((count / rowCount) * 1000) / 10;
     }
   }
+
+  const enumErrorCount = Object.values(enumUnknownCounts).reduce((s, n) => s + n, 0);
 
   return {
     state,
@@ -154,7 +177,9 @@ async function verifyGzippedState(gzPath: string, state: string): Promise<StateV
     qualityErrors,
     qualityWarnings,
     duplicatePids,
-    passed: schemaErrors === 0 && qualityErrors === 0 && duplicatePids === 0,
+    enumUnknownCounts,
+    passed:
+      schemaErrors === 0 && qualityErrors === 0 && duplicatePids === 0 && enumErrorCount === 0,
   };
 }
 
@@ -204,6 +229,26 @@ export function formatVerificationReport(report: VerificationReport): string {
   }
 
   lines.push("");
+
+  // Enum field validation
+  const totalEnumErrors = report.states.reduce(
+    (sum, s) => sum + Object.values(s.enumUnknownCounts).reduce((a, b) => a + b, 0),
+    0,
+  );
+  if (totalEnumErrors > 0) {
+    lines.push("## Enum Field Validation: FAIL");
+    lines.push("");
+    lines.push("| State | Field | Unknown Count |");
+    lines.push("|-------|-------|-------------:|");
+    for (const s of report.states) {
+      for (const [field, count] of Object.entries(s.enumUnknownCounts)) {
+        if (count > 0) {
+          lines.push(`| ${s.state} | ${field} | ${count} |`);
+        }
+      }
+    }
+    lines.push("");
+  }
 
   // Quality warnings
   const totalWarnings = report.states.reduce((sum, s) => sum + s.qualityWarnings, 0);
@@ -284,6 +329,7 @@ async function main(): Promise<void> {
         qualityErrors: 0,
         qualityWarnings: 0,
         duplicatePids: 0,
+        enumUnknownCounts: {},
         passed: false,
       });
       overallPassed = false;
@@ -307,6 +353,7 @@ async function main(): Promise<void> {
         qualityErrors: 1,
         qualityWarnings: 0,
         duplicatePids: 0,
+        enumUnknownCounts: {},
         passed: false,
       });
       overallPassed = false;

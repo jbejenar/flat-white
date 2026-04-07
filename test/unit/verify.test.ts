@@ -6,7 +6,13 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { writeFileSync, mkdirSync, unlinkSync, existsSync, readdirSync, rmdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { verify, formatReport, isWithinAustralia, isValidStatePostcode } from "../../src/verify.js";
+import {
+  verify,
+  formatReport,
+  isWithinAustralia,
+  isValidStatePostcode,
+  type EnumSets,
+} from "../../src/verify.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TMP_DIR = resolve(__dirname, "../../.tmp-test");
@@ -213,11 +219,173 @@ describe("verify against fixture expected-output.ndjson", () => {
     expect(result.qualityWarnings.length).toBe(0);
   });
 
+  it("passes enum checks with fixture-derived authority values", async () => {
+    // These are the actual values present in the fixture's authority tables
+    const fixtureEnumSets: EnumSets = {
+      streetType: new Set([
+        "AVENUE",
+        "BOULEVARD",
+        "CHASE",
+        "CIRCUIT",
+        "CLOSE",
+        "COURT",
+        "CRESCENT",
+        "DRIVE",
+        "ESPLANADE",
+        "GROVE",
+        "HIGHWAY",
+        "LANE",
+        "PARADE",
+        "PLACE",
+        "RISE",
+        "ROAD",
+        "SQUARE",
+        "STREET",
+        "TERRACE",
+        "WALK",
+        "WAY",
+      ]),
+      flatType: new Set([
+        "APARTMENT",
+        "CARPARK",
+        "CARSPACE",
+        "FACTORY",
+        "FLAT",
+        "SHOP",
+        "SITE",
+        "SUITE",
+        "UNIT",
+      ]),
+      levelType: new Set(["FLOOR", "LEVEL"]),
+      streetSuffix: new Set(["EAST", "NORTH", "WEST"]),
+      localityClass: new Set(["GAZETTED LOCALITY"]),
+      state: new Set(["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT", "OT"]),
+    };
+    const result = await verify({
+      outputPath: fixturePath,
+      expectedCount: 451,
+      enumSets: fixtureEnumSets,
+    });
+    expect(result.passed).toBe(true);
+    expect(Object.keys(result.enumUnknownCounts)).toHaveLength(0);
+  });
+
   it("reports high boundary coverage", async () => {
     const result = await verify({ outputPath: fixturePath, expectedCount: 451 });
     const cov = result.boundaryCoverage;
     expect(cov.lga / cov.total).toBeGreaterThan(0.99);
     expect(cov.stateElectorate / cov.total).toBeGreaterThan(0.98);
+  });
+});
+
+describe("enum-ish field validation", () => {
+  const validEnumSets: EnumSets = {
+    streetType: new Set(["STREET", "AVENUE", "ROAD", "PLACE", "DRIVE"]),
+    flatType: new Set(["FLAT", "UNIT", "APARTMENT"]),
+    levelType: new Set(["LEVEL", "FLOOR"]),
+    streetSuffix: new Set(["NORTH", "SOUTH", "EAST", "WEST"]),
+    localityClass: new Set(["GAZETTED LOCALITY"]),
+    state: new Set(["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT", "OT"]),
+  };
+
+  it("passes when all enum-ish fields have valid values", async () => {
+    const docs = [
+      makeDoc({ _id: "ENUM_OK", streetType: "STREET", flatType: "FLAT", state: "VIC" }),
+    ];
+    const path = tmpFile("enum-valid.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      enumSets: validEnumSets,
+    });
+    expect(result.passed).toBe(true);
+    expect(Object.keys(result.enumUnknownCounts)).toHaveLength(0);
+  });
+
+  it("fails when streetType has an abbreviation instead of long form", async () => {
+    const docs = [makeDoc({ _id: "ENUM_BAD_ST", streetType: "PL" })];
+    const path = tmpFile("enum-bad-streettype.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      enumSets: validEnumSets,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.enumUnknownCounts.streetType).toBe(1);
+    expect(result.qualityErrors.some((e) => e.check === "enum-value")).toBe(true);
+  });
+
+  it("accepts null for nullable enum-ish fields", async () => {
+    const docs = [
+      makeDoc({
+        _id: "ENUM_NULL",
+        streetType: null,
+        flatType: null,
+        levelType: null,
+        streetSuffix: null,
+      }),
+    ];
+    const path = tmpFile("enum-null.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      enumSets: validEnumSets,
+    });
+    expect(result.passed).toBe(true);
+    expect(Object.keys(result.enumUnknownCounts)).toHaveLength(0);
+  });
+
+  it("skips enum check when enumSets is not provided (backward compatible)", async () => {
+    const docs = [makeDoc({ _id: "ENUM_SKIP", streetType: "BOGUS_VALUE" })];
+    const path = tmpFile("enum-skip.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({ outputPath: path, expectedCount: 1 });
+    expect(result.passed).toBe(true);
+    expect(Object.keys(result.enumUnknownCounts)).toHaveLength(0);
+  });
+
+  it("validates localityClass nested inside locality object", async () => {
+    const docs = [
+      makeDoc({
+        _id: "ENUM_LOC",
+        locality: { pid: "LOC1", class: "INVALID CLASS", neighbours: [], aliases: [] },
+      }),
+    ];
+    const path = tmpFile("enum-bad-locality.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      enumSets: validEnumSets,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.enumUnknownCounts.localityClass).toBe(1);
+  });
+
+  it("counts multiple unknown values per field across documents", async () => {
+    const docs = [
+      makeDoc({ _id: "E1", streetType: "BOGUS" }),
+      makeDoc({ _id: "E2", streetType: "ALSO_BOGUS" }),
+      makeDoc({ _id: "E3", streetType: "STREET" }),
+    ];
+    const path = tmpFile("enum-multi.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 3,
+      enumSets: validEnumSets,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.enumUnknownCounts.streetType).toBe(2);
   });
 });
 

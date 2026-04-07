@@ -3,13 +3,14 @@
  *
  * Compares NDJSON output line count against expected source count,
  * and runs data quality assertions (coordinate bounds, PID uniqueness,
- * boundary coverage, state/postcode cross-validation).
+ * boundary coverage, state/postcode cross-validation, enum-ish field validation).
  */
 
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import type { Sql } from "postgres";
 
 // Australian bounding box including external territories
 // Mainland: -44 to -10 lat, 112 to 154 lng
@@ -50,6 +51,84 @@ const STATE_POSTCODE_RANGES: Record<string, [number, number][]> = {
   ],
 };
 
+const VALID_STATES = new Set(["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT", "OT"]);
+
+/**
+ * Valid value sets for enum-ish fields, keyed by output field name.
+ * Built by queryEnumSets() from authority tables, or constructed manually for tests.
+ */
+export type EnumSets = Record<string, Set<string>>;
+
+/** Per-field count of documents with unknown enum values. */
+export type EnumUnknownCounts = Record<string, number>;
+
+/**
+ * Names of enum-ish fields checked during validation.
+ * Maps output field path → authority table context for error messages.
+ */
+export const ENUM_FIELD_PATHS: {
+  field: string;
+  path: (doc: Record<string, unknown>) => string | null;
+}[] = [
+  { field: "streetType", path: (d) => d.streetType as string | null },
+  { field: "flatType", path: (d) => d.flatType as string | null },
+  { field: "levelType", path: (d) => d.levelType as string | null },
+  { field: "streetSuffix", path: (d) => d.streetSuffix as string | null },
+  {
+    field: "localityClass",
+    path: (d) => {
+      const loc = d.locality as { class?: string } | null;
+      return loc?.class ?? null;
+    },
+  },
+  { field: "state", path: (d) => d.state as string | null },
+];
+
+/**
+ * Query authority tables from Postgres and build valid-value sets.
+ *
+ * NOTE on street_type_aut: This is the ONLY authority table where columns
+ * are reversed — `code` contains the LONG FORM (e.g. "STREET") and `name`
+ * contains the abbreviation (e.g. "ST"). The output uses the long form,
+ * so we query `code` for streetType.
+ */
+export async function queryEnumSets(sql: Sql): Promise<EnumSets> {
+  const raw = process.env.GNAF_VERSION?.replace(/\./g, "") ?? "202602";
+  if (!/^\d{6}$/.test(raw)) {
+    throw new Error(
+      `Invalid GNAF_VERSION: must be YYYY.MM format, got "${process.env.GNAF_VERSION}"`,
+    );
+  }
+  const schemaPrefix = `raw_gnaf_${raw}`;
+
+  async function collectColumn(query: string, col: string): Promise<Set<string>> {
+    const values = new Set<string>();
+    for await (const batch of sql.unsafe(query).cursor(500)) {
+      for (const row of batch) {
+        values.add(row[col] as string);
+      }
+    }
+    return values;
+  }
+
+  const [streetTypes, flatTypes, levelTypes, streetSuffixes, localityClasses] = await Promise.all([
+    collectColumn(`SELECT code FROM ${schemaPrefix}.street_type_aut`, "code"),
+    collectColumn(`SELECT name FROM ${schemaPrefix}.flat_type_aut`, "name"),
+    collectColumn(`SELECT name FROM ${schemaPrefix}.level_type_aut`, "name"),
+    collectColumn(`SELECT name FROM ${schemaPrefix}.street_suffix_aut`, "name"),
+    collectColumn(`SELECT name FROM ${schemaPrefix}.locality_class_aut`, "name"),
+  ]);
+
+  return {
+    streetType: streetTypes,
+    flatType: flatTypes,
+    levelType: levelTypes,
+    streetSuffix: streetSuffixes,
+    localityClass: localityClasses,
+    state: VALID_STATES,
+  };
+}
+
 export interface VerifyOptions {
   /** Path to the NDJSON output file */
   outputPath: string;
@@ -57,6 +136,8 @@ export interface VerifyOptions {
   expectedCount: number;
   /** Tolerance as a fraction (0.001 = 0.1%). Default 0.001 */
   tolerance?: number;
+  /** Valid value sets for enum-ish fields. When provided, validates each document. */
+  enumSets?: EnumSets;
 }
 
 export interface QualityIssue {
@@ -77,6 +158,8 @@ export interface VerifyResult {
   qualityWarnings: QualityIssue[];
   boundaryCoverage: BoundaryCoverage;
   duplicatePids: string[];
+  enumUnknownCounts: EnumUnknownCounts;
+  enumChecked: boolean;
 }
 
 export interface BoundaryCoverage {
@@ -114,11 +197,12 @@ export function isValidStatePostcode(state: string, postcode: string | null): bo
  * Run row count verification and data quality checks against an NDJSON file.
  */
 export async function verify(options: VerifyOptions): Promise<VerifyResult> {
-  const { outputPath, expectedCount, tolerance = 0.001 } = options;
+  const { outputPath, expectedCount, tolerance = 0.001, enumSets } = options;
 
   const pids = new Set<string>();
   const duplicatePids: string[] = [];
   const qualityIssues: QualityIssue[] = [];
+  const enumUnknownCounts: EnumUnknownCounts = {};
   let outputCount = 0;
 
   const coverage: BoundaryCoverage = {
@@ -198,6 +282,24 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
       if (boundaries.sa1) coverage.sa1++;
       if (boundaries.sa2) coverage.sa2++;
     }
+
+    // Enum-ish field validation
+    if (enumSets) {
+      for (const { field, path } of ENUM_FIELD_PATHS) {
+        const value = path(doc);
+        if (value === null || value === undefined) continue;
+        const validSet = enumSets[field];
+        if (!validSet) continue;
+        if (!validSet.has(value)) {
+          enumUnknownCounts[field] = (enumUnknownCounts[field] ?? 0) + 1;
+          qualityIssues.push({
+            pid,
+            check: "enum-value",
+            message: `${field} "${value}" not in authority table`,
+          });
+        }
+      }
+    }
   }
 
   const difference = Math.abs(outputCount - expectedCount);
@@ -210,9 +312,13 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   // Row-count check is only meaningful when expectedCount > 0
   const rowCountFailed = expectedCount > 0 && differencePercent > tolerancePercent;
 
-  // Partition quality issues: coordinate-bounds are hard errors, state-postcode are warnings
-  const qualityErrors = qualityIssues.filter((i) => i.check === "coordinate-bounds");
-  const qualityWarnings = qualityIssues.filter((i) => i.check !== "coordinate-bounds");
+  // Partition quality issues: coordinate-bounds and enum-value are hard errors, rest are warnings
+  const qualityErrors = qualityIssues.filter(
+    (i) => i.check === "coordinate-bounds" || i.check === "enum-value",
+  );
+  const qualityWarnings = qualityIssues.filter(
+    (i) => i.check !== "coordinate-bounds" && i.check !== "enum-value",
+  );
 
   const passed =
     !emptyOutput && !rowCountFailed && duplicatePids.length === 0 && qualityErrors.length === 0;
@@ -229,6 +335,8 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     qualityWarnings,
     boundaryCoverage: coverage,
     duplicatePids,
+    enumUnknownCounts,
+    enumChecked: !!enumSets,
   };
 }
 
@@ -273,6 +381,19 @@ export function formatReport(result: VerifyResult): string {
     lines.push(`  SA2:                   ${pct(cov.sa2)}%`);
   }
 
+  // Enum-ish field validation
+  if (result.enumChecked) {
+    const enumFields = Object.entries(result.enumUnknownCounts).filter(([, n]) => n > 0);
+    if (enumFields.length > 0) {
+      lines.push("Enum field check: FAIL");
+      for (const [field, count] of enumFields) {
+        lines.push(`  ${field}: ${count} unknown values`);
+      }
+    } else {
+      lines.push("Enum field check: PASS");
+    }
+  }
+
   if (result.qualityErrors.length > 0) {
     lines.push(`Quality errors: FAIL (${result.qualityErrors.length})`);
     for (const issue of result.qualityErrors.slice(0, 10)) {
@@ -304,7 +425,9 @@ export function formatReport(result: VerifyResult): string {
 async function main(): Promise<void> {
   const filePath = process.argv[2];
   if (!filePath) {
-    console.error("Usage: node verify.js <ndjson-file> [--expected-count N]");
+    console.error(
+      "Usage: node verify.js <ndjson-file> [--expected-count N] [--db-url URL] [--skip-enum-check]",
+    );
     process.exit(1);
   }
 
@@ -317,9 +440,25 @@ async function main(): Promise<void> {
     );
   }
 
+  const skipEnumCheck = process.argv.includes("--skip-enum-check");
+  const dbUrlIdx = process.argv.indexOf("--db-url");
+  const dbUrl = dbUrlIdx !== -1 ? process.argv[dbUrlIdx + 1] : undefined;
+
+  let enumSets: EnumSets | undefined;
+  if (!skipEnumCheck && dbUrl) {
+    const postgres = (await import("postgres")).default;
+    const sql = postgres(dbUrl);
+    try {
+      enumSets = await queryEnumSets(sql);
+    } finally {
+      await sql.end();
+    }
+  }
+
   const result = await verify({
     outputPath: filePath,
     expectedCount,
+    enumSets,
   });
 
   console.log(formatReport(result));

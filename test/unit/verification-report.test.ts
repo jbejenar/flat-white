@@ -30,6 +30,7 @@ function makeStateResult(overrides: Partial<StateVerification> = {}): StateVerif
     qualityErrors: 0,
     qualityWarnings: 3,
     duplicatePids: 0,
+    enumUnknownCounts: {},
     passed: true,
     ...overrides,
   };
