@@ -103,13 +103,12 @@
 - [ ] Schema bump (technically a breaking change for hardcoded "FCS" consumers)
 - Origin: PR #67 round-3 field audit — found during comprehensive v2026.04 ACT inspection
 
-### E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join (planned, p1-high)
+### E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join (DONE in PR #66, p1-high)
 
-- [ ] PR #66's spatial join fallback uses `LEFT JOIN ... ST_Intersects` four times — boundary points cartesian-multiply
-- [ ] No UNIQUE constraint on `address_principal_admin_boundaries.gnaf_pid` to catch duplicates
-- [ ] Currently latent (the fallback is a no-op in v2026.04 because boundary tables don't exist); becomes active the moment E1.14 lands
-- [ ] Fix: `ST_Within` + `DISTINCT ON (gnaf_pid)` fallback, plus a UNIQUE constraint
-- Origin: PR #67 audit — found while tracing the all-null boundary fields in v2026.04
+- [x] LEFT JOIN LATERAL (...) LIMIT 1 — guarantees one row per (address, boundary table)
+- [x] UNIQUE INDEX on `gnaf_pid` — structural guarantee against duplicates
+- [x] Verified end-to-end against empty target with stub boundary tables (451 rows in, 451 rows out, 0 duplicates)
+- Resolution: fixed in PR #66 itself before merging — chosen over LEFT JOIN+DISTINCT ON because LATERAL+LIMIT scopes the deduplication to each boundary table independently and is more readable
 
 ### E1.02 — Delta Builds (planned, p2-medium)
 

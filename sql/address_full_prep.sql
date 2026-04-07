@@ -45,9 +45,24 @@ CREATE TABLE IF NOT EXISTS gnaf_202602.address_principal_admin_boundaries (
 -- 0b. FALLBACK: spatial join for admin boundaries
 -- Runs ONLY if gnaf-loader's boundary tagging didn't populate the table
 -- (e.g. when --no-boundary-tag was used or upstream tagging crashed).
--- Uses ST_Intersects against the boundary shapefiles that gnaf-loader loaded.
+--
 -- Each boundary table is checked independently — missing tables (e.g. wards)
 -- are silently skipped, populating only what's available.
+--
+-- IMPORTANT — multi-polygon row multiplication safety (E1.15):
+-- Each boundary is matched via `LEFT JOIN LATERAL (... LIMIT 1)` rather than
+-- `LEFT JOIN ... ON ST_Intersects(...)`. ST_Intersects returns true for points
+-- on a polygon edge, so a single point on the shared boundary between two
+-- adjacent LGAs would match BOTH polygons. With four LEFT JOINs cartesian-
+-- multiplied, that produced up to 16 duplicate rows per address (one per
+-- combination of matching CE × LGA × ward × SE polygons). The LATERAL form
+-- guarantees AT MOST ONE row per (address, boundary table), and the ORDER BY
+-- pid ensures the choice is deterministic across runs (same point always picks
+-- the same polygon).
+--
+-- A UNIQUE INDEX on gnaf_pid below makes this guarantee structural — if any
+-- future code path inserts duplicates, the insert fails fast instead of
+-- silently producing duplicate addresses in the released NDJSON.
 DO $$
 DECLARE
   bdy_count bigint;
@@ -79,7 +94,10 @@ BEGIN
 
   RAISE NOTICE 'Running spatial join fallback (ce=%, lga=%, ward=%, se=%)', has_ce, has_lga, has_ward, has_se;
 
-  -- Build the insert dynamically based on which tables exist
+  -- Build the insert dynamically based on which tables exist.
+  -- Each boundary table is matched via LEFT JOIN LATERAL (...) LIMIT 1 to
+  -- prevent multi-polygon row multiplication on boundary points (see comment
+  -- block above).
   EXECUTE format($sql$
     INSERT INTO gnaf_202602.address_principal_admin_boundaries
       (gnaf_pid, locality_pid, locality_name, postcode, state,
@@ -114,20 +132,32 @@ BEGIN
     -- se_lower_pid, se_lower_name
     CASE WHEN has_se THEN 'se.se_lower_pid' ELSE 'NULL::text' END,
     CASE WHEN has_se THEN 'se.name' ELSE 'NULL::text' END,
-    -- joins
-    CASE WHEN has_ce THEN 'LEFT JOIN admin_bdys_202602.commonwealth_electorates ce ON ST_Intersects(ap.geom, ce.geom)' ELSE '' END,
-    CASE WHEN has_lga THEN 'LEFT JOIN admin_bdys_202602.local_government_areas lga ON ST_Intersects(ap.geom, lga.geom)' ELSE '' END,
-    CASE WHEN has_ward THEN 'LEFT JOIN admin_bdys_202602.local_government_wards ward ON ST_Intersects(ap.geom, ward.geom)' ELSE '' END,
-    CASE WHEN has_se THEN 'LEFT JOIN admin_bdys_202602.state_lower_house_electorates se ON ST_Intersects(ap.geom, se.geom)' ELSE '' END
+    -- joins (LATERAL + LIMIT 1 + deterministic ORDER BY)
+    CASE WHEN has_ce THEN
+      'LEFT JOIN LATERAL (SELECT ce_pid, name FROM admin_bdys_202602.commonwealth_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY ce_pid LIMIT 1) ce ON true'
+      ELSE '' END,
+    CASE WHEN has_lga THEN
+      'LEFT JOIN LATERAL (SELECT lga_pid, full_name FROM admin_bdys_202602.local_government_areas WHERE ST_Intersects(ap.geom, geom) ORDER BY lga_pid LIMIT 1) lga ON true'
+      ELSE '' END,
+    CASE WHEN has_ward THEN
+      'LEFT JOIN LATERAL (SELECT ward_pid, name FROM admin_bdys_202602.local_government_wards WHERE ST_Intersects(ap.geom, geom) ORDER BY ward_pid LIMIT 1) ward ON true'
+      ELSE '' END,
+    CASE WHEN has_se THEN
+      'LEFT JOIN LATERAL (SELECT se_lower_pid, name FROM admin_bdys_202602.state_lower_house_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY se_lower_pid LIMIT 1) se ON true'
+      ELSE '' END
   );
 
   GET DIAGNOSTICS bdy_count = ROW_COUNT;
   RAISE NOTICE 'Spatial join fallback inserted % rows into address_principal_admin_boundaries', bdy_count;
-
-  -- Index for the main flatten join
-  CREATE INDEX IF NOT EXISTS address_principal_admin_boundaries_gnaf_pid_idx
-    ON gnaf_202602.address_principal_admin_boundaries (gnaf_pid);
 END $$;
+
+-- UNIQUE index on gnaf_pid (E1.15 — structural guard against multi-polygon
+-- row multiplication and any future code path that might insert duplicates).
+-- Created OUTSIDE the DO block so it runs whether or not the fallback fired —
+-- the constraint protects gnaf-loader-populated rows too. Idempotent: re-runs
+-- against an already-indexed table are no-ops.
+CREATE UNIQUE INDEX IF NOT EXISTS address_principal_admin_boundaries_gnaf_pid_uniq
+  ON gnaf_202602.address_principal_admin_boundaries (gnaf_pid);
 
 -- 1a. Best geocode per address (using window function instead of correlated subquery)
 DROP TABLE IF EXISTS tmp_best_geocode;
