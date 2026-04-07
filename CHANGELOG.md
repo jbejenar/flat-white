@@ -17,6 +17,8 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ### Added
 
+- **E1.10 Shapefile fixtures + spatial join regression:** Fixture build now exercises the full boundary pipeline — raw admin boundary SQL seeding → prep SQL transformation (adapted from gnaf-loader) → spatial join derivation → flatten → verify. Pre-baked `address_principal_admin_boundaries` rows removed from `seed-postgres.sql`; boundaries are now derived from polygon geometries via `ST_Intersects`. Closes the CI blind spot that let v2026.04 wards crash and boundary regressions slip through.
+- **E1.10 State upper house electorate support:** Spatial join fallback in `address_full_prep.sql` now handles `state_upper_house_electorates` (previously hardcoded to NULL). VIC Legislative Council electorates are correctly assigned.
 - **E1.13 Patch release PR auto-linking:** `quarterly-build.yml` now automatically discovers merged PRs between the base version tag and HEAD for patch releases, injecting a "Fixes" section with PR titles and links into the release notes. No more manual editing after running the patch workflow.
 - **E1.13 Catalogue patch grouping:** `generate-catalogue.ts` groups patch releases (e.g. `v2026.04.1`) under their parent quarterly release (`v2026.04`) in the GitHub Pages catalogue. Patches render as indented sub-entries with accent-colored left border.
 - **E1.12 Hardened verify — production enum checks:** `docker-entrypoint.sh` now passes `--db-url` to `verify.js`, enabling authority-table enum validation in production builds (previously only ran in fixture builds).

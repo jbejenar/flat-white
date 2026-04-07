@@ -71,7 +71,12 @@ Same schema as address_principals. Contains alias addresses linked via address_a
 | secondary_pid | text | FK -> address_principals.gnaf_pid |
 | join_type     | text |                                   |
 
-### address_principal_admin_boundaries (451 rows)
+### address_principal_admin_boundaries (451 rows) — DERIVED
+
+**This table is now derived via spatial join (E1.10), not pre-seeded.**
+The spatial join fallback in `address_full_prep.sql` populates it from boundary polygons
+in `admin_bdys_202602.*`, which are themselves derived from `raw_admin_bdys_202602.aus_*`
+tables by `fixtures/prep-admin-bdys.sql`.
 
 | Column                                       | Type    | Notes                    |
 | -------------------------------------------- | ------- | ------------------------ |
@@ -257,3 +262,88 @@ shapefile fixtures.
 | mb21_code | bigint    | Mirrors `abs_2021_mb_lookup`         |
 | (others)  | (same)    | Same as `abs_2021_mb_lookup`         |
 | _geom_    | _missing_ | Production has PostGIS polygon       |
+
+---
+
+## raw_admin_bdys_202602 (raw boundary tables — E1.10)
+
+Populated by `fixtures/seed-admin-bdys.sql`. These mirror the tables that `shp2pgsql`
+normally creates from Admin Boundary shapefiles. Geometries are tiny rectangular buffers
+(ST_Expand 0.00005°) around each fixture address point, grouped by boundary assignment.
+
+The prep SQL (`fixtures/prep-admin-bdys.sql`) transforms these into `admin_bdys_202602.*`
+boundary tables, which the spatial join in `address_full_prep.sql` uses to derive
+`address_principal_admin_boundaries`.
+
+### aus_state (1 row)
+
+| Column    | Type | Notes              |
+| --------- | ---- | ------------------ |
+| state_pid | text | PK, e.g. 'STE-VIC' |
+| st_abbrev | text | e.g. 'VIC'         |
+
+### aus_comm_electoral (38 rows)
+
+| Column    | Type | Notes                    |
+| --------- | ---- | ------------------------ |
+| ce_pid    | text | PK                       |
+| name      | text | e.g. 'ASTON'             |
+| state_pid | text | FK -> aus_state          |
+| dt_gazetd | text | Gazettal date (nullable) |
+
+### aus_comm_electoral_polygon (38 rows)
+
+| Column | Type                        | Notes                    |
+| ------ | --------------------------- | ------------------------ |
+| gid    | integer                     | PK                       |
+| ce_pid | text                        | FK -> aus_comm_electoral |
+| geom   | geometry(MultiPolygon,7844) | GDA2020                  |
+
+### aus_lga (70 rows)
+
+| Column   | Type                        | Notes            |
+| -------- | --------------------------- | ---------------- |
+| gid      | integer                     | PK               |
+| lga_pid  | text                        | e.g. 'VIC209'    |
+| abb_name | text                        | Abbreviated name |
+| lga_name | text                        | Full name        |
+| state    | text                        | e.g. 'VIC'       |
+| geom     | geometry(MultiPolygon,7844) | GDA2020          |
+
+### aus_wards (244 rows)
+
+| Column    | Type                        | Notes              |
+| --------- | --------------------------- | ------------------ |
+| gid       | integer                     | PK                 |
+| ward_pid  | text                        | e.g. 'WRD-VIC-100' |
+| lga_pid   | text                        | FK -> aus_lga      |
+| ward_name | text                        |                    |
+| state     | text                        |                    |
+| geom      | geometry(MultiPolygon,7844) | GDA2020            |
+
+### aus_state_electoral_class_aut (2 rows)
+
+| Column | Type | Notes                                     |
+| ------ | ---- | ----------------------------------------- |
+| code   | text | PK: '1' = Lower House, '3' = Upper House  |
+| name   | text | e.g. 'Legislative Assembly (Lower House)' |
+
+### aus_state_electoral (94 rows — lower + upper combined)
+
+| Column    | Type      | Notes                    |
+| --------- | --------- | ------------------------ |
+| se_pid    | text      | PK                       |
+| name      | text      | Electorate name          |
+| dt_gazetd | text      | Nullable                 |
+| eff_start | timestamp | Default now()            |
+| eff_end   | timestamp | NULL = current           |
+| secl_code | text      | '1' = lower, '3' = upper |
+| state_pid | text      | FK -> aus_state          |
+
+### aus_state_electoral_polygon (94 rows)
+
+| Column | Type                        | Notes                     |
+| ------ | --------------------------- | ------------------------- |
+| gid    | integer                     | PK                        |
+| se_pid | text                        | FK -> aus_state_electoral |
+| geom   | geometry(MultiPolygon,7844) | GDA2020                   |
