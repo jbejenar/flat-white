@@ -15,6 +15,10 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **E1.14 Root-cause identified:** gnaf-loader's `geoscape.py:import_shapefile_to_postgres()` never checks `process.returncode` after running `shp2pgsql` via `subprocess.Popen()`. When `shp2pgsql` fails, empty stdout is decoded to an empty SQL string, executed as a no-op, and the function returns "SUCCESS" — silently failing to create boundary tables. This is the root cause of all four boundary fields being null in v2026.04. Fix requires upstream PR to `minus34/gnaf-loader`.
+
 ### Added
 
 - **E1.10 Shapefile fixtures + spatial join regression:** Fixture build now exercises the full boundary pipeline — raw admin boundary SQL seeding → prep SQL transformation (adapted from gnaf-loader) → spatial join derivation → flatten → verify. Pre-baked `address_principal_admin_boundaries` rows removed from `seed-postgres.sql`; boundaries are now derived from polygon geometries via `ST_Intersects`. Closes the CI blind spot that let v2026.04 wards crash and boundary regressions slip through.

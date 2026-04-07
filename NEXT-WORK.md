@@ -72,7 +72,7 @@
 
 ### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (in-progress, **p0-critical**)
 
-- [ ] Root-cause the gnaf-loader shapefile loading failure (suspected: worker-pool issue in `multiprocess_shapefile_load`, unconfirmed)
+- [x] Root-cause the gnaf-loader shapefile loading failure — **FOUND:** `geoscape.py:import_shapefile_to_postgres()` never checks `process.returncode` after `shp2pgsql`. Empty stdout → empty SQL → no-op → returns "SUCCESS". See `.claude-loop/build-notes.md`
 - [ ] Upstream fix PR to minus34/gnaf-loader OR local submodule patch with upstream PR open
 - [ ] Remove `--no-boundary-tag` from `docker-entrypoint.sh`
 - [x] Hardened verify check that fails the build if any of the four boundary coverage rates drops below threshold
