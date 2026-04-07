@@ -253,6 +253,35 @@ zcat "$FILE" | shuf -n 3 | jq . > /dev/null && echo "schema OK"
 
 ---
 
+## Standing on Shoulders
+
+flat-white wouldn't exist without [Hugh Saalmans](https://github.com/minus34) and his [gnaf-loader](https://github.com/minus34/gnaf-loader) project. Hugh has spent **a decade** maintaining the Python pipeline that turns raw G-NAF PSV files into a queryable PostGIS database with spatial boundary joins. flat-white literally vendors gnaf-loader as a git submodule and runs it as the first step of every build. **Thank you, Hugh.** 🙏
+
+### Already published as parquet — by Hugh
+
+Hugh also publishes the same data as **GeoParquet files on S3** (anonymous read, free):
+
+```bash
+# 37 separate parquet tables (raw relational structure)
+aws s3 ls s3://minus34.com/opendata/geoscape-202602/geoparquet/ --no-sign-request
+```
+
+### When to use which
+
+| Need                                                                | Use                             |
+| ------------------------------------------------------------------- | ------------------------------- |
+| Run analytical SQL with DuckDB or Spark/Sedona                      | **minus34/gnaf-loader parquet** |
+| Spatial joins with proper geometry (WKB)                            | **minus34/gnaf-loader parquet** |
+| Smallest possible download (columnar Snappy)                        | **minus34/gnaf-loader parquet** |
+| Index addresses into Elasticsearch / OpenSearch / Algolia / MongoDB | **flat-white NDJSON**           |
+| `grep` / `jq` / `awk` an address by PID or postcode                 | **flat-white NDJSON**           |
+| Avoid writing 9-table JOINs                                         | **flat-white NDJSON**           |
+| Pre-validated documents with a guaranteed schema                    | **flat-white NDJSON**           |
+
+flat-white and gnaf-loader's parquet are **the same data, different formats** — pick the one that fits your tools. If you're doing analytics, go straight to S3. If you're building search or doc-oriented apps, NDJSON is easier.
+
+---
+
 ## Tech Stack
 
 | Layer        | Technology                                                             |
