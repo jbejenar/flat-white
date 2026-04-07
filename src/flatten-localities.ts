@@ -17,6 +17,7 @@ import { Readable, Transform } from "node:stream";
 import postgres from "postgres";
 import { LocalityDocumentSchema } from "./schema.js";
 import type { LocalityDocument } from "./schema.js";
+import { deriveSchemaVersion } from "./flatten.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SQL_PATH = resolve(__dirname, "..", "sql", "locality_full.sql");
@@ -66,7 +67,11 @@ export async function flattenLocalities(
     },
   });
 
-  const flattenSql = readFileSync(SQL_PATH, "utf-8");
+  const schemaVersion = deriveSchemaVersion(version);
+  const flattenSql = readFileSync(SQL_PATH, "utf-8").replaceAll(
+    "__SCHEMA_VERSION__",
+    schemaVersion,
+  );
   let count = 0;
   let errors = 0;
 

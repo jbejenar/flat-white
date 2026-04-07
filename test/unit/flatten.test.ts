@@ -7,7 +7,12 @@
 
 import { describe, it, expect } from "vitest";
 import { AddressDocumentSchema } from "../../src/schema.js";
-import { composeDocument, composeSearchLabel, composeBoundaries } from "../../src/flatten.js";
+import {
+  composeDocument,
+  composeSearchLabel,
+  composeBoundaries,
+  deriveSchemaVersion,
+} from "../../src/flatten.js";
 
 // --- Mock data ---
 
@@ -71,6 +76,20 @@ const baseRow: Record<string, unknown> = {
 };
 
 // --- Tests ---
+
+describe("deriveSchemaVersion", () => {
+  it("converts YYYY.MM to YYYYMM", () => {
+    expect(deriveSchemaVersion("2026.02")).toBe("202602");
+    expect(deriveSchemaVersion("2026.05")).toBe("202605");
+    expect(deriveSchemaVersion("2027.11")).toBe("202711");
+  });
+
+  it("throws for invalid version format", () => {
+    expect(() => deriveSchemaVersion("2026")).toThrow("Invalid G-NAF version");
+    expect(() => deriveSchemaVersion("abc.de")).toThrow("Invalid G-NAF version");
+    expect(() => deriveSchemaVersion("")).toThrow("Invalid G-NAF version");
+  });
+});
 
 describe("composeSearchLabel", () => {
   it("composes a simple address label with expanded street type", () => {

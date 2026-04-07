@@ -3,7 +3,7 @@
 -- This query is a simple multi-join — efficient for cursor-based streaming at scale.
 --
 -- Usage: Called from src/flatten.ts via cursor-based streaming.
--- Schema: gnaf_202602, raw_gnaf_202602, admin_bdys_202602
+-- Schema: gnaf___SCHEMA_VERSION__, raw_gnaf___SCHEMA_VERSION__, admin_bdys___SCHEMA_VERSION__
 
 SELECT
   -- Core identity
@@ -78,27 +78,27 @@ SELECT
   COALESCE(aaa.aliases, '[]'::json)                     AS address_aliases,
   COALESCE(asa.secondaries, '[]'::json)                 AS address_secondaries
 
-FROM gnaf_202602.address_principals ap
+FROM gnaf___SCHEMA_VERSION__.address_principals ap
 
 -- Raw address_detail for flat_type_code, level_type_code, address_site_pid
-JOIN raw_gnaf_202602.address_detail ad
+JOIN raw_gnaf___SCHEMA_VERSION__.address_detail ad
   ON ad.address_detail_pid = ap.gnaf_pid
 
 -- Address site for site name
-LEFT JOIN raw_gnaf_202602.address_site site
+LEFT JOIN raw_gnaf___SCHEMA_VERSION__.address_site site
   ON site.address_site_pid = ad.address_site_pid
 
 -- Authority code expansions
-LEFT JOIN raw_gnaf_202602.flat_type_aut ft
+LEFT JOIN raw_gnaf___SCHEMA_VERSION__.flat_type_aut ft
   ON ft.code = ad.flat_type_code
-LEFT JOIN raw_gnaf_202602.level_type_aut lt
+LEFT JOIN raw_gnaf___SCHEMA_VERSION__.level_type_aut lt
   ON lt.code = ad.level_type_code
 -- NOTE: street_type_aut is NOT joined here. Its `code` column holds the long form
 -- (e.g. "STREET") and `name` holds the abbreviation (e.g. "ST") — the reverse of every
 -- other authority table. ap.street_type already contains the resolved long form, so we
 -- alias it directly above. Joining street_type_aut would yield the abbreviation and was
 -- the cause of the v2026.04 streetType regression (PR #29 → fixed in this PR).
-LEFT JOIN raw_gnaf_202602.street_suffix_aut ss_aut
+LEFT JOIN raw_gnaf___SCHEMA_VERSION__.street_suffix_aut ss_aut
   ON ss_aut.code = ap.street_suffix
 
 -- Pre-materialized geocodes
@@ -106,9 +106,9 @@ LEFT JOIN tmp_address_geocodes ag
   ON ag.address_detail_pid = ap.gnaf_pid
 
 -- Locality
-JOIN gnaf_202602.localities loc
+JOIN gnaf___SCHEMA_VERSION__.localities loc
   ON loc.locality_pid = ap.locality_pid
-LEFT JOIN raw_gnaf_202602.locality_class_aut lc_aut
+LEFT JOIN raw_gnaf___SCHEMA_VERSION__.locality_class_aut lc_aut
   ON lc_aut.name = loc.locality_class
 LEFT JOIN tmp_locality_neighbours ln
   ON ln.locality_pid = ap.locality_pid
@@ -116,19 +116,19 @@ LEFT JOIN tmp_locality_alias_agg laa
   ON laa.locality_pid = ap.locality_pid
 
 -- Street
-JOIN gnaf_202602.streets st
+JOIN gnaf___SCHEMA_VERSION__.streets st
   ON st.street_locality_pid = ap.street_locality_pid
-LEFT JOIN raw_gnaf_202602.street_class_aut sc_aut
+LEFT JOIN raw_gnaf___SCHEMA_VERSION__.street_class_aut sc_aut
   ON sc_aut.name = st.street_class
 LEFT JOIN tmp_street_alias_agg saa
   ON saa.street_locality_pid = ap.street_locality_pid
 
 -- Admin boundaries
-LEFT JOIN gnaf_202602.address_principal_admin_boundaries ab
+LEFT JOIN gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries ab
   ON ab.gnaf_pid = ap.gnaf_pid
 
 -- ABS mesh block (use abs_2021_mb from gnaf-loader; abs_2021_mb_lookup is fixture-only)
-LEFT JOIN admin_bdys_202602.abs_2021_mb mb
+LEFT JOIN admin_bdys___SCHEMA_VERSION__.abs_2021_mb mb
   ON mb.mb21_code = ap.mb_2021_code
 
 -- Pre-materialized aliases and secondaries
