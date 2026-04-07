@@ -4679,6 +4679,66 @@ Origin: PR #67 round-5 audit. Pre-existing bug, low severity, but a real cleanli
 
 ---
 
+### Ticket E1.19 — Stale `2026.02` references in user-facing docs
+
+```yaml
+id: E1.19
+title: Audit and update stale 2026.02 / v2026.02 references in user-facing docs
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a downstream consumer reading flat-white's documentation, I need example commands and field values to reflect the actually-released version (`v2026.04`), so that copy-pasting examples doesn't fail with "no such asset" errors.
+
+## Problem Statement
+
+The user-facing documentation contains multiple `2026.02` / `v2026.02` references that pre-date the v2026.04 release. The most user-impactful one (`README.md`'s download verification example using `VERSION="2026.02"`) was fixed in PR #77 because it would silently fail for any user copy-pasting it. The remaining references are in lower-traffic surfaces but still misleading:
+
+- **`docs/DOCUMENT-SCHEMA.md`** (lines 16, 190): `_version` field example shows `"2026.02"`. Released v2026.04 documents have `_version: "2026.04"`. The example is technically valid for fixture builds but misleading for production.
+- **`docs/DOCUMENT-SCHEMA.md`** (lines 224, 235, 254, 265): Python/SQL code examples reference `flat-white-2026.02.parquet` and `flat-white-2026.02.geoparquet` filenames. No such files exist in any release. Should reference `flat-white-2026.04.parquet` etc.
+- **`docs/RUNBOOK.md`** (lines 212, 224, 245, 254, 263, 266): Failure-recovery example commands use `v2026.02`, `gnaf_version=2026.02`, `flat-white-2026.02-vic.ndjson.gz`. Ops users would need to substitute the current version manually.
+- **`docs/COMMUNITY-ANNOUNCEMENT.md`** (line 3): "Target: first quarterly release (`v2026.02` or later)". Pre-launch marketing copy that's now historical.
+
+The following references are NOT stale and should NOT be touched:
+
+- `gnaf_202602` / `raw_gnaf_202602` / `admin_bdys_202602` schema names in `FIELD-PROVENANCE.md` and elsewhere — these are accurate today (E1.17 deployed the env-driven version selection but production still uses the hardcoded `202602` schema names because gnaf-loader hasn't been updated). They'll need updating once gnaf-loader adopts version-suffixed schema names.
+- `s3://minus34.com/opendata/geoscape-202602/` URL — external mirror operated by Hugh Saalmans (gnaf-loader maintainer), not flat-white's. Don't touch.
+- `docs/decisions/DEC-007-github-releases-distribution.md` example using `v2026.02` — historical decision record, immutable.
+- Anything in `fixtures/` referring to `202602` — fixture is intentionally frozen at Feb 2026 schema names.
+
+## Definition of Done
+
+- [ ] DOCUMENT-SCHEMA.md `_version` field example updated to `"2026.04"` (or kept as illustrative placeholder if generic preferred)
+- [ ] DOCUMENT-SCHEMA.md parquet/geoparquet code examples (4 instances) updated to use `flat-white-2026.04.*`
+- [ ] RUNBOOK.md command examples (6 instances) updated to use the latest released version, OR converted to use a `${VERSION}` shell variable that the user is told to set
+- [ ] COMMUNITY-ANNOUNCEMENT.md target version reference updated (or removed if pre-launch context is no longer relevant)
+- [ ] Establish a convention: should examples track the latest release, or use a generic placeholder? Document the decision in `docs/RELEASING.md` so future releases know whether to bump the doc examples too
+
+## Scope
+
+### In
+
+- `docs/DOCUMENT-SCHEMA.md`, `docs/RUNBOOK.md`, `docs/COMMUNITY-ANNOUNCEMENT.md`
+- Any future `2026.02` references that crop up
+
+### Out
+
+- `fixtures/SCHEMA-REFERENCE.md` and `docs/FIELD-PROVENANCE.md` schema name references — accurate, see Problem Statement
+- ADRs in `docs/decisions/` — historical
+- Code defaults — those are governed by E1.17
+
+## Notes
+
+Origin: PR #77 audit. Found while doing a "double-check all work, ensure all documentation is up to date" sweep after the parallel session's work landed. The README example fix was the most user-impactful and was rolled into PR #77 directly; this ticket captures the remaining lower-impact stale references for a follow-up cleanup PR.
+
+---
+
 ### Ticket E1.16 — Geocode type field consistency
 
 ```yaml

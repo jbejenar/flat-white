@@ -235,7 +235,7 @@ After downloading, verify integrity and validate against the schema:
 
 ```bash
 # Decompress, check line count against metadata, validate 3 random documents
-STATE="vic"; VERSION="2026.02"
+STATE="vic"; VERSION="2026.04"
 FILE="flat-white-${VERSION}-${STATE}.ndjson.gz"
 gzip -t "$FILE" && echo "gzip OK"
 LINES=$(zcat "$FILE" | wc -l | tr -d ' ') && echo "$LINES documents"

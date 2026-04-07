@@ -1,6 +1,6 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-07. Active phase: E1 (Ongoing) — P4 blocked.
+> Updated: 2026-04-08. Active phase: E1 (Ongoing) — P4 blocked. Per-session log lives in `NEXT-SESSION.md`.
 
 ## Completed This Session (2026-04-07, session 5)
 
@@ -42,11 +42,11 @@
 
 ## Next E1 Work
 
-### E1.10 — Shapefile Fixtures + Spatial Join Regression Test (planned, p1-high)
+### E1.10 — Shapefile Fixtures + Spatial Join Regression Test (done, PR #74)
 
-- [ ] Commit clipped shapefile fixtures + wire shp2pgsql into fixture build
-- [ ] Run gnaf-loader prep SQL against seeded raw tables; derive `admin_bdys_202602.*`
-- [ ] Remove pre-baked `address_principal_admin_boundaries` rows from `seed-postgres.sql`
+- [x] Shapefile fixtures committed under `fixtures/admin-bdys/` + SQL seed at `fixtures/seed-admin-bdys.sql`
+- [x] gnaf-loader prep SQL adapted to `fixtures/prep-admin-bdys.sql`; runs against seeded raw tables
+- [x] Pre-baked `address_principal_admin_boundaries` block removed from `seed-postgres.sql`; boundaries derived via spatial join in fixture build
 - Origin: PR #67 retrospective — fixture has no visibility into shapefile loading or spatial join, which is how both the v2026.04 wards crash and streetType regression slipped past CI
 
 ### E1.11 — Consolidate flatten SQL (done)
@@ -72,34 +72,36 @@
 
 ### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (in-progress, **p0-critical**)
 
-- [x] Root-cause the gnaf-loader shapefile loading failure — **FOUND:** `geoscape.py:import_shapefile_to_postgres()` never checks `process.returncode` after `shp2pgsql`. Empty stdout → empty SQL → no-op → returns "SUCCESS". See `.claude-loop/build-notes.md`
+- [x] Root-cause the gnaf-loader shapefile loading failure — **FOUND:** `geoscape.py:import_shapefile_to_postgres()` never checks `process.returncode` after `shp2pgsql`. Empty stdout → empty SQL → no-op → returns "SUCCESS". Secondary: module-level DB connection in `settings.py` is not fork-safe with psycopg3.
 - [ ] Upstream fix PR to minus34/gnaf-loader OR local submodule patch with upstream PR open
 - [ ] Remove `--no-boundary-tag` from `docker-entrypoint.sh`
 - [x] Hardened verify check that fails the build if any of the four boundary coverage rates drops below threshold
 - [ ] Restore lga / ward / stateElectorate / commonwealthElectorate population in next release
 - Origin: PR #67 audit — **all four** boundary fields are null in v2026.04 (verified in released ACT file). Bigger quality regression than the streetType bug.
 
-### E1.17 — De-hardcode G-NAF Feb 2026 (planned, **p0-critical**, blocks v2026.05)
+### E1.17 — De-hardcode G-NAF Feb 2026 (in-progress, **p0-critical**, blocks v2026.05) — code shipped, awaiting production validation
 
-- [ ] **`src/download.ts`** download URLs are HARDCODED to Feb 2026 — version param is "informational only" — v2026.05 would silently download Feb 2026 data
-- [ ] `src/load.ts` accept `--geoscape-version` CLI arg (currently hardcoded to `202602`)
-- [ ] `docker-entrypoint.sh` derive schema version from `GNAF_VERSION` and pass to load.ts
-- [ ] Replace hardcoded `gnaf_202602` / `raw_gnaf_202602` / `admin_bdys_202602` in 3 SQL files with template substitution or `search_path`
-- [ ] Add regression test against a non-Feb-2026 schema name
+- [x] `src/download.ts` `resolveDataSources()` reads `DOWNLOAD_URL_GNAF` / `DOWNLOAD_URL_ADMIN_BDYS` env overrides (PRs #68/#69)
+- [x] `src/load.ts` accepts `--geoscape-version` CLI arg, falls back to `GNAF_VERSION` env (PR #68)
+- [x] `docker-entrypoint.sh` requires `GNAF_VERSION` for production builds (PR #69)
+- [x] All 3 SQL files use `__SCHEMA_VERSION__` placeholder; `flatten.ts` substitutes at load time (PR #68)
+- [x] Format validation added (`^[0-9]{6}$`) (PR #68)
+- [ ] **Awaiting v2026.05 production validation** — the cron will fire on 2026-05-15 and prove the change works against new G-NAF data
 - Origin: PR #67 rounds 5 + 6 — found by tracing `GNAF_VERSION` propagation. **Should land before v2026.05 quarterly cron (2026-05-15)** or every release after Feb 2026 will silently ship stale data labeled as new. **Download URL hardcoding is the worst — strictly worse than mislabeling, because it ships wrong data.**
 
-### E1.18 — CHANGELOG `[Unreleased]` not cleared on release (planned, p3-low)
+### E1.18 — CHANGELOG `[Unreleased]` not cleared on release (done, PR #69 — verified by simulation)
 
-- [ ] Workflow CHANGELOG step should MOVE Unreleased content into the new versioned section, not just insert above it
-- [ ] Idempotency: re-running shouldn't duplicate entries
+- [x] Workflow Python script in `quarterly-build.yml` "Update CHANGELOG.md" step now extracts `[Unreleased]` body via regex, removes it from original position, re-inserts under the new versioned entry, leaves `[Unreleased]` empty
+- [x] Idempotent on re-run (script removes any existing entry for the target version before inserting)
+- Verified by simulating the script against current CHANGELOG with `release_version=2026.04.1` — output is correctly structured
 - Origin: PR #67 round-5 audit — pre-existing workflow bug, makes CHANGELOG accumulate stale entries
 
-### E1.16 — Geocode type field consistency (planned, p3-low)
+### E1.16 — Geocode type field consistency (done, PR #70 — BREAKING)
 
-- [ ] `geocode.type` is long form (`"FRONTAGE CENTRE SETBACK"`) but `allGeocodes[].type` is short form (`"FCS"`)
-- [ ] Pre-existing inconsistency in BOTH legacy and materialize SQL — cross-path test passes because both are wrong identically
-- [ ] Standardize on long form (matches streetType, flatType, levelType convention)
-- [ ] Schema bump (technically a breaking change for hardcoded "FCS" consumers)
+- [x] Both `geocode.type` and `allGeocodes[].type` now use long-form names (e.g. `"FRONTAGE CENTRE SETBACK"` instead of `"FCS"`)
+- [x] `address_full.sql` joins `geocode_type_aut gt_all` for the `all_geocodes` aggregation
+- [x] BREAKING — `package.json` bumped to `0.2.0`. Consumers hardcoding `"FCS"`/`"PC"`/etc. must update.
+- [x] `docs/DOCUMENT-SCHEMA.md` updated
 - Origin: PR #67 round-3 field audit — found during comprehensive v2026.04 ACT inspection
 
 ### E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join (DONE in PR #66, p1-high)
@@ -108,6 +110,14 @@
 - [x] UNIQUE INDEX on `gnaf_pid` — structural guarantee against duplicates
 - [x] Verified end-to-end against empty target with stub boundary tables (451 rows in, 451 rows out, 0 duplicates)
 - Resolution: fixed in PR #66 itself before merging — chosen over LEFT JOIN+DISTINCT ON because LATERAL+LIMIT scopes the deduplication to each boundary table independently and is more readable
+
+### E1.19 — Stale `2026.02` references in user-facing docs (planned, p3-low)
+
+- [ ] DOCUMENT-SCHEMA.md `_version` examples + parquet/geoparquet code examples (~6 instances)
+- [ ] RUNBOOK.md failure-recovery command examples (~6 instances)
+- [ ] COMMUNITY-ANNOUNCEMENT.md target version reference
+- [ ] Establish convention in `docs/RELEASING.md` for whether examples track latest release or use placeholders
+- Origin: PR #77 audit — README VERSION example was the highest-impact and got fixed in #77; rest filed for follow-up
 
 ### E1.02 — Delta Builds (planned, p2-medium)
 
