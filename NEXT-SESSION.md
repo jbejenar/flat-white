@@ -1,5 +1,61 @@
 # Next Session — flat-white
 
+## Session: 2026-04-08 (session 13)
+
+Phase: E1 — ongoing enhancements
+Checkboxes checked this session: 4 (E1.14: fix landed, --no-boundary-tag removed, CHANGELOG, RUNBOOK)
+
+### Completed
+
+- **E1.14** — gnaf-loader shp2pgsql fix landed + --no-boundary-tag removed:
+  - Upstream PR [minus34/gnaf-loader#100](https://github.com/minus34/gnaf-loader/pull/100): checks `process.returncode` after shp2pgsql, guards against empty SQL output
+  - Submodule pinned to fork commit 45bd25f (jbejenar/gnaf-loader)
+  - `.gitmodules` updated to point to fork (temporary until upstream merges)
+  - `--no-boundary-tag` removed from `docker-entrypoint.sh`
+  - `--check-boundary-coverage` enabled in production verify
+  - `noBoundaryTag` option removed from `src/load.ts` + test updated
+  - CHANGELOG entry added under `[Unreleased] > Fixed`
+  - Pre-commit hook fixed to skip submodule entries (mode 160000)
+
+### Ticket Status Changes
+
+- E1.14: in-progress (4/7 functional DoD + 2/3 docs DoD checked; 2 remaining BLOCKED)
+
+### In Progress
+
+- E1.14 — 2 items BLOCKED: boundary field population (needs v2026.05), release notes update (needs v2026.04.1)
+- E1.17 — 1 item BLOCKED: needs May 2026 G-NAF data
+- E1.13 — 1 item BLOCKED: v2026.04.1 not published
+- P4.07 — NSW memory: needs 4 more consecutive runs
+- P4.03 — Build comparison: needs second release
+- P4.06 — Runbook: needs human tester
+- E1.06 — Build cache: needs production build
+
+### Key Decisions
+
+- Submodule temporarily points to jbejenar/gnaf-loader fork. **Must revert to minus34/gnaf-loader once upstream PR #100 is merged.**
+- `.gitmodules` URL change is the only temporary artifact; all other changes are permanent.
+
+### Blockers
+
+- E1.14 boundary population: needs v2026.05 build (May 2026)
+- E1.14 release notes: needs v2026.04.1 publication
+- minus34/gnaf-loader#100: awaiting upstream review/merge
+- All other blockers unchanged from session 12
+
+### Next Session Should Start With
+
+- **Check upstream PR status:** If minus34/gnaf-loader#100 is merged, update .gitmodules back to minus34 and update submodule pin
+- **v2026.05 prep:** E1.14 + E1.17 are the two remaining blockers before v2026.05 can ship correctly
+- **E1.13:** Update v2026.04 release notes when v2026.04.1 publishes
+
+### Roadmap Progress
+
+- E1: 11/18 tickets done, 4 in-progress (E1.06, E1.13, E1.14, E1.17)
+  - E1.14: 6/7 functional + 2/3 docs DoD items checked (2 BLOCKED)
+
+---
+
 ## Session: 2026-04-08 (session 12)
 
 Phase: E1 — ongoing enhancements

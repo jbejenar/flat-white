@@ -4852,13 +4852,13 @@ The shp2pgsql failure mode (observed in local Mac replication, **not yet root-ca
 - [x] Root cause identified and documented (specific failing code path in gnaf-loader's `geoscape.multiprocess_shapefile_load()` or `import_shapefile_to_postgres()`)
   - `Verify:` Reproducible test case in a clean environment
   - `Evidence:` **Root cause: `geoscape.py:import_shapefile_to_postgres()` (line 217-218) never checks `process.returncode` after running `shp2pgsql` via `subprocess.Popen()`.** When `shp2pgsql` fails (non-zero exit, empty stdout), the function proceeds to execute an empty SQL string (`pg_cur.execute("")`) which is a no-op, then returns `"SUCCESS"`. No table is created, no error is raised. The `multiprocess_shapefile_load()` caller (line 178) only checks `result != "SUCCESS"`, so the failure is invisible. **Contributing factor:** On macOS (Python 3.8+), `multiprocessing.Pool` defaults to "spawn" start method, causing each worker to re-import `settings.py` which calls `argparse.parse_args()` and opens a DB connection at module level (line 218). This can cause hangs or unexpected behavior in worker processes. On Linux/Docker, "fork" is used, but the inherited module-level DB connection (`settings.py:218 temp_pg_conn`) is not fork-safe with psycopg3. **Fix required:** (1) Check `process.returncode != 0` after `communicate()` and return an error string. (2) Check `len(sql.strip()) == 0` as a secondary guard. (3) Optionally: set `multiprocessing.set_start_method("fork")` explicitly or defer the module-level DB connection in `settings.py`. See `.claude-loop/build-notes.md` for full analysis.
-- [ ] Fix landed: either upstream PR to `minus34/gnaf-loader` accepted, or local patch applied to the vendored submodule with upstream PR open
+- [x] Fix landed: either upstream PR to `minus34/gnaf-loader` accepted, or local patch applied to the vendored submodule with upstream PR open
   - `Verify:` Running gnaf-loader without `--no-boundary-tag` succeeds for VIC + NSW + QLD + ACT
-  - `Evidence:`
-- [ ] `--no-boundary-tag` removed from `docker-entrypoint.sh`
+  - `Evidence:` Upstream PR minus34/gnaf-loader#100 opened. Submodule pinned to fork commit 45bd25f with fix (checks `process.returncode` + guards against empty SQL). Fixture build passes with boundary coverage 100/99.6/100/100%.
+- [x] `--no-boundary-tag` removed from `docker-entrypoint.sh`
   - `Verify:` `grep no-boundary-tag docker-entrypoint.sh` returns nothing
-  - `Evidence:`
-- [ ] All four boundary fields populated in next release for at least 95% of addresses (some addresses legitimately fall outside any ward boundary)
+  - `Evidence:` Removed in commit b9c07e8. `grep no-boundary-tag docker-entrypoint.sh` returns exit 1 (no matches). Production verify now includes `--check-boundary-coverage`.
+- [ ] All four boundary fields populated in next release for at least 95% of addresses (some addresses legitimately fall outside any ward boundary) [BLOCKED: needs v2026.05 production build]
   - `Verify:` `verification.json` shows `boundaryCoverage.lga / total > 0.99`, `ward / total > 0.95`, `stateElectorate / total > 0.99`, `commonwealthElectorate / total > 0.99`
   - `Evidence:`
 - [x] Verification report (P4.02) hard-fails if any of the four boundary coverage rates drops below threshold — this regression should not silently ship again
@@ -4867,9 +4867,11 @@ The shp2pgsql failure mode (observed in local Mac replication, **not yet root-ca
 
 ### Documentation
 
-- [ ] CHANGELOG entry under `Fixed` describing the resolution
-- [ ] `docs/RUNBOOK.md` updated to remove the workaround section
-- [ ] v2026.04 release notes updated (or patch release published per E1.13) to call out the missing boundary data
+- [x] CHANGELOG entry under `Fixed` describing the resolution
+  - `Evidence:` CHANGELOG.md updated with E1.14 fix details under `[Unreleased] > Fixed`. Commit b9c07e8.
+- [x] `docs/RUNBOOK.md` updated to remove the workaround section
+  - `Evidence:` No `--no-boundary-tag` workaround section exists in RUNBOOK.md — the only "workaround" mention is OOM-related PostgreSQL memory tuning. No changes needed.
+- [ ] v2026.04 release notes updated (or patch release published per E1.13) to call out the missing boundary data [BLOCKED: v2026.04.1 patch release not yet published — requires running quarterly-build.yml with patch_version=1]
 
 ## Scope
 
