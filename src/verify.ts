@@ -138,6 +138,8 @@ export interface VerifyOptions {
   tolerance?: number;
   /** Valid value sets for enum-ish fields. When provided, validates each document. */
   enumSets?: EnumSets;
+  /** Boundary coverage thresholds. When provided, verify fails if any field drops below its threshold. */
+  boundaryCoverageThresholds?: BoundaryCoverageThresholds;
 }
 
 export interface QualityIssue {
@@ -157,6 +159,8 @@ export interface VerifyResult {
   qualityErrors: QualityIssue[];
   qualityWarnings: QualityIssue[];
   boundaryCoverage: BoundaryCoverage;
+  boundaryCoverageErrors: BoundaryCoverageError[];
+  boundaryCoverageChecked: boolean;
   duplicatePids: string[];
   enumUnknownCounts: EnumUnknownCounts;
   enumChecked: boolean;
@@ -171,6 +175,32 @@ export interface BoundaryCoverage {
   meshBlock: number;
   sa1: number;
   sa2: number;
+}
+
+/**
+ * Per-field minimum boundary coverage thresholds (0–1 fraction).
+ * When provided to verify(), any field dropping below its threshold causes failure.
+ */
+export interface BoundaryCoverageThresholds {
+  lga?: number;
+  ward?: number;
+  stateElectorate?: number;
+  commonwealthElectorate?: number;
+}
+
+/** Default thresholds: most boundaries should cover >99% of addresses.
+ *  Wards are lower (95%) because some addresses legitimately fall outside ward boundaries. */
+export const DEFAULT_BOUNDARY_THRESHOLDS: Required<BoundaryCoverageThresholds> = {
+  lga: 0.99,
+  ward: 0.95,
+  stateElectorate: 0.99,
+  commonwealthElectorate: 0.99,
+};
+
+export interface BoundaryCoverageError {
+  field: string;
+  actual: number;
+  threshold: number;
 }
 
 /**
@@ -197,7 +227,13 @@ export function isValidStatePostcode(state: string, postcode: string | null): bo
  * Run row count verification and data quality checks against an NDJSON file.
  */
 export async function verify(options: VerifyOptions): Promise<VerifyResult> {
-  const { outputPath, expectedCount, tolerance = 0.001, enumSets } = options;
+  const {
+    outputPath,
+    expectedCount,
+    tolerance = 0.001,
+    enumSets,
+    boundaryCoverageThresholds,
+  } = options;
 
   const pids = new Set<string>();
   const duplicatePids: string[] = [];
@@ -312,6 +348,26 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   // Row-count check is only meaningful when expectedCount > 0
   const rowCountFailed = expectedCount > 0 && differencePercent > tolerancePercent;
 
+  // Boundary coverage threshold check
+  const boundaryCoverageErrors: BoundaryCoverageError[] = [];
+  if (boundaryCoverageThresholds && coverage.total > 0) {
+    const checks: { field: keyof BoundaryCoverageThresholds; count: number }[] = [
+      { field: "lga", count: coverage.lga },
+      { field: "ward", count: coverage.ward },
+      { field: "stateElectorate", count: coverage.stateElectorate },
+      { field: "commonwealthElectorate", count: coverage.commonwealthElectorate },
+    ];
+    for (const { field, count } of checks) {
+      const threshold = boundaryCoverageThresholds[field];
+      if (threshold !== undefined) {
+        const actual = count / coverage.total;
+        if (actual < threshold) {
+          boundaryCoverageErrors.push({ field, actual, threshold });
+        }
+      }
+    }
+  }
+
   // Partition quality issues: coordinate-bounds and enum-value are hard errors, rest are warnings
   const qualityErrors = qualityIssues.filter(
     (i) => i.check === "coordinate-bounds" || i.check === "enum-value",
@@ -321,7 +377,11 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   );
 
   const passed =
-    !emptyOutput && !rowCountFailed && duplicatePids.length === 0 && qualityErrors.length === 0;
+    !emptyOutput &&
+    !rowCountFailed &&
+    duplicatePids.length === 0 &&
+    qualityErrors.length === 0 &&
+    boundaryCoverageErrors.length === 0;
 
   return {
     outputCount,
@@ -334,6 +394,8 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     qualityErrors,
     qualityWarnings,
     boundaryCoverage: coverage,
+    boundaryCoverageErrors,
+    boundaryCoverageChecked: !!boundaryCoverageThresholds,
     duplicatePids,
     enumUnknownCounts,
     enumChecked: !!enumSets,
@@ -381,6 +443,20 @@ export function formatReport(result: VerifyResult): string {
     lines.push(`  SA2:                   ${pct(cov.sa2)}%`);
   }
 
+  // Boundary coverage threshold check
+  if (result.boundaryCoverageChecked) {
+    if (result.boundaryCoverageErrors.length > 0) {
+      lines.push("Boundary coverage: FAIL");
+      for (const err of result.boundaryCoverageErrors) {
+        lines.push(
+          `  ${err.field}: ${(err.actual * 100).toFixed(1)}% (threshold: ${(err.threshold * 100).toFixed(1)}%)`,
+        );
+      }
+    } else {
+      lines.push("Boundary coverage: PASS");
+    }
+  }
+
   // Enum-ish field validation
   if (result.enumChecked) {
     const enumFields = Object.entries(result.enumUnknownCounts).filter(([, n]) => n > 0);
@@ -426,7 +502,7 @@ async function main(): Promise<void> {
   const filePath = process.argv[2];
   if (!filePath) {
     console.error(
-      "Usage: node verify.js <ndjson-file> [--expected-count N] [--db-url URL] [--skip-enum-check]",
+      "Usage: node verify.js <ndjson-file> [--expected-count N] [--db-url URL] [--skip-enum-check] [--check-boundary-coverage]",
     );
     process.exit(1);
   }
@@ -441,6 +517,7 @@ async function main(): Promise<void> {
   }
 
   const skipEnumCheck = process.argv.includes("--skip-enum-check");
+  const checkBoundaryCoverage = process.argv.includes("--check-boundary-coverage");
   const dbUrlIdx = process.argv.indexOf("--db-url");
   const dbUrl = dbUrlIdx !== -1 ? process.argv[dbUrlIdx + 1] : undefined;
 
@@ -459,6 +536,7 @@ async function main(): Promise<void> {
     outputPath: filePath,
     expectedCount,
     enumSets,
+    boundaryCoverageThresholds: checkBoundaryCoverage ? DEFAULT_BOUNDARY_THRESHOLDS : undefined,
   });
 
   console.log(formatReport(result));

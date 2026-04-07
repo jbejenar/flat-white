@@ -11,7 +11,9 @@ import {
   formatReport,
   isWithinAustralia,
   isValidStatePostcode,
+  DEFAULT_BOUNDARY_THRESHOLDS,
   type EnumSets,
+  type BoundaryCoverageThresholds,
 } from "../../src/verify.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -389,6 +391,164 @@ describe("enum-ish field validation", () => {
   });
 });
 
+describe("boundary coverage thresholds", () => {
+  it("fails when LGA coverage drops below threshold", async () => {
+    // 10 docs: only 5 have LGA → 50% coverage, threshold is 99%
+    const docs = Array.from({ length: 10 }, (_, i) =>
+      makeDoc({
+        _id: `BT${i}`,
+        boundaries:
+          i < 5
+            ? {
+                lga: { name: "Melbourne", code: "LGA1" },
+                ward: { name: "Test Ward" },
+                stateElectorate: { name: "Melbourne" },
+                commonwealthElectorate: { name: "Melbourne" },
+                meshBlock: { code: "123", category: "Residential" },
+                sa1: "12345",
+                sa2: { code: "123", name: "Test" },
+              }
+            : {
+                lga: null,
+                ward: { name: "Test Ward" },
+                stateElectorate: { name: "Melbourne" },
+                commonwealthElectorate: { name: "Melbourne" },
+                meshBlock: null,
+                sa1: null,
+                sa2: null,
+              },
+      }),
+    );
+    const path = tmpFile("boundary-low-lga.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 10,
+      boundaryCoverageThresholds: DEFAULT_BOUNDARY_THRESHOLDS,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.boundaryCoverageChecked).toBe(true);
+    expect(result.boundaryCoverageErrors.length).toBeGreaterThan(0);
+    expect(result.boundaryCoverageErrors.some((e) => e.field === "lga")).toBe(true);
+  });
+
+  it("passes when all coverage exceeds thresholds", async () => {
+    const docs = Array.from({ length: 10 }, (_, i) => makeDoc({ _id: `BTP${i}` }));
+    const path = tmpFile("boundary-pass.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 10,
+      boundaryCoverageThresholds: DEFAULT_BOUNDARY_THRESHOLDS,
+    });
+    expect(result.passed).toBe(true);
+    expect(result.boundaryCoverageChecked).toBe(true);
+    expect(result.boundaryCoverageErrors.length).toBe(0);
+  });
+
+  it("skips threshold check when not provided (backward compatible)", async () => {
+    // All boundaries null — would fail with thresholds, passes without
+    const docs = Array.from({ length: 5 }, (_, i) =>
+      makeDoc({
+        _id: `BTS${i}`,
+        boundaries: {
+          lga: null,
+          ward: null,
+          stateElectorate: null,
+          commonwealthElectorate: null,
+          meshBlock: null,
+          sa1: null,
+          sa2: null,
+        },
+      }),
+    );
+    const path = tmpFile("boundary-skip.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({ outputPath: path, expectedCount: 5 });
+    expect(result.passed).toBe(true);
+    expect(result.boundaryCoverageChecked).toBe(false);
+    expect(result.boundaryCoverageErrors.length).toBe(0);
+  });
+
+  it("checks only specified threshold fields", async () => {
+    // All ward null, but only check LGA threshold (which is at 100%)
+    const docs = Array.from({ length: 5 }, (_, i) =>
+      makeDoc({
+        _id: `BTP2${i}`,
+        boundaries: {
+          lga: { name: "Melbourne", code: "LGA1" },
+          ward: null,
+          stateElectorate: { name: "Melbourne" },
+          commonwealthElectorate: { name: "Melbourne" },
+          meshBlock: { code: "123", category: "Residential" },
+          sa1: "12345",
+          sa2: { code: "123", name: "Test" },
+        },
+      }),
+    );
+    const path = tmpFile("boundary-partial.ndjson");
+    writeNdjson(path, docs);
+
+    const partial: BoundaryCoverageThresholds = { lga: 0.99 };
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 5,
+      boundaryCoverageThresholds: partial,
+    });
+    expect(result.passed).toBe(true);
+    expect(result.boundaryCoverageErrors.length).toBe(0);
+  });
+
+  it("reports correct actual vs threshold in errors", async () => {
+    // 0 out of 4 have ward → 0% coverage
+    const docs = Array.from({ length: 4 }, (_, i) =>
+      makeDoc({
+        _id: `BTE${i}`,
+        boundaries: {
+          lga: { name: "Melbourne", code: "LGA1" },
+          ward: null,
+          stateElectorate: { name: "Melbourne" },
+          commonwealthElectorate: { name: "Melbourne" },
+          meshBlock: null,
+          sa1: null,
+          sa2: null,
+        },
+      }),
+    );
+    const path = tmpFile("boundary-error-detail.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 4,
+      boundaryCoverageThresholds: { ward: 0.95 },
+    });
+    expect(result.passed).toBe(false);
+    expect(result.boundaryCoverageErrors).toHaveLength(1);
+    expect(result.boundaryCoverageErrors[0].field).toBe("ward");
+    expect(result.boundaryCoverageErrors[0].actual).toBe(0);
+    expect(result.boundaryCoverageErrors[0].threshold).toBe(0.95);
+  });
+});
+
+describe("verify against fixture with boundary thresholds", () => {
+  const fixturePath = resolve(__dirname, "../../fixtures/expected-output.ndjson");
+
+  it("passes boundary coverage thresholds against fixture data", async () => {
+    const result = await verify({
+      outputPath: fixturePath,
+      expectedCount: 451,
+      boundaryCoverageThresholds: DEFAULT_BOUNDARY_THRESHOLDS,
+    });
+    expect(result.passed).toBe(true);
+    expect(result.boundaryCoverageChecked).toBe(true);
+    expect(result.boundaryCoverageErrors.length).toBe(0);
+  });
+});
+
 describe("formatReport", () => {
   it("produces readable output", async () => {
     const docs = [makeDoc({ _id: "A1" }), makeDoc({ _id: "A2" })];
@@ -400,5 +560,34 @@ describe("formatReport", () => {
     expect(report).toContain("PASS");
     expect(report).toContain("Source count:");
     expect(report).toContain("Boundary coverage");
+  });
+
+  it("shows boundary threshold failures in report", async () => {
+    const docs = Array.from({ length: 4 }, (_, i) =>
+      makeDoc({
+        _id: `FR${i}`,
+        boundaries: {
+          lga: null,
+          ward: null,
+          stateElectorate: null,
+          commonwealthElectorate: null,
+          meshBlock: null,
+          sa1: null,
+          sa2: null,
+        },
+      }),
+    );
+    const path = tmpFile("report-boundary-fail.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 4,
+      boundaryCoverageThresholds: DEFAULT_BOUNDARY_THRESHOLDS,
+    });
+    const report = formatReport(result);
+    expect(report).toContain("Boundary coverage: FAIL");
+    expect(report).toContain("lga:");
+    expect(report).toContain("threshold:");
   });
 });

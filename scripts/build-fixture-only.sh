@@ -114,8 +114,8 @@ echo "[fixture-build] Done in ${ELAPSED}s ($LINE_COUNT documents)"
 
 # 8. Run verify with enum-ish field validation against authority tables
 echo "[fixture-build] Running verify with enum checks..."
-node "$PROJECT_DIR/dist/verify.js" "$OUTPUT_FILE" --expected-count "$LINE_COUNT" --db-url "$DB_URL"
-echo "[fixture-build] Verify: PASS (including enum field checks)"
+node "$PROJECT_DIR/dist/verify.js" "$OUTPUT_FILE" --expected-count "$LINE_COUNT" --db-url "$DB_URL" --check-boundary-coverage
+echo "[fixture-build] Verify: PASS (including enum field + boundary coverage checks)"
 
 # 9. Compare with expected output if it exists
 EXPECTED="$PROJECT_DIR/fixtures/expected-output.ndjson"

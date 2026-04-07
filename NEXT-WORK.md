@@ -70,12 +70,12 @@
 - [ ] Existing v2026.04 release notes updated to point at the patch (manual one-time edit)
 - Origin: PR #67 — most of this ticket landed in PR #67 because the v2026.04 streetType fix needed it as a prerequisite
 
-### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (planned, **p0-critical**)
+### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (in-progress, **p0-critical**)
 
 - [ ] Root-cause the gnaf-loader shapefile loading failure (suspected: worker-pool issue in `multiprocess_shapefile_load`, unconfirmed)
 - [ ] Upstream fix PR to minus34/gnaf-loader OR local submodule patch with upstream PR open
 - [ ] Remove `--no-boundary-tag` from `docker-entrypoint.sh`
-- [ ] Hardened verify check that fails the build if any of the four boundary coverage rates drops below threshold
+- [x] Hardened verify check that fails the build if any of the four boundary coverage rates drops below threshold
 - [ ] Restore lga / ward / stateElectorate / commonwealthElectorate population in next release
 - Origin: PR #67 audit — **all four** boundary fields are null in v2026.04 (verified in released ACT file). Bigger quality regression than the streetType bug.
 
