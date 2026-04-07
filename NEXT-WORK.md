@@ -80,6 +80,20 @@
 - [ ] Restore lga / ward / stateElectorate / commonwealthElectorate population in next release
 - Origin: PR #67 audit — **all four** boundary fields are null in v2026.04 (verified in released ACT file). Bigger quality regression than the streetType bug.
 
+### E1.17 — De-hardcode G-NAF schema version (planned, **p0-critical**, blocks v2026.05)
+
+- [ ] `src/load.ts` accept `--geoscape-version` CLI arg (currently hardcoded to `202602`)
+- [ ] `docker-entrypoint.sh` derive schema version from `GNAF_VERSION` and pass to load.ts
+- [ ] Replace hardcoded `gnaf_202602` / `raw_gnaf_202602` / `admin_bdys_202602` in 3 SQL files with template substitution or `search_path`
+- [ ] Add regression test against a non-Feb-2026 schema name
+- Origin: PR #67 round-5 audit — found while tracing how `GNAF_VERSION` propagates. **Should land before v2026.05 quarterly cron (2026-05-15)** or every release after Feb 2026 will have implicit `_version`/schema mismatch
+
+### E1.18 — CHANGELOG `[Unreleased]` not cleared on release (planned, p3-low)
+
+- [ ] Workflow CHANGELOG step should MOVE Unreleased content into the new versioned section, not just insert above it
+- [ ] Idempotency: re-running shouldn't duplicate entries
+- Origin: PR #67 round-5 audit — pre-existing workflow bug, makes CHANGELOG accumulate stale entries
+
 ### E1.15 — Fix multi-polygon row multiplication in PR #66 spatial join (planned, p1-high)
 
 - [ ] PR #66's spatial join fallback uses `LEFT JOIN ... ST_Intersects` four times — boundary points cartesian-multiply

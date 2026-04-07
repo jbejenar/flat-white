@@ -55,8 +55,10 @@ jobs:
           # Release version (YYYY.MM or YYYY.MM.N for patches)
           # Used for tag, asset filenames, release title — anything user-visible
           if [[ -n "$PATCH_INPUT" ]]; then
-            if [[ ! "$PATCH_INPUT" =~ ^[0-9]+$ ]]; then
-              echo "ERROR: Invalid patch_version format: '$PATCH_INPUT' (expected positive integer)"
+            # Must be a positive integer >= 1. Reject "0" and "00" — patch
+            # releases start at 1.
+            if [[ ! "$PATCH_INPUT" =~ ^[1-9][0-9]*$ ]]; then
+              echo "ERROR: Invalid patch_version format: '$PATCH_INPUT' (expected positive integer >= 1)"
               exit 1
             fi
             RELEASE_VERSION="${VERSION}.${PATCH_INPUT}"

@@ -4468,6 +4468,175 @@ Origin: PR #67 retrospective. **Most of this ticket landed in PR #67** because t
 
 ---
 
+### Ticket E1.17 — De-hardcode G-NAF schema version (`202602` everywhere)
+
+```yaml
+id: E1.17
+title: De-hardcode the 202602 G-NAF schema version
+status: planned
+priority: p0-critical
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need flat-white to work with any G-NAF data version (not just February 2026), so that the next quarterly release in May 2026 doesn't fail because the SQL references a non-existent schema.
+
+## Problem Statement
+
+The G-NAF data version `202602` is **hardcoded in three places** across the flat-white codebase:
+
+1. **`src/load.ts:111`** — `opts.geoscapeVersion ?? "202602"`. Used as `--geoscape-version` flag passed to gnaf-loader. There is no CLI argument to override this — `node dist/load.js` does not accept `--geoscape-version`. Every build invokes gnaf-loader with `--geoscape-version 202602`, regardless of the `GNAF_VERSION` environment variable.
+2. **`sql/address_full.sql`, `sql/address_full_main.sql`, `sql/address_full_prep.sql`** — schema names `gnaf_202602`, `raw_gnaf_202602`, `admin_bdys_202602`, `raw_admin_bdys_202602` appear ~30 times across the three files. These are loaded as raw strings by `flatten.ts` (`readFileSync` then `sql.unsafe(query).cursor()`); there is no template substitution.
+3. **`fixtures/seed-postgres.sql`** — fixture data is committed with `gnaf_202602` schema names baked in. This is fine for the fixture (Feb 2026 is a snapshot) but contributes to the assumption that 202602 is the only supported version.
+
+### What actually happens for v2026.05 (next quarterly)
+
+1. Workflow input `gnaf_version=2026.05` → docker env `GNAF_VERSION=2026.05`
+2. `docker-entrypoint.sh` calls `node dist/load.js --no-boundary-tag --states VIC` (no version arg)
+3. `load.ts` defaults `geoscapeVersion` to `202602`
+4. gnaf-loader is invoked with `--geoscape-version 202602`, creating schemas `raw_gnaf_202602`, `gnaf_202602` from May 2026 source data
+5. flatten.ts queries the 202602 schemas — works (data IS in those schemas)
+6. **Released NDJSON has `_version: "2026.05"` (from `GNAF_VERSION` env, used by `flatten.ts:306`) but the underlying data is in `gnaf_202602`-named schemas.** The mismatch is invisible to consumers but means the system is built on an implicit lie.
+
+So technically v2026.05 would still build. **What it would NOT do is reflect the actual data version** — and any future Geoscape file format change would silently break because the SQL doesn't know what schema version it's working against.
+
+### What breaks first
+
+1. **If two G-NAF versions are loaded into the same Postgres instance** (dev workflow), they collide because both go into `gnaf_202602` schemas.
+2. **If a maintainer tries to test against a different G-NAF version** (e.g. November 2025), nothing works without surgical edits to ~33 file references.
+3. **If gnaf-loader's schema layout changes upstream**, flat-white silently breaks because the SQL is pinned to one specific version.
+
+### What needs to change
+
+1. **`load.ts`** — accept `--geoscape-version` CLI arg and propagate it; remove the hardcoded default OR derive it from `GNAF_VERSION` env.
+2. **`docker-entrypoint.sh`** — derive schema version from `GNAF_VERSION` (e.g. `2026.05` → `202605`) and pass it to `node dist/load.js --geoscape-version 202605`.
+3. **`sql/address_full.sql`, `sql/address_full_main.sql`, `sql/address_full_prep.sql`** — replace hardcoded `202602` with a placeholder (e.g. `${SCHEMA_VERSION}`) and substitute at load time in `flatten.ts`. OR set Postgres `search_path` to make schema names unqualified.
+4. **`fixtures/seed-postgres.sql`** — keep hardcoded as 202602 (it's a frozen Feb 2026 snapshot), but document it as such.
+5. **Tests** — add a test that runs the flatten path against a 202605-named schema (artificially renamed from the fixture) and verifies it still works.
+
+## Definition of Done
+
+### Functional
+
+- [ ] `load.ts` accepts `--geoscape-version` arg and uses it (no fallback to hardcoded value)
+  - `Verify:` `node dist/load.js --geoscape-version 202605 --states VIC` invokes gnaf-loader with `--geoscape-version 202605`
+  - `Evidence:`
+- [ ] `docker-entrypoint.sh` derives the schema version from `GNAF_VERSION` and passes it to load
+  - `Verify:` Setting `GNAF_VERSION=2026.05` in docker run produces schemas named `gnaf_202605`
+  - `Evidence:`
+- [ ] SQL files use schema version substitution (template variable or `search_path`)
+  - `Verify:` `grep -c '202602' sql/address_full*.sql` returns 0
+  - `Evidence:`
+- [ ] Flatten succeeds against any G-NAF data version, not just 202602
+  - `Verify:` Build cycle test against a non-Feb-2026 G-NAF dataset
+  - `Evidence:`
+- [ ] `fixtures/seed-postgres.sql` continues to work
+  - `Verify:` `./scripts/build-fixture-only.sh` still passes
+  - `Evidence:`
+
+### Documentation
+
+- [ ] CHANGELOG entry documenting the fix
+- [ ] `docs/RELEASING.md` updated
+- [ ] AGENTS.md updated to remove the hardcoded `202602` references
+
+## Scope
+
+### In
+
+- `load.ts`, `docker-entrypoint.sh`, three SQL files
+- A focused regression test
+- Documentation updates
+
+### Out — Do Not Implement
+
+- Changing `fixtures/seed-postgres.sql` (frozen snapshot)
+- Multi-version concurrent builds
+- Migrating existing v2026.04 release
+
+## Notes
+
+Origin: PR #67 round-5 audit. Found while tracing how `GNAF_VERSION` propagates through the build pipeline. Discovered that `GNAF_VERSION` is not passed to `load.ts` at all and that schema names are hardcoded to `202602` throughout the SQL files.
+
+**This should be fixed before the v2026.05 quarterly build (scheduled 2026-05-15)** to avoid the implicit-lie metadata where the released NDJSON claims `_version: "2026.05"` but the underlying schemas are named `*_202602`.
+
+---
+
+### Ticket E1.18 — CHANGELOG `[Unreleased]` not cleared on release
+
+```yaml
+id: E1.18
+title: Workflow CHANGELOG release step does not clear [Unreleased] section
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need the workflow's CHANGELOG update step to MOVE the `[Unreleased]` section's content into the new versioned section, so that successive releases don't accumulate stale entries under `[Unreleased]`.
+
+## Problem Statement
+
+The current workflow step (`quarterly-build.yml`, "Update CHANGELOG.md") inserts a new versioned entry **after** the `[Unreleased]` header but does NOT remove the existing `[Unreleased]` content. The Python script:
+
+```python
+content = content.replace('## [Unreleased]', '## [Unreleased]\n\n' + entry, 1)
+```
+
+This produces:
+
+```markdown
+## [Unreleased]
+
+## [v2026.04.1] - 2026-04-07
+
+### Release
+
+- ...
+
+### Added ← these stale entries should have moved into v2026.04.1
+
+- E1.06 Build Cache: ...
+- P4.01 First Production Release: ...
+```
+
+The standard Keep-a-Changelog convention is that `[Unreleased]` content describes upcoming features/fixes; when a release happens, that content moves into the new versioned section and `[Unreleased]` is left empty (or removed).
+
+The current behaviour is harmless (CHANGELOG is just a markdown file) but confusing — every quarterly release accumulates more "[Unreleased]" entries that have actually been released long ago.
+
+## Definition of Done
+
+- [ ] Workflow CHANGELOG step extracts content between `## [Unreleased]` and the next `## [` heading, moves it into the new versioned section, and leaves `## [Unreleased]` empty (or with a placeholder)
+  - `Verify:` After a release runs, `awk '/## \[Unreleased\]/,/## \[v/' CHANGELOG.md` shows only the header and a blank section
+  - `Evidence:`
+- [ ] Idempotent: re-running the workflow on the same release doesn't duplicate entries
+  - `Verify:` Run the workflow twice with the same `gnaf_version` input; CHANGELOG diff after the second run is empty
+  - `Evidence:`
+
+## Scope
+
+### In
+
+- `.github/workflows/quarterly-build.yml` — Update CHANGELOG.md step
+
+### Out
+
+- One-time cleanup of the existing CHANGELOG (separate manual edit if desired)
+
+## Notes
+
+Origin: PR #67 round-5 audit. Pre-existing bug, low severity, but a real cleanliness issue that makes CHANGELOG.md less useful over time.
+
+---
+
 ### Ticket E1.16 — Geocode type field consistency
 
 ```yaml
