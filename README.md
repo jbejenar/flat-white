@@ -266,6 +266,17 @@ Hugh also publishes the same data as **GeoParquet files on S3** (anonymous read,
 aws s3 ls s3://minus34.com/opendata/geoscape-202602/geoparquet/ --no-sign-request
 ```
 
+### Why flat-white runs its own pipeline
+
+flat-white goes **straight to the government source** at [data.gov.au](https://data.gov.au) — the same starting point as gnaf-loader, not downstream of it. This is deliberate:
+
+- **Independence.** Builds aren't blocked by anyone's release schedule. When data.gov.au publishes a quarterly update, flat-white can ship a release that day.
+- **Verifiability.** Every byte in the output traces back to the canonical Australian government source, processed by code in this repo. Auditors can re-derive it from scratch.
+- **Postgres is the right tool for the join.** A 9-table relational join with millions of rows belongs in PostgreSQL. It's rock-solid, well-understood, easy to debug, and produces the same answer every time. Doing the same join in DuckDB-over-parquet would mean rewriting the SQL in a different dialect and losing 30 years of Postgres optimizer work.
+- **Quarterly cadence is fine.** G-NAF publishes quarterly. There's no daily feed, no real-time stream — quarterly is the rhythm of the data itself. Spending ~30 min per state on a free runner four times a year is not a cost worth optimizing.
+
+We could read minus34's parquet directly, but then flat-white would be a thin wrapper around someone else's pipeline. By running gnaf-loader ourselves we keep full control of the build, validate every document with Zod, and own the entire chain from raw PSV files to NDJSON.
+
 ### When to use which
 
 | Need                                                                | Use                             |
