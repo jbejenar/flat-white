@@ -179,7 +179,7 @@ export function isExtractionComplete(extractedPath: string, sentinelPaths: strin
     if (sentinel.includes("/") && sentinel.includes("*")) {
       // Path-segment wildcard: "G-NAF */Standard" — first segment has a wildcard, rest is literal
       const [globSegment, ...rest] = sentinel.split("/");
-      const prefix = globSegment.replace("*", "");
+      const prefix = globSegment.replaceAll("*", "");
       const matchingDirs = entries.filter((entry) => entry.startsWith(prefix));
       const subPath = rest.join("/");
       return matchingDirs.some((dir) => existsSync(resolve(extractedPath, dir, subPath)));
