@@ -34,6 +34,39 @@ fi
 echo "[fixture-build] Seeding fixture data (451 addresses)..."
 docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-postgres.sql
 
+# 3b. Seed raw admin boundary fixtures (E1.10)
+echo "[fixture-build] Seeding raw admin boundary fixtures..."
+docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-admin-bdys.sql
+
+# 3c. Run boundary prep SQL (raw → admin_bdys boundary tables)
+SCHEMA_VERSION="${GNAF_VERSION:-2026.02}"
+SCHEMA_VERSION_FLAT="${SCHEMA_VERSION//.}"
+echo "[fixture-build] Preparing admin boundary tables (schema ${SCHEMA_VERSION_FLAT})..."
+sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/fixtures/prep-admin-bdys.sql" | \
+  docker compose exec -T db psql -U postgres -d gnaf -q
+
+# 3d. Run spatial join to populate address_principal_admin_boundaries from polygons
+# This must run BEFORE either flatten path so both legacy and materialize see boundary data.
+# The spatial join fallback is in address_full_prep.sql (lines 1-170). It only runs if the
+# table is empty, so it's safe to re-run during the materialize path.
+echo "[fixture-build] Running spatial join (address → boundary assignment)..."
+
+# Guard: verify the cut point hasn't drifted. Line 171 must be blank (the line after
+# the CREATE UNIQUE INDEX statement that ends the spatial join block). We include
+# through line 170 which is the ON clause of that index. If someone adds/removes
+# lines above, this catches it.
+CUT_LINE=$(sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/sql/address_full_prep.sql" | sed -n '169p')
+if [[ "$CUT_LINE" != *'CREATE UNIQUE INDEX'* ]]; then
+  echo "[fixture-build] ERROR: head -170 cut point has drifted in address_full_prep.sql"
+  echo "  Expected line 169 to contain 'CREATE UNIQUE INDEX', got: $CUT_LINE"
+  echo "  Update the line count in build-fixture-only.sh step 3d."
+  exit 1
+fi
+
+head -170 "$PROJECT_DIR/sql/address_full_prep.sql" | \
+  sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" | \
+  docker compose exec -T db psql -U postgres -d gnaf -q
+
 # 4. Build TypeScript
 echo "[fixture-build] Building TypeScript..."
 npm run build --silent

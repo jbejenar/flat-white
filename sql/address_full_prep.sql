@@ -70,6 +70,7 @@ DECLARE
   has_lga boolean;
   has_ward boolean;
   has_se boolean;
+  has_se_upper boolean;
 BEGIN
   SELECT COUNT(*) INTO bdy_count FROM gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries;
 
@@ -86,13 +87,15 @@ BEGIN
                  WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'local_government_wards') INTO has_ward;
   SELECT EXISTS (SELECT 1 FROM information_schema.tables
                  WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'state_lower_house_electorates') INTO has_se;
+  SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'state_upper_house_electorates') INTO has_se_upper;
 
-  IF NOT (has_ce OR has_lga OR has_ward OR has_se) THEN
+  IF NOT (has_ce OR has_lga OR has_ward OR has_se OR has_se_upper) THEN
     RAISE NOTICE 'No admin boundary tables found — skipping spatial join fallback';
     RETURN;
   END IF;
 
-  RAISE NOTICE 'Running spatial join fallback (ce=%, lga=%, ward=%, se=%)', has_ce, has_lga, has_ward, has_se;
+  RAISE NOTICE 'Running spatial join fallback (ce=%, lga=%, ward=%, se_lower=%, se_upper=%)', has_ce, has_lga, has_ward, has_se, has_se_upper;
 
   -- Build the insert dynamically based on which tables exist.
   -- Each boundary table is matched via LEFT JOIN LATERAL (...) LIMIT 1 to
@@ -113,8 +116,9 @@ BEGIN
       %s AS lga_pid, %s AS lga_name,
       %s AS ward_pid, %s AS ward_name,
       %s AS se_lower_pid, %s AS se_lower_name,
-      NULL::text AS se_upper_pid, NULL::text AS se_upper_name
+      %s AS se_upper_pid, %s AS se_upper_name
     FROM gnaf___SCHEMA_VERSION__.address_principals ap
+    %s
     %s
     %s
     %s
@@ -132,6 +136,9 @@ BEGIN
     -- se_lower_pid, se_lower_name
     CASE WHEN has_se THEN 'se.se_lower_pid' ELSE 'NULL::text' END,
     CASE WHEN has_se THEN 'se.name' ELSE 'NULL::text' END,
+    -- se_upper_pid, se_upper_name
+    CASE WHEN has_se_upper THEN 'se_up.se_upper_pid' ELSE 'NULL::text' END,
+    CASE WHEN has_se_upper THEN 'se_up.name' ELSE 'NULL::text' END,
     -- joins (LATERAL + LIMIT 1 + deterministic ORDER BY)
     CASE WHEN has_ce THEN
       'LEFT JOIN LATERAL (SELECT ce_pid, name FROM admin_bdys___SCHEMA_VERSION__.commonwealth_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY ce_pid LIMIT 1) ce ON true'
@@ -144,6 +151,9 @@ BEGIN
       ELSE '' END,
     CASE WHEN has_se THEN
       'LEFT JOIN LATERAL (SELECT se_lower_pid, name FROM admin_bdys___SCHEMA_VERSION__.state_lower_house_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY se_lower_pid LIMIT 1) se ON true'
+      ELSE '' END,
+    CASE WHEN has_se_upper THEN
+      'LEFT JOIN LATERAL (SELECT se_upper_pid, name FROM admin_bdys___SCHEMA_VERSION__.state_upper_house_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY se_upper_pid LIMIT 1) se_up ON true'
       ELSE '' END
   );
 

@@ -57,7 +57,7 @@ docker compose up db            # Start local Postgres + PostGIS
 
 ## Principles (MUST follow)
 
-1. **Fixture-first development.** Use `scripts/build-fixture-only.sh` for all dev work. NEVER require a 6.5GB download or gnaf-loader run for testing.
+1. **Fixture-first development.** Use `scripts/build-fixture-only.sh` for all dev work. NEVER require a 6.5GB download or gnaf-loader run for testing. The fixture build exercises the full boundary pipeline: raw admin boundary seeding → prep SQL transformation → spatial join derivation → flatten → verify.
 2. **gnaf-loader is a submodule. Do NOT modify it.** Changes go upstream via PR to `minus34/gnaf-loader`.
 3. **The NDJSON schema is the contract.** When changing output, update ALL THREE together: `docs/DOCUMENT-SCHEMA.md`, `src/schema.ts`, `fixtures/expected-output.ndjson`. Breaking changes require a major version bump.
 4. **Postgres is ephemeral.** It lives inside the container, loads data, exports NDJSON, and dies. Do not treat it as persistent infrastructure.
