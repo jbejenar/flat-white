@@ -5,7 +5,8 @@
 -- Usage: Run once before cursor-based streaming of address_full_main.sql.
 -- Schema: gnaf_202602, raw_gnaf_202602, admin_bdys_202602
 
--- 0. Ensure admin boundary tables exist (empty stubs if --no-boundary-tag or partial load)
+-- 0. Ensure admin boundary tables exist (empty stubs if --no-boundary-tag or partial load).
+-- Both schemas (gnaf_202602 and admin_bdys_202602) are created by gnaf-loader.
 CREATE SCHEMA IF NOT EXISTS admin_bdys_202602;
 CREATE TABLE IF NOT EXISTS admin_bdys_202602.abs_2021_mb (
   gid integer,
@@ -40,6 +41,93 @@ CREATE TABLE IF NOT EXISTS gnaf_202602.address_principal_admin_boundaries (
   se_upper_pid text,
   se_upper_name text
 );
+
+-- 0b. FALLBACK: spatial join for admin boundaries
+-- Runs ONLY if gnaf-loader's boundary tagging didn't populate the table
+-- (e.g. when --no-boundary-tag was used or upstream tagging crashed).
+-- Uses ST_Intersects against the boundary shapefiles that gnaf-loader loaded.
+-- Each boundary table is checked independently — missing tables (e.g. wards)
+-- are silently skipped, populating only what's available.
+DO $$
+DECLARE
+  bdy_count bigint;
+  has_ce boolean;
+  has_lga boolean;
+  has_ward boolean;
+  has_se boolean;
+BEGIN
+  SELECT COUNT(*) INTO bdy_count FROM gnaf_202602.address_principal_admin_boundaries;
+
+  IF bdy_count > 0 THEN
+    RAISE NOTICE 'admin_boundaries already populated (% rows) — skipping spatial join fallback', bdy_count;
+    RETURN;
+  END IF;
+
+  SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'commonwealth_electorates') INTO has_ce;
+  SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'local_government_areas') INTO has_lga;
+  SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'local_government_wards') INTO has_ward;
+  SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = 'admin_bdys_202602' AND table_name = 'state_lower_house_electorates') INTO has_se;
+
+  IF NOT (has_ce OR has_lga OR has_ward OR has_se) THEN
+    RAISE NOTICE 'No admin boundary tables found — skipping spatial join fallback';
+    RETURN;
+  END IF;
+
+  RAISE NOTICE 'Running spatial join fallback (ce=%, lga=%, ward=%, se=%)', has_ce, has_lga, has_ward, has_se;
+
+  -- Build the insert dynamically based on which tables exist
+  EXECUTE format($sql$
+    INSERT INTO gnaf_202602.address_principal_admin_boundaries
+      (gnaf_pid, locality_pid, locality_name, postcode, state,
+       ce_pid, ce_name, lga_pid, lga_name, ward_pid, ward_name,
+       se_lower_pid, se_lower_name, se_upper_pid, se_upper_name)
+    SELECT
+      ap.gnaf_pid,
+      ap.locality_pid,
+      ap.locality_name,
+      ap.postcode,
+      ap.state,
+      %s AS ce_pid, %s AS ce_name,
+      %s AS lga_pid, %s AS lga_name,
+      %s AS ward_pid, %s AS ward_name,
+      %s AS se_lower_pid, %s AS se_lower_name,
+      NULL::text AS se_upper_pid, NULL::text AS se_upper_name
+    FROM gnaf_202602.address_principals ap
+    %s
+    %s
+    %s
+    %s
+  $sql$,
+    -- ce_pid, ce_name
+    CASE WHEN has_ce THEN 'ce.ce_pid' ELSE 'NULL::text' END,
+    CASE WHEN has_ce THEN 'ce.name' ELSE 'NULL::text' END,
+    -- lga_pid, lga_name
+    CASE WHEN has_lga THEN 'lga.lga_pid' ELSE 'NULL::text' END,
+    CASE WHEN has_lga THEN 'lga.full_name' ELSE 'NULL::text' END,
+    -- ward_pid, ward_name
+    CASE WHEN has_ward THEN 'ward.ward_pid' ELSE 'NULL::text' END,
+    CASE WHEN has_ward THEN 'ward.name' ELSE 'NULL::text' END,
+    -- se_lower_pid, se_lower_name
+    CASE WHEN has_se THEN 'se.se_lower_pid' ELSE 'NULL::text' END,
+    CASE WHEN has_se THEN 'se.name' ELSE 'NULL::text' END,
+    -- joins
+    CASE WHEN has_ce THEN 'LEFT JOIN admin_bdys_202602.commonwealth_electorates ce ON ST_Intersects(ap.geom, ce.geom)' ELSE '' END,
+    CASE WHEN has_lga THEN 'LEFT JOIN admin_bdys_202602.local_government_areas lga ON ST_Intersects(ap.geom, lga.geom)' ELSE '' END,
+    CASE WHEN has_ward THEN 'LEFT JOIN admin_bdys_202602.local_government_wards ward ON ST_Intersects(ap.geom, ward.geom)' ELSE '' END,
+    CASE WHEN has_se THEN 'LEFT JOIN admin_bdys_202602.state_lower_house_electorates se ON ST_Intersects(ap.geom, se.geom)' ELSE '' END
+  );
+
+  GET DIAGNOSTICS bdy_count = ROW_COUNT;
+  RAISE NOTICE 'Spatial join fallback inserted % rows into address_principal_admin_boundaries', bdy_count;
+
+  -- Index for the main flatten join
+  CREATE INDEX IF NOT EXISTS address_principal_admin_boundaries_gnaf_pid_idx
+    ON gnaf_202602.address_principal_admin_boundaries (gnaf_pid);
+END $$;
 
 -- 1a. Best geocode per address (using window function instead of correlated subquery)
 DROP TABLE IF EXISTS tmp_best_geocode;
