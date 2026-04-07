@@ -237,3 +237,23 @@ ABS mesh block to statistical area mapping.
 | gcc_21code | text        | Greater capital city statistical area       |
 | gcc_21name | text        |                                             |
 | state      | text        |                                             |
+
+### abs_2021_mb (430 rows — fixture mirror)
+
+Identical column data to `abs_2021_mb_lookup`, plus a synthetic `gid` column.
+Created at the end of `seed-postgres.sql` via `CREATE TABLE … AS SELECT`. Exists
+so the production (`--materialize`) flatten path — which reads `abs_2021_mb`,
+populated by gnaf-loader from shapefiles in production — produces byte-identical
+output to the legacy path against the fixture.
+
+**Known gap:** the mirror has no `geom` column. The production table populated
+by gnaf-loader has a PostGIS polygon column. Anything that adds a spatial query
+on `abs_2021_mb` will silently break against the fixture until E1.10 lands real
+shapefile fixtures.
+
+| Column    | Type      | Notes                                |
+| --------- | --------- | ------------------------------------ |
+| gid       | int       | Synthetic, ROW_NUMBER over mb21_code |
+| mb21_code | bigint    | Mirrors `abs_2021_mb_lookup`         |
+| (others)  | (same)    | Same as `abs_2021_mb_lookup`         |
+| _geom_    | _missing_ | Production has PostGIS polygon       |

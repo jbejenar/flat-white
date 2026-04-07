@@ -102,4 +102,76 @@ describe("expected-output.ndjson", () => {
     const cov = result.boundaryCoverage;
     expect(cov.lga / cov.total).toBeGreaterThan(0.99);
   });
+
+  // Defense-in-depth regression for the v2026.04 streetType bug (PR #67).
+  // raw_gnaf_202602.street_type_aut is the only G-NAF authority table with
+  // reversed column convention (code = long form, name = abbreviation). If
+  // anything reintroduces a `street_type_aut.name` join, streetType would
+  // contain abbreviations like "ST"/"AV"/"PL". This test catches that even
+  // if the cross-path SQL guard in build-fixture-only.sh is bypassed.
+  it("streetType is never a known abbreviation", () => {
+    // High-traffic abbreviations that produced the v2026.04 bug. Not exhaustive
+    // (street_type_aut has 194 abbreviations) — covers the cases observed in
+    // the released ACT file: ST=115k, CR=32k, PL=27k, AV=17k, CCT=16k, CL=7k,
+    // DR=5k, CT=3k, RD=2k, TCE=1.6k, PDE=799, GDNS=500.
+    const FORBIDDEN = new Set([
+      "ST",
+      "AV",
+      "PL",
+      "RD",
+      "CR",
+      "CL",
+      "DR",
+      "CT",
+      "CCT",
+      "TCE",
+      "PDE",
+      "GDNS",
+      "BVD",
+      "BVDE",
+      "HWY",
+      "ESP",
+      "SQ",
+      "GR",
+      "BLVD",
+      "AVE",
+      "CRES",
+      "CIR",
+      "PKWY",
+      "TER",
+    ]);
+
+    const content = readFileSync(EXPECTED_OUTPUT, "utf-8").trimEnd();
+    const lines = content.split("\n");
+    const offenders: Array<{ pid: string; streetType: string }> = [];
+    let nonNullCount = 0;
+
+    for (const line of lines) {
+      const doc = JSON.parse(line) as Record<string, unknown>;
+      const streetType = doc.streetType as string | null;
+      if (streetType) {
+        nonNullCount++;
+        if (FORBIDDEN.has(streetType)) {
+          offenders.push({ pid: doc._id as string, streetType });
+        }
+      }
+    }
+
+    // Positive assertion — guard against the test passing trivially if
+    // expected-output.ndjson is somehow gutted of streetType values.
+    expect(nonNullCount).toBeGreaterThan(50);
+
+    if (offenders.length > 0) {
+      const summary = offenders
+        .slice(0, 5)
+        .map((o) => `  ${o.pid}: streetType="${o.streetType}"`)
+        .join("\n");
+      expect.fail(
+        `${offenders.length}/${lines.length} documents have abbreviated streetType ` +
+          `(should be the long form, e.g. "STREET" not "ST"):\n${summary}\n` +
+          `This is the v2026.04 bug — see PR #67. Check for a join to ` +
+          `raw_gnaf_202602.street_type_aut in your flatten SQL.`,
+      );
+    }
+  });
 });

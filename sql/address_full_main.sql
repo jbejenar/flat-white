@@ -25,7 +25,7 @@ SELECT
   ap.number_last,
   ap.lot_number,
   ap.street_name,
-  ap.street_type,
+  ap.street_type                                        AS street_type_name,
   ap.street_suffix                                      AS street_suffix_code,
   ap.locality_name,
   ap.state,
@@ -37,7 +37,6 @@ SELECT
   -- Expanded type names (for addressLabelSearch)
   ft.name                                               AS flat_type_name,
   lt.name                                               AS level_type_name,
-  st_aut.name                                           AS street_type_name,
   ss_aut.name                                           AS street_suffix_name,
 
   -- Geocodes
@@ -94,8 +93,11 @@ LEFT JOIN raw_gnaf_202602.flat_type_aut ft
   ON ft.code = ad.flat_type_code
 LEFT JOIN raw_gnaf_202602.level_type_aut lt
   ON lt.code = ad.level_type_code
-LEFT JOIN raw_gnaf_202602.street_type_aut st_aut
-  ON st_aut.code = ap.street_type
+-- NOTE: street_type_aut is NOT joined here. Its `code` column holds the long form
+-- (e.g. "STREET") and `name` holds the abbreviation (e.g. "ST") — the reverse of every
+-- other authority table. ap.street_type already contains the resolved long form, so we
+-- alias it directly above. Joining street_type_aut would yield the abbreviation and was
+-- the cause of the v2026.04 streetType regression (PR #29 → fixed in this PR).
 LEFT JOIN raw_gnaf_202602.street_suffix_aut ss_aut
   ON ss_aut.code = ap.street_suffix
 

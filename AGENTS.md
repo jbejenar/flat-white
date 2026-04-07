@@ -21,11 +21,17 @@ src/
   # metadata.ts         — generate build metadata JSON
   # cli.ts              — CLI: --states, --output, --split-states, --compress
 
-# sql/ (not yet on main):
-  # address_full.sql              — master 9+ table JOIN
-  # address_full_with_arrays.sql  — with aggregated aliases + secondaries
-  # locality_full.sql             — locality with neighbours + aliases
-  # create_views.sql              — materialised views for fast export
+sql/
+  address_full.sql              — legacy CTE-based flatten (used by fixture path)
+  address_full_main.sql         — production SELECT (used with --materialize). MUST stay
+                                  semantically equivalent to address_full.sql; build-fixture-only.sh
+                                  enforces byte-equality between the two paths.
+  address_full_prep.sql         — pre-materializes aggregations as temp tables for the production path
+
+  # WARNING: street_type_aut is the only G-NAF authority table with REVERSED column
+  # convention (code = long form, name = abbreviation). DO NOT join it like the others.
+  # ap.street_type already contains the long form. The v2026.04 streetType regression
+  # (PR #67) was caused by re-introducing this join.
 
 fixtures/
   seed-postgres.sql             — schema DDL + ~451 edge-case addresses (loads via psql <30s)
