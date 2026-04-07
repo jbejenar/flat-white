@@ -15,6 +15,12 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
+### Added
+
+- **E1.13 Patch release PR auto-linking:** `quarterly-build.yml` now automatically discovers merged PRs between the base version tag and HEAD for patch releases, injecting a "Fixes" section with PR titles and links into the release notes. No more manual editing after running the patch workflow.
+- **E1.13 Catalogue patch grouping:** `generate-catalogue.ts` groups patch releases (e.g. `v2026.04.1`) under their parent quarterly release (`v2026.04`) in the GitHub Pages catalogue. Patches render as indented sub-entries with accent-colored left border.
+- **E1.12 Hardened verify — production enum checks:** `docker-entrypoint.sh` now passes `--db-url` to `verify.js`, enabling authority-table enum validation in production builds (previously only ran in fixture builds).
+
 ### Changed
 
 - **E1.11 Consolidate flatten SQL:** `sql/address_full.sql` is now the single source of truth for the flatten query. `sql/address_full_main.sql` is auto-generated from it by `npm run generate:sql` (integrated into `npm run build`). This eliminates the hand-maintained drift that caused the v2026.04 streetType regression. Cross-path byte-equality check retained as belt-and-braces.

@@ -7,6 +7,7 @@ import {
   parseArgs,
   processReleases,
   generateHTML,
+  parseVersion,
   type GitHubRelease,
 } from "../../src/generate-catalogue.js";
 
@@ -94,6 +95,63 @@ describe("processReleases", () => {
   });
 });
 
+describe("parseVersion", () => {
+  it("parses quarterly release", () => {
+    expect(parseVersion("v2026.04")).toEqual({ base: "v2026.04", patch: null });
+  });
+
+  it("parses patch release", () => {
+    expect(parseVersion("v2026.04.1")).toEqual({ base: "v2026.04", patch: 1 });
+  });
+
+  it("parses multi-digit patch", () => {
+    expect(parseVersion("v2026.04.12")).toEqual({ base: "v2026.04", patch: 12 });
+  });
+
+  it("returns tag as base for non-matching format", () => {
+    expect(parseVersion("nightly-2026")).toEqual({ base: "nightly-2026", patch: null });
+  });
+});
+
+describe("processReleases — patch grouping", () => {
+  it("groups patch releases under their parent quarterly release", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.04", name: "v2026.04" }),
+      makeRelease({
+        tag_name: "v2026.04.1",
+        name: "v2026.04.1",
+        published_at: "2026-04-20T02:00:00Z",
+      }),
+    ]);
+    expect(releases).toHaveLength(1);
+    expect(releases[0].version).toBe("v2026.04");
+    expect(releases[0].patches).toHaveLength(1);
+    expect(releases[0].patches![0].version).toBe("v2026.04.1");
+  });
+
+  it("keeps orphaned patches as top-level entries", () => {
+    const releases = processReleases([
+      makeRelease({
+        tag_name: "v2026.04.1",
+        name: "v2026.04.1",
+        published_at: "2026-04-20T02:00:00Z",
+      }),
+    ]);
+    expect(releases).toHaveLength(1);
+    expect(releases[0].version).toBe("v2026.04.1");
+  });
+
+  it("groups multiple patches under same parent", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.04", name: "v2026.04" }),
+      makeRelease({ tag_name: "v2026.04.1", name: "v2026.04.1" }),
+      makeRelease({ tag_name: "v2026.04.2", name: "v2026.04.2" }),
+    ]);
+    expect(releases).toHaveLength(1);
+    expect(releases[0].patches).toHaveLength(2);
+  });
+});
+
 describe("generateHTML", () => {
   it("produces valid HTML with release data", () => {
     const releases = processReleases([makeRelease()]);
@@ -127,5 +185,21 @@ describe("generateHTML", () => {
   it("includes dark mode CSS", () => {
     const html = generateHTML("jbejenar/flat-white", []);
     expect(html).toContain("prefers-color-scheme: dark");
+  });
+
+  it("renders patch releases as nested sub-entries", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.04", name: "v2026.04" }),
+      makeRelease({
+        tag_name: "v2026.04.1",
+        name: "v2026.04.1",
+        published_at: "2026-04-20T02:00:00Z",
+      }),
+    ]);
+    const html = generateHTML("jbejenar/flat-white", releases);
+
+    expect(html).toContain("v2026.04");
+    expect(html).toContain("v2026.04.1");
+    expect(html).toContain('class="release patch"');
   });
 });
