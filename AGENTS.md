@@ -22,10 +22,12 @@ src/
   # cli.ts              — CLI: --states, --output, --split-states, --compress
 
 sql/
-  address_full.sql              — legacy CTE-based flatten (used by fixture path)
-  address_full_main.sql         — production SELECT (used with --materialize). MUST stay
-                                  semantically equivalent to address_full.sql; build-fixture-only.sh
-                                  enforces byte-equality between the two paths.
+  address_full.sql              — SINGLE SOURCE OF TRUTH for the flatten query (CTE-based).
+                                  Edit ONLY this file when changing the flatten field set or joins.
+  address_full_main.sql         — AUTO-GENERATED from address_full.sql by `npm run generate:sql`.
+                                  DO NOT EDIT DIRECTLY. Production SELECT using pre-materialized
+                                  temp tables (from address_full_prep.sql). build-fixture-only.sh
+                                  enforces byte-equality between both paths.
   address_full_prep.sql         — pre-materializes aggregations as temp tables for the production path
 
   # WARNING: street_type_aut is the only G-NAF authority table with REVERSED column
