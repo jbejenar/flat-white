@@ -50,8 +50,9 @@ sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/fixtures/prep-
 # The spatial join fallback is in address_full_prep.sql (lines 1-161). It only runs if the
 # table is empty, so it's safe to re-run during the materialize path.
 echo "[fixture-build] Running spatial join (address → boundary assignment)..."
-sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/sql/address_full_prep.sql" | \
-  head -170 | docker compose exec -T db psql -U postgres -d gnaf -q
+head -170 "$PROJECT_DIR/sql/address_full_prep.sql" | \
+  sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" | \
+  docker compose exec -T db psql -U postgres -d gnaf -q
 
 # 4. Build TypeScript
 echo "[fixture-build] Building TypeScript..."
