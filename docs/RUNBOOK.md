@@ -209,7 +209,7 @@ gh release list
 - **Permission error:** Ensure the workflow has `contents: write` permission
 - **Tag already exists:** The workflow has idempotency logic (`gh release delete` before create) — if this fails, manually delete the tag:
   ```bash
-  gh release delete v2026.02 --yes --cleanup-tag
+  gh release delete v${VERSION} --yes --cleanup-tag
   ```
 - **Asset too large:** GitHub has a 2GB limit per release. Check total asset size.
 
@@ -217,11 +217,13 @@ gh release list
 
 ## Manual Operations
 
+> In the commands below, replace `${VERSION}` with the target G-NAF version (e.g. `2026.05`).
+
 ### Full Re-Run (All States)
 
 ```bash
 # Trigger a fresh build for a specific version
-gh workflow run quarterly-build.yml -f gnaf_version=2026.02
+gh workflow run quarterly-build.yml -f gnaf_version=${VERSION}
 ```
 
 ### Partial Re-Run (Failed Jobs Only)
@@ -242,7 +244,7 @@ GitHub Actions matrix builds don't support re-running a single matrix job. Optio
    mkdir -p output
    docker run --rm \
      -v "$(pwd)/output:/output" \
-     -e "GNAF_VERSION=2026.02" \
+     -e "GNAF_VERSION=${VERSION}" \
      flat-white \
      --states VIC \
      --split-states \
@@ -251,7 +253,7 @@ GitHub Actions matrix builds don't support re-running a single matrix job. Optio
    ```
 3. **Upload manually to release:**
    ```bash
-   gh release upload v2026.02 output/flat-white-2026.02-vic.ndjson.gz --clobber
+   gh release upload v${VERSION} output/flat-white-${VERSION}-vic.ndjson.gz --clobber
    ```
 
 ### Manually Publishing a Draft Release
@@ -260,10 +262,10 @@ If the automated publish step failed but the draft release has all assets:
 
 ```bash
 # Verify assets
-gh release view v2026.02
+gh release view v${VERSION}
 
 # Publish
-gh release edit v2026.02 --draft=false
+gh release edit v${VERSION} --draft=false
 ```
 
 ## Retry Logic Reference

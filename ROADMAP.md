@@ -4684,12 +4684,12 @@ Origin: PR #67 round-5 audit. Pre-existing bug, low severity, but a real cleanli
 ```yaml
 id: E1.19
 title: Audit and update stale 2026.02 / v2026.02 references in user-facing docs
-status: planned
+status: done
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-08
 ```
 
 ## User Story
@@ -4714,11 +4714,11 @@ The following references are NOT stale and should NOT be touched:
 
 ## Definition of Done
 
-- [ ] DOCUMENT-SCHEMA.md `_version` field example updated to `"2026.04"` (or kept as illustrative placeholder if generic preferred)
-- [ ] DOCUMENT-SCHEMA.md parquet/geoparquet code examples (4 instances) updated to use `flat-white-2026.04.*`
-- [ ] RUNBOOK.md command examples (6 instances) updated to use the latest released version, OR converted to use a `${VERSION}` shell variable that the user is told to set
-- [ ] COMMUNITY-ANNOUNCEMENT.md target version reference updated (or removed if pre-launch context is no longer relevant)
-- [ ] Establish a convention: should examples track the latest release, or use a generic placeholder? Document the decision in `docs/RELEASING.md` so future releases know whether to bump the doc examples too
+- [x] DOCUMENT-SCHEMA.md `_version` field example updated to `"2026.04"` (or kept as illustrative placeholder if generic preferred) Evidence: commit 0456b47
+- [x] DOCUMENT-SCHEMA.md parquet/geoparquet code examples (4 instances) updated to use `flat-white-2026.04.*` Evidence: commit 0456b47
+- [x] RUNBOOK.md command examples (6 instances) updated to use the latest released version, OR converted to use a `${VERSION}` shell variable that the user is told to set Evidence: commit 0456b47 — used ${VERSION} placeholder convention
+- [x] COMMUNITY-ANNOUNCEMENT.md target version reference updated (or removed if pre-launch context is no longer relevant) Evidence: commit 0456b47 — updated to note v2026.04 shipped
+- [x] Establish a convention: should examples track the latest release, or use a generic placeholder? Document the decision in `docs/RELEASING.md` so future releases know whether to bump the doc examples too Evidence: commit 0456b47 — two-tier convention documented in RELEASING.md
 
 ## Scope
 
