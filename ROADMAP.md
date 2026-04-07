@@ -4176,6 +4176,99 @@ Free GitHub Actions runners have 7GB RAM and 2-core CPUs. While sufficient for t
 
 ---
 
+### Ticket E1.10 — Shapefile Fixtures + Spatial Join Regression Test
+
+```yaml
+id: E1.10
+title: Shapefile Fixtures + Spatial Join Regression Test
+status: planned
+priority: p1-high
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+tech_stack:
+  runtime: Node.js 22
+  language: TypeScript 5.7 strict
+  database: PostgreSQL 16 + PostGIS 3.5
+  data_loader: minus34/gnaf-loader (Python)
+  container: Docker (Debian Bookworm)
+  ci: GitHub Actions (free tier)
+  output: NDJSON
+  distribution: GitHub Releases
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need the fixture build to exercise the shapefile loading and spatial join steps so that regressions in gnaf-loader's admin boundary pipeline (or in our wiring of it) are caught by CI before they ship to a release.
+
+## Problem Statement
+
+Today's fixture (`fixtures/seed-postgres.sql`) is a post-transformation snapshot — it loads pre-baked rows into `gnaf_202602.address_principal_admin_boundaries`, `admin_bdys_202602.abs_2021_mb_lookup`, etc., and skips shapefile loading entirely. This means CI never runs:
+
+- shp2pgsql ingest of `{state}_*.shp` → `raw_admin_bdys_202602.aus_*` tables
+- gnaf-loader's prep SQL (`02-02a-prep-admin-bdys-tables.sql`) that builds `commonwealth_electorates`, `state_bdys`, `wards`, `abs_2021_mb` from the raw tables
+- The address → boundary spatial join that populates `address_principal_admin_boundaries`
+- The per-state-file `aus_*` rename pattern in `geoscape.load_raw_admin_boundaries()`
+
+Two real bugs slipped past CI as a direct result:
+
+1. **v2026.04 wards crash** — gnaf-loader failed loading `aus_wards` and we shipped a `--no-boundary-tag` workaround in the entrypoint. Fixture build couldn't see this.
+2. **v2026.04 streetType regression** (PR #67) — though caught by adding cross-path testing, the underlying issue (drift between `address_full.sql` and `address_full_main.sql`) was only one of several places where the materialize/production path silently diverged from the legacy/fixture path. The boundary spatial join is the next biggest blind spot.
+
+## Definition of Done
+
+### Functional
+
+- [ ] Tiny shapefile fixtures committed under `fixtures/admin-bdys/` covering the 451 fixture-address footprint
+  - `Verify:` `find fixtures/admin-bdys -name '*.shp'` lists wards, LGA, commonwealth electorate, state electorate, and ABS mesh-block shapefiles for at least one VIC LGA
+  - `Evidence:`
+- [ ] `scripts/seed-shapefiles.sh` (or equivalent step inside `build-fixture-only.sh`) runs `shp2pgsql` against the dev container to populate `raw_admin_bdys_202602.aus_*` from the committed shapefiles
+  - `Verify:` `psql -c '\dt raw_admin_bdys_202602.aus_*'` lists the expected tables after the script runs
+  - `Evidence:`
+- [ ] Fixture build runs the relevant gnaf-loader prep SQL scripts (or a trimmed equivalent) against the seeded raw tables to produce `admin_bdys_202602.*`
+  - `Verify:` `admin_bdys_202602.commonwealth_electorates`, `state_bdys`, `wards`, `abs_2021_mb` are non-empty after seeding
+  - `Evidence:`
+- [ ] Address → boundary spatial join runs against the fixture and populates `address_principal_admin_boundaries` from polygons (not from pre-baked rows)
+  - `Verify:` Pre-baked `address_principal_admin_boundaries` block removed from `seed-postgres.sql`; fixture flatten still produces byte-identical `expected-output.ndjson`
+  - `Evidence:`
+- [ ] Both flatten paths (legacy and `--materialize`) continue to produce byte-identical output against the new derived data
+  - `Verify:` `scripts/build-fixture-only.sh` exits 0 with cross-path PASS
+  - `Evidence:`
+
+### Performance
+
+- [ ] Fixture dev loop stays under 90 seconds end-to-end (from <30s today)
+  - `Verify:` `time scripts/build-fixture-only.sh` reports < 90s on a clean container
+  - `Evidence:`
+
+### Documentation
+
+- [ ] `fixtures/SCHEMA-REFERENCE.md` updated to note which tables are now derived vs pre-seeded
+- [ ] `AGENTS.md` "Fixture-first development" principle updated to reflect that fixtures now exercise the spatial join
+
+## Scope
+
+### In
+
+- Minimal clipped shapefiles (one VIC LGA covering the fixture footprint)
+- shp2pgsql wiring + selective gnaf-loader prep SQL execution against fixtures
+- Removal of pre-baked `address_principal_admin_boundaries` rows from `seed-postgres.sql` (replaced by derivation)
+- Cross-path regression check (already in place from PR #67) extended to cover the new derived data
+
+### Out — Do Not Implement
+
+- Full nationwide shapefile fixtures (size + complexity)
+- Reproducing macOS Python 3.9 multiprocessing fork-safety failures (environmental, not a flat-white concern; pin Python ≥3.10 upstream if desired)
+- Generating shapefile fixtures from live data on every build (commit them once, regenerate manually when boundaries change)
+- Replacing `--no-boundary-tag` workaround in production entrypoint (separate fix, upstream in gnaf-loader)
+
+## Notes
+
+Origin: surfaced during PR #67 retrospective. The streetType regression and the wards crash both shipped in v2026.04 because the fixture has no visibility into anything below the flatten layer. This ticket closes that gap.
+
+---
+
 ## Phase P5 — AWS Mirror (Deferred)
 
 **Target:** Post-M4 · **Status:** Planned · **Rationale:** GitHub Releases is the primary distribution. S3 is redundancy — valuable but not required for the first release. Deferred from Phase P3 to avoid overloading the first release week.

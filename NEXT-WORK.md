@@ -42,6 +42,13 @@
 
 ## Next E1 Work
 
+### E1.10 — Shapefile Fixtures + Spatial Join Regression Test (planned, p1-high)
+
+- [ ] Commit clipped shapefile fixtures + wire shp2pgsql into fixture build
+- [ ] Run gnaf-loader prep SQL against seeded raw tables; derive `admin_bdys_202602.*`
+- [ ] Remove pre-baked `address_principal_admin_boundaries` rows from `seed-postgres.sql`
+- Origin: PR #67 retrospective — fixture has no visibility into shapefile loading or spatial join, which is how both the v2026.04 wards crash and streetType regression slipped past CI
+
 ### E1.02 — Delta Builds (planned, p2-medium)
 
 - [ ] Depends on P4.03
