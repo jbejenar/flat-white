@@ -9243,6 +9243,19 @@ FCS714824244	2017-07-26	\N	714824244	\N	\N	FCS	2	\N	\N	\N	144.95513882	-37.80319
 \.
 
 
+-- Mirror abs_2021_mb_lookup as abs_2021_mb so the materialize/production SQL path
+-- (sql/address_full_main.sql, which reads admin_bdys_202602.abs_2021_mb) produces
+-- byte-identical output to the legacy path against the fixture. In production
+-- gnaf-loader creates abs_2021_mb directly from shapefiles.
+DROP TABLE IF EXISTS admin_bdys_202602.abs_2021_mb;
+CREATE TABLE admin_bdys_202602.abs_2021_mb AS
+SELECT
+  (ROW_NUMBER() OVER (ORDER BY mb21_code))::int AS gid,
+  mb21_code, mb_cat, sa1_21code, sa2_21code, sa2_21name,
+  sa3_21code, sa3_21name, sa4_21code, sa4_21name,
+  gcc_21code, gcc_21name, state
+FROM admin_bdys_202602.abs_2021_mb_lookup;
+
 
 -- Reset sequences to match loaded data
 SELECT setval('gnaf_202602.address_principals_gid_seq', (SELECT COALESCE(MAX(gid), 0) FROM gnaf_202602.address_principals));
