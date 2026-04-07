@@ -4832,13 +4832,25 @@ Origin: PR #67 audit (round 3). Initial scope was just "wards" but verification 
 ```yaml
 id: E1.15
 title: Fix multi-polygon row multiplication in spatial join fallback
-status: planned
+status: done
 priority: p1-high
 epic: E1.B
 persona: [maintainer]
-depends_on: [E1.10]
-completed: null
+depends_on: []
+completed: 2026-04-07
 ```
+
+## Resolution
+
+Fixed in PR #66 (this branch). The four `LEFT JOIN ... ON ST_Intersects(...)` clauses are now `LEFT JOIN LATERAL (SELECT ... WHERE ST_Intersects(...) ORDER BY pid LIMIT 1) ... ON true`. The LATERAL form guarantees AT MOST ONE row per (address, boundary table), so the cartesian product across all four LEFT JOINs is at most 1 × 1 × 1 × 1 = one row per address. The `ORDER BY pid` ensures the choice is deterministic across runs (same point on a shared boundary always picks the same polygon).
+
+A `UNIQUE INDEX` on `gnaf_pid` is also created (outside the DO block, so it protects gnaf-loader-populated rows too) — this makes the no-duplication guarantee structural. Any future code path that tries to insert duplicates will fail fast.
+
+Verified by:
+
+1. Running the prep against an empty `address_principal_admin_boundaries` with stub boundary tables → fallback inserted exactly 451 rows (one per address), no duplicates.
+2. Confirming the unique index exists in the schema.
+3. Running the full `./scripts/build-fixture-only.sh` → cross-path PASS, byte-for-byte match against `expected-output.ndjson`.
 
 ## User Story
 
