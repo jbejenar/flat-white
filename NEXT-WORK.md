@@ -111,12 +111,12 @@
 - [x] Verified end-to-end against empty target with stub boundary tables (451 rows in, 451 rows out, 0 duplicates)
 - Resolution: fixed in PR #66 itself before merging — chosen over LEFT JOIN+DISTINCT ON because LATERAL+LIMIT scopes the deduplication to each boundary table independently and is more readable
 
-### E1.19 — Stale `2026.02` references in user-facing docs (planned, p3-low)
+### E1.19 — Stale `2026.02` references in user-facing docs (done)
 
-- [ ] DOCUMENT-SCHEMA.md `_version` examples + parquet/geoparquet code examples (~6 instances)
-- [ ] RUNBOOK.md failure-recovery command examples (~6 instances)
-- [ ] COMMUNITY-ANNOUNCEMENT.md target version reference
-- [ ] Establish convention in `docs/RELEASING.md` for whether examples track latest release or use placeholders
+- [x] DOCUMENT-SCHEMA.md `_version` examples + parquet/geoparquet code examples (~6 instances)
+- [x] RUNBOOK.md failure-recovery command examples → `${VERSION}` placeholders
+- [x] COMMUNITY-ANNOUNCEMENT.md target version reference updated
+- [x] Convention documented in `docs/RELEASING.md` (two-tier: consumer-facing uses current version, operational uses `${VERSION}`)
 - Origin: PR #77 audit — README VERSION example was the highest-impact and got fixed in #77; rest filed for follow-up
 
 ### E1.02 — Delta Builds (planned, p2-medium)

@@ -1,5 +1,24 @@
 # Next Session — flat-white
 
+## Session: 2026-04-08 (session 12)
+
+Phase: E1 — ongoing enhancements
+Checkboxes checked this session: 5 (E1.19 — all 5 DoD items)
+
+### Completed
+
+- **E1.19** — Stale `2026.02` references in user-facing docs (all 5 DoD items checked):
+  - DOCUMENT-SCHEMA.md `_version` examples → `2026.04`, parquet/geoparquet filenames → `flat-white-2026.04.*`
+  - RUNBOOK.md commands → `${VERSION}` shell variable placeholders with usage note
+  - COMMUNITY-ANNOUNCEMENT.md target version → v2026.04 shipped
+  - Two-tier convention documented in RELEASING.md (consumer-facing = current version, operational = `${VERSION}`)
+
+### Ticket Status Changes
+
+- E1.19: planned → done (completed 2026-04-08)
+
+---
+
 ## Session: 2026-04-07 (session 11)
 
 Phase: E1 — ongoing enhancements

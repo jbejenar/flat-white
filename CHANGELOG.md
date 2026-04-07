@@ -20,9 +20,12 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 - **README download example:** `STATE="vic"; VERSION="2026.02"` → `VERSION="2026.04"`. The previous example referenced a filename (`flat-white-2026.02-vic.ndjson.gz`) that doesn't exist in any release — copy-pasting the verification snippet would fail with "no such file". (PR #77)
 - **E1.14 Root-cause identified:** gnaf-loader's `geoscape.py:import_shapefile_to_postgres()` never checks `process.returncode` after running `shp2pgsql` via `subprocess.Popen()`. When `shp2pgsql` fails, empty stdout is decoded to an empty SQL string, executed as a no-op, and the function returns "SUCCESS" — silently failing to create boundary tables. This is the root cause of all four boundary fields being null in v2026.04. Fix requires upstream PR to `minus34/gnaf-loader`.
 
+### Changed
+
+- **E1.19 Doc version references updated:** `DOCUMENT-SCHEMA.md` examples now show `2026.04`; `RUNBOOK.md` commands use `${VERSION}` shell variable placeholders; `COMMUNITY-ANNOUNCEMENT.md` reflects v2026.04 shipped. New convention documented in `RELEASING.md`.
+
 ### Added
 
-- **E1.19 Stale `2026.02` references in user-facing docs (p3-low):** roadmap ticket. PR #77 audit found that `docs/DOCUMENT-SCHEMA.md`, `docs/RUNBOOK.md`, and `docs/COMMUNITY-ANNOUNCEMENT.md` all contain example commands and field values still referencing `v2026.02`. The README example was the highest-impact and got fixed in PR #77 directly; the rest are filed for follow-up. Schema-name references (`gnaf_202602` etc.) and external/historical references are intentionally NOT in scope. (PR #77)
 - **E1.10 Shapefile fixtures + spatial join regression:** Fixture build now exercises the full boundary pipeline — raw admin boundary SQL seeding → prep SQL transformation (adapted from gnaf-loader) → spatial join derivation → flatten → verify. Pre-baked `address_principal_admin_boundaries` rows removed from `seed-postgres.sql`; boundaries are now derived from polygon geometries via `ST_Intersects`. Closes the CI blind spot that let v2026.04 wards crash and boundary regressions slip through.
 - **E1.10 State upper house electorate support:** Spatial join fallback in `address_full_prep.sql` now handles `state_upper_house_electorates` (previously hardcoded to NULL). VIC Legislative Council electorates are correctly assigned.
 - **E1.13 Patch release PR auto-linking:** `quarterly-build.yml` now automatically discovers merged PRs between the base version tag and HEAD for patch releases, injecting a "Fixes" section with PR titles and links into the release notes. No more manual editing after running the patch workflow.
