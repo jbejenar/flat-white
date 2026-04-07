@@ -15,7 +15,14 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
+### Fixed
+
+- `streetType` field returned the abbreviation (e.g. `"PL"`) instead of the long form (e.g. `"PLACE"`) in the production (`--materialize`) flatten path. `sql/address_full_main.sql` joined `raw_gnaf_202602.street_type_aut`, which is the only G-NAF authority table with a reversed convention (`code` = long form, `name` = abbreviation). The legacy CTE-based path was fixed in PR #23 but `address_full_main.sql` (added in PR #29) carried the pre-fix join logic. Affects v2026.04 — release will be republished after merge. `addressLabelSearch` was also affected since `composeSearchLabel` reads `streetTypeName`. (PR #67)
+
 ### Added
+
+- Cross-path regression guard in `scripts/build-fixture-only.sh`: both flatten paths (legacy and `--materialize`) now run against the fixture and must produce byte-identical output. Future drift between `sql/address_full.sql` and `sql/address_full_main.sql` fails CI immediately.
+- `fixtures/seed-postgres.sql` mirrors `abs_2021_mb_lookup` into a stub `admin_bdys_202602.abs_2021_mb` so the materialize path (which reads the table name gnaf-loader populates in production) sees the same SA1–4/GCC data the legacy path reads from `abs_2021_mb_lookup`. Mirror has no `geom` column — to be added by E1.10 (shapefile fixtures).
 
 - E1.06 Build Cache: `--dump-db` and `--restore-db` flags in docker-entrypoint.sh for gnaf-loader database dump caching. `quarterly-build.yml` uses `actions/cache@v4` keyed by G-NAF version + state + gnaf-loader hash. Cache hit skips download + gnaf-loader (~30 min per state).
 - E1.08 GitHub Pages Catalogue: `src/generate-catalogue.ts` generates static HTML site from GitHub Release API data. `.github/workflows/catalogue.yml` deploys to GitHub Pages on release publish. Includes release history, per-state counts, download links, schema reference, dark mode.
