@@ -25,8 +25,8 @@ function makeDoc(overrides: Record<string, unknown> = {}): Record<string, unknow
     addressLabel: "1 TEST ST, TESTVILLE VIC 3000",
     state: "VIC",
     postcode: "3000",
-    geocode: { latitude: -37.8, longitude: 144.9, type: "FCS", reliability: 2 },
-    allGeocodes: [{ lat: -37.8, lng: 144.9, type: "FCS", reliability: 2 }],
+    geocode: { latitude: -37.8, longitude: 144.9, type: "FRONTAGE CENTRE SETBACK", reliability: 2 },
+    allGeocodes: [{ lat: -37.8, lng: 144.9, type: "FRONTAGE CENTRE SETBACK", reliability: 2 }],
     boundaries: {
       lga: { name: "Melbourne", code: "LGA1" },
       ward: { name: "Test Ward" },
@@ -142,8 +142,8 @@ describe("verify", () => {
     const docs = [
       makeDoc({
         _id: "BAD_GEO",
-        geocode: { latitude: 0, longitude: 0, type: "FCS", reliability: 2 },
-        allGeocodes: [{ lat: 0, lng: 0, type: "FCS", reliability: 2 }],
+        geocode: { latitude: 0, longitude: 0, type: "FRONTAGE CENTRE SETBACK", reliability: 2 },
+        allGeocodes: [{ lat: 0, lng: 0, type: "FRONTAGE CENTRE SETBACK", reliability: 2 }],
       }),
     ];
     const path = tmpFile("bad-geo.ndjson");

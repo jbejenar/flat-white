@@ -45,8 +45,8 @@ const baseRow: Record<string, unknown> = {
     reliability: 2,
   },
   all_geocodes: [
-    { lat: -37.79815294, lng: 144.89719303, type: "FCS", reliability: 2 },
-    { lat: -37.798211, lng: 144.897254, type: "PC", reliability: 2 },
+    { lat: -37.79815294, lng: 144.89719303, type: "FRONTAGE CENTRE SETBACK", reliability: 2 },
+    { lat: -37.798211, lng: 144.897254, type: "PROPERTY CENTROID", reliability: 2 },
   ],
   locality_pid: "loc67a11408d754",
   locality_class_name: "GAZETTED LOCALITY",
@@ -170,8 +170,8 @@ describe("composeDocument", () => {
   it("maps allGeocodes correctly", () => {
     const doc = composeDocument(baseRow, "2026.02");
     expect(doc.allGeocodes).toHaveLength(2);
-    expect(doc.allGeocodes[0].type).toBe("FCS");
-    expect(doc.allGeocodes[1].type).toBe("PC");
+    expect(doc.allGeocodes[0].type).toBe("FRONTAGE CENTRE SETBACK");
+    expect(doc.allGeocodes[1].type).toBe("PROPERTY CENTROID");
   });
 
   it("maps boundaries correctly", () => {

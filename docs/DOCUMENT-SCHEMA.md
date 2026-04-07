@@ -62,12 +62,12 @@ The best available geocode for this address, selected by highest reliability the
 
 One entry per geocode type available for this address. Every address has at least one.
 
-| Field         | Type    | Nullable | Description               | Example        | G-NAF Source                              |
-| ------------- | ------- | -------- | ------------------------- | -------------- | ----------------------------------------- |
-| `lat`         | number  | No       | WGS84 latitude            | `-37.79815294` | `gnaf.address_site_geocodes.latitude`     |
-| `lng`         | number  | No       | WGS84 longitude           | `144.89719303` | `gnaf.address_site_geocodes.longitude`    |
-| `type`        | string  | No       | Geocode type abbreviation | `"FCS"`        | `gnaf.address_site_geocodes.geocode_type` |
-| `reliability` | integer | No       | Reliability level (1-6)   | `2`            | `gnaf.address_site_geocodes.reliability`  |
+| Field         | Type    | Nullable | Description                                                          | Example                     | G-NAF Source                                                             |
+| ------------- | ------- | -------- | -------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------ |
+| `lat`         | number  | No       | WGS84 latitude                                                       | `-37.79815294`              | `gnaf.address_site_geocodes.latitude`                                    |
+| `lng`         | number  | No       | WGS84 longitude                                                      | `144.89719303`              | `gnaf.address_site_geocodes.longitude`                                   |
+| `type`        | string  | No       | Geocode type description (long form, consistent with `geocode.type`) | `"FRONTAGE CENTRE SETBACK"` | `gnaf.address_site_geocodes.geocode_type` (expanded from authority code) |
+| `reliability` | integer | No       | Reliability level (1-6)                                              | `2`                         | `gnaf.address_site_geocodes.reliability`                                 |
 
 ---
 

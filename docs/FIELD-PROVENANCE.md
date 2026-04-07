@@ -7,7 +7,7 @@
 
 ## Table Inventory
 
-All tables joined by `sql/address_full.sql` and its CTEs. Row counts are from the committed fixture (`fixtures/seed-postgres.sql`).
+All tables joined by `sql/address_full.sql` (the canonical flatten query) and its CTEs. `sql/address_full_main.sql` is auto-generated from this source — edit only `address_full.sql`. Row counts are from the committed fixture (`fixtures/seed-postgres.sql`).
 
 | Schema              | Table                                | Alias in SQL | Fixture Rows | Role                                                                                                                                                                                                                                                                                                                 |
 | ------------------- | ------------------------------------ | ------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -138,14 +138,14 @@ Best geocode selected per address. Determined inside the `address_geocodes` CTE.
 
 All geocode types for an address, aggregated in the `address_geocodes` CTE.
 
-| Output Field                | SQL Source                   | Source Table.Column                                      | Transform                       |
-| --------------------------- | ---------------------------- | -------------------------------------------------------- | ------------------------------- |
-| `allGeocodes[].lat`         | `all_geocodes[].lat`         | `raw_gnaf_202602.address_site_geocode.latitude`          | `Number()` cast                 |
-| `allGeocodes[].lng`         | `all_geocodes[].lng`         | `raw_gnaf_202602.address_site_geocode.longitude`         | `Number()` cast                 |
-| `allGeocodes[].type`        | `all_geocodes[].type`        | `raw_gnaf_202602.address_site_geocode.geocode_type_code` | Raw abbreviation (not expanded) |
-| `allGeocodes[].reliability` | `all_geocodes[].reliability` | `raw_gnaf_202602.address_site_geocode.reliability_code`  | `Number()` cast                 |
+| Output Field                | SQL Source                   | Source Table.Column                                     | Transform                                                                              |
+| --------------------------- | ---------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `allGeocodes[].lat`         | `all_geocodes[].lat`         | `raw_gnaf_202602.address_site_geocode.latitude`         | `Number()` cast                                                                        |
+| `allGeocodes[].lng`         | `all_geocodes[].lng`         | `raw_gnaf_202602.address_site_geocode.longitude`        | `Number()` cast                                                                        |
+| `allGeocodes[].type`        | `all_geocodes[].type`        | `raw_gnaf_202602.geocode_type_aut.name`                 | Expanded from `geocode_type_code` via authority table (consistent with `geocode.type`) |
+| `allGeocodes[].reliability` | `all_geocodes[].reliability` | `raw_gnaf_202602.address_site_geocode.reliability_code` | `Number()` cast                                                                        |
 
-**Note:** `allGeocodes[].type` uses the raw code (e.g. `"FCS"`), while `geocode.type` uses the expanded name (e.g. `"FRONTAGE CENTRE SETBACK"`). This is intentional — the array is compact; the primary geocode is descriptive.
+**Note:** Both `allGeocodes[].type` and `geocode.type` use the expanded long form (e.g. `"FRONTAGE CENTRE SETBACK"`), joined from `geocode_type_aut.name`. This was made consistent in E1.16 — prior to v0.2.0, `allGeocodes[].type` used the raw abbreviation (e.g. `"FCS"`).
 
 **Ordering:** `ORDER BY reliability_code, geocode_type_code` (within `json_agg`).
 

@@ -15,6 +15,11 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
+### Changed
+
+- **E1.11 Consolidate flatten SQL:** `sql/address_full.sql` is now the single source of truth for the flatten query. `sql/address_full_main.sql` is auto-generated from it by `npm run generate:sql` (integrated into `npm run build`). This eliminates the hand-maintained drift that caused the v2026.04 streetType regression. Cross-path byte-equality check retained as belt-and-braces.
+- **E1.16 Geocode type consistency (BREAKING):** `allGeocodes[].type` now uses the long-form description (e.g. `"FRONTAGE CENTRE SETBACK"`) instead of the raw abbreviation (e.g. `"FCS"`), matching `geocode.type`. Consumers that hardcoded short codes like `"FCS"`, `"PC"`, or `"PAPS"` must update to use long-form values. Version bumped to 0.2.0.
+
 ### Fixed
 
 - **E1.17 De-hardcode G-NAF Feb 2026:** removed all hardcoded `2026.02` / `202602` defaults from production code paths (`src/download.ts`, `src/load.ts`, `src/flatten.ts`, `docker-entrypoint.sh`, `scripts/build-local.sh`). `GNAF_VERSION` env var is now required for production builds — prevents v2026.05 from silently shipping Feb 2026 data. Fixture scripts retain the `2026.02` default since fixtures are frozen. SQL files were already parameterized with `__SCHEMA_VERSION__`. Download URLs for non-Feb-2026 releases are set via `DOWNLOAD_URL_GNAF` / `DOWNLOAD_URL_ADMIN_BDYS` env vars. `docs/RELEASING.md` updated with version configuration and URL discovery instructions.
