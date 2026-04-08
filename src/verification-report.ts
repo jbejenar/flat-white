@@ -22,7 +22,8 @@ import type { BuildMetadata } from "./metadata.js";
 import { ENUM_FIELD_PATHS } from "./verify.js";
 import type { EnumSets, EnumUnknownCounts } from "./verify.js";
 
-const STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
+const DEFAULT_STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
+const VALID_STATES = new Set(DEFAULT_STATES);
 
 export interface StateVerification {
   state: string;
@@ -272,14 +273,41 @@ export function formatVerificationReport(report: VerificationReport): string {
 /**
  * Find per-state gzipped NDJSON files in a directory.
  */
-function findStateFiles(assetDir: string, version: string): { state: string; path: string }[] {
+function findStateFiles(
+  assetDir: string,
+  version: string,
+  states: readonly string[],
+): { state: string; path: string }[] {
   const found: { state: string; path: string }[] = [];
-  for (const state of STATES) {
+  for (const state of states) {
     const lower = state.toLowerCase();
     const filename = `flat-white-${version}-${lower}.ndjson.gz`;
     found.push({ state, path: join(assetDir, filename) });
   }
   return found;
+}
+
+export function parseStatesArg(raw: string | undefined): string[] {
+  if (!raw) {
+    return [...DEFAULT_STATES];
+  }
+
+  const states = raw
+    .split(",")
+    .map((state) => state.trim().toUpperCase())
+    .filter(Boolean);
+
+  if (states.length === 0) {
+    throw new Error("Expected at least one state in --states");
+  }
+
+  for (const state of states) {
+    if (!VALID_STATES.has(state as (typeof DEFAULT_STATES)[number])) {
+      throw new Error(`Invalid state in --states: ${state}`);
+    }
+  }
+
+  return states;
 }
 
 // --- CLI entry point ---
@@ -293,6 +321,12 @@ async function main(): Promise<void> {
 
   const outputIdx = process.argv.indexOf("--output");
   const outputPath = outputIdx !== -1 ? process.argv[outputIdx + 1] : "verification-report.md";
+  const statesIdx = process.argv.indexOf("--states");
+  const statesArg =
+    statesIdx !== -1 && statesIdx + 1 < process.argv.length
+      ? process.argv[statesIdx + 1]
+      : undefined;
+  const states = parseStatesArg(statesArg);
 
   // Read metadata.json for version
   const metadataPath = join(assetDir, "metadata.json");
@@ -304,7 +338,7 @@ async function main(): Promise<void> {
     console.warn("Warning: Could not read metadata.json — version will be 'unknown'");
   }
 
-  const stateFiles = findStateFiles(assetDir, version);
+  const stateFiles = findStateFiles(assetDir, version, states);
 
   console.log(`Verifying ${stateFiles.length} states for version ${version}...`);
 

@@ -34,6 +34,26 @@ function stateFilename(version: string, state: string): string {
   return `flat-white-${version}-${state.toLowerCase()}.ndjson`;
 }
 
+async function waitForDrain(writer: WriteStream): Promise<void> {
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const onDrain = () => {
+      cleanup();
+      resolvePromise();
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      rejectPromise(error);
+    };
+    const cleanup = () => {
+      writer.off("drain", onDrain);
+      writer.off("error", onError);
+    };
+
+    writer.on("drain", onDrain);
+    writer.on("error", onError);
+  });
+}
+
 /**
  * Split an NDJSON file into per-state files.
  *
@@ -81,11 +101,7 @@ export async function split(options: SplitOptions): Promise<SplitResult> {
     const writer = writers.get(state) as WriteStream;
     const ok = writer.write(line + "\n");
     if (!ok) {
-      // Backpressure: wait for drain before continuing
-      await new Promise<void>((resolve, reject) => {
-        writer.once("drain", resolve);
-        writer.once("error", reject);
-      });
+      await waitForDrain(writer);
     }
   }
 
@@ -93,8 +109,7 @@ export async function split(options: SplitOptions): Promise<SplitResult> {
   const closePromises: Promise<void>[] = [];
   for (const writer of writers.values()) {
     closePromises.push(
-      new Promise<void>((resolve, reject) => {
-        writer.on("error", reject);
+      new Promise<void>((resolve) => {
         writer.end(() => resolve());
       }),
     );

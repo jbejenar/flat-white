@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   formatVerificationReport,
+  parseStatesArg,
   type StateVerification,
   type VerificationReport,
 } from "../../src/verification-report.js";
@@ -115,5 +116,29 @@ describe("formatVerificationReport", () => {
     const md = formatVerificationReport(report);
 
     expect(md).toContain("FAIL (3)");
+  });
+});
+
+describe("parseStatesArg", () => {
+  it("returns the default quarterly state list when omitted", () => {
+    expect(parseStatesArg(undefined)).toEqual([
+      "ACT",
+      "NSW",
+      "NT",
+      "OT",
+      "QLD",
+      "SA",
+      "TAS",
+      "VIC",
+      "WA",
+    ]);
+  });
+
+  it("parses a comma-separated state list", () => {
+    expect(parseStatesArg("vic, nsw,act")).toEqual(["VIC", "NSW", "ACT"]);
+  });
+
+  it("rejects invalid states", () => {
+    expect(() => parseStatesArg("VIC,ZZZ")).toThrow("Invalid state");
   });
 });
