@@ -4,15 +4,19 @@
 
 The normal release cadence is quarterly, triggered automatically by `.github/workflows/quarterly-build.yml` on a cron schedule (15th of Feb, May, Aug, Nov at 02:00 UTC). The version is `vYYYY.MM` matching the underlying G-NAF data version.
 
-To trigger a quarterly build manually:
+To trigger a quarterly build manually, you can either pin a specific quarter or omit `gnaf_version` and let the workflow discover the latest published one:
 
 ```bash
 gh workflow run quarterly-build.yml -f gnaf_version=2026.05
 ```
 
+```bash
+gh workflow run quarterly-build.yml
+```
+
 ### Version configuration
 
-`GNAF_VERSION` is **required** for all production builds — there is no hardcoded default inside the container. The workflow sets it automatically from the `gnaf_version` input, or if omitted, discovers the newest overlapping G-NAF/Admin Boundaries quarterly release from data.gov.au. For local builds, set it explicitly:
+`GNAF_VERSION` is **required** for direct production builds — there is no hardcoded default inside the container. The workflow sets it automatically from the `gnaf_version` input, or if omitted, discovers the newest overlapping G-NAF/Admin Boundaries quarterly release from data.gov.au. For local builds, set it explicitly:
 
 ```bash
 # Local build
@@ -94,6 +98,20 @@ The G-NAF data version stays at `2026.04` for all `v2026.04.N` patches — the p
    If `v2026.04` exists and there's no `v2026.04.1`, use `patch_version=1`. If `v2026.04.1` exists, use `patch_version=2`.
 
 3. **Trigger the workflow:**
+
+   ```bash
+   gh workflow run quarterly-build.yml -f patch_version=1
+   ```
+
+   If you need to patch a specific older quarter instead of the latest published one, pin it explicitly:
+
+   ```bash
+   gh workflow run quarterly-build.yml \
+     -f gnaf_version=2026.04 \
+     -f patch_version=1
+   ```
+
+   If data.gov.au discovery needs to be overridden for a one-off run, provide the manual download inputs too:
 
    ```bash
    gh workflow run quarterly-build.yml \
