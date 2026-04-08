@@ -11,7 +11,7 @@ Checkboxes checked this session: 0
 
 ### In Progress (all BLOCKED — unchanged since session 20)
 
-- E1.14 — 2 items BLOCKED: boundary field population (needs v2026.05), release notes update (needs v2026.04.1)
+- E1.14 — 1 item BLOCKED: release notes update (needs v2026.04.1)
 - E1.17 — 1 item BLOCKED: needs May 2026 G-NAF data
 - E1.13 — 1 item BLOCKED: v2026.04.1 not published
 - P4.07 — NSW memory: needs 4 more consecutive runs
@@ -27,19 +27,19 @@ Checkboxes checked this session: 0
 ### Key Dates
 
 - **2026-05-01 (approx):** May 2026 G-NAF data available — unblocks E1.17 final validation
-- **2026-05-15:** Quarterly cron fires — E1.14 + E1.17 must be validated by then
+- **2026-05-15:** Quarterly cron fires — E1.17 must be validated by then
 
 ### Next Session Should Start With
 
 1. **Check upstream PR status:** If minus34/gnaf-loader#100 is merged, update .gitmodules back to minus34/gnaf-loader and update submodule pin
-2. **v2026.05 prep:** E1.14 + E1.17 are the two critical blockers. Once May data is available, run a test build to validate both
-3. **E1.13:** Update v2026.04 release notes when v2026.04.1 publishes
+2. **E1.13:** Update v2026.04 release notes when v2026.04.1 publishes
+3. **v2026.05 prep:** E1.17 is the remaining May-data blocker. Once May data is available, run a test build to validate it
 4. **If all above still blocked:** No actionable roadmap items remain — skip sessions until ~May 2026
 
 ### Roadmap Progress
 
 - P0: All DoD items checked
-- E1: 11/18 tickets done, 4 in-progress (E1.06, E1.13, E1.14, E1.17) — all blocked
+- E1: 11/18 tickets done, 4 in-progress (E1.06, E1.13, E1.14, E1.17) — E1.14 partially unblocked pending patch release
 - P4: 3/6 tickets done, 3 in-progress — all blocked
 - No further phase advancement possible until external dependencies resolve
 
@@ -57,7 +57,7 @@ Checkboxes checked this session: 0
 
 ### In Progress (all BLOCKED — unchanged since session 13)
 
-- E1.14 — 2 items BLOCKED: boundary field population (needs v2026.05), release notes update (needs v2026.04.1)
+- E1.14 — 1 item BLOCKED: release notes update (needs v2026.04.1)
 - E1.17 — 1 item BLOCKED: needs May 2026 G-NAF data
 - E1.13 — 1 item BLOCKED: v2026.04.1 not published
 - P4.07 — NSW memory: needs 4 more consecutive runs
@@ -68,19 +68,19 @@ Checkboxes checked this session: 0
 ### Key Dates
 
 - **2026-05-01 (approx):** May 2026 G-NAF data available — unblocks E1.17 final validation
-- **2026-05-15:** Quarterly cron fires — E1.14 + E1.17 must be validated by then or v2026.05 ships with same issues as v2026.04
+- **2026-05-15:** Quarterly cron fires — E1.17 must be validated by then
 
 ### Next Session Should Start With
 
 1. **Check upstream PR status:** If minus34/gnaf-loader#100 is merged, update .gitmodules back to minus34/gnaf-loader and update submodule pin
-2. **v2026.05 prep:** E1.14 + E1.17 are the two critical blockers. Once May data is available, run a test build to validate both
-3. **E1.13:** Update v2026.04 release notes when v2026.04.1 publishes
+2. **E1.13:** Update v2026.04 release notes when v2026.04.1 publishes
+3. **v2026.05 prep:** E1.17 is the remaining May-data blocker. Once May data is available, run a test build to validate it
 4. **If all above still blocked:** No actionable roadmap items remain — skip sessions until ~May 2026
 
 ### Roadmap Progress
 
 - P0: All DoD items checked (P0.07 extract-fixtures.sh was the last unchecked)
-- E1: 11/18 tickets done, 4 in-progress (E1.06, E1.13, E1.14, E1.17) — all blocked
+- E1: 11/18 tickets done, 4 in-progress (E1.06, E1.13, E1.14, E1.17) — E1.14 partially unblocked pending patch release
 - P4: 3/6 tickets done, 3 in-progress — all blocked
 - No further phase advancement possible until external dependencies resolve
 
@@ -91,7 +91,7 @@ Checkboxes checked this session: 0
 Phase: E1 — ongoing enhancements
 Checkboxes checked: 0 (across all 5 sessions)
 
-All 5 sessions were identical status checks with no progress. All remaining roadmap items were blocked on the same external dependencies listed above. Upstream PR minus34/gnaf-loader#100 remained OPEN with no reviews. Golden commands passed in every session.
+All 5 sessions were identical status checks with no progress. Most remaining roadmap items were blocked on the same external dependencies listed above. Upstream PR minus34/gnaf-loader#100 remained OPEN with no reviews. Golden commands passed in every session.
 
 ---
 
