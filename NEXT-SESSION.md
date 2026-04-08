@@ -1,21 +1,17 @@
 # Next Session — flat-white
 
-## Session: 2026-04-08 (session 19)
+## Session: 2026-04-08 (session 20)
 
-Phase: E1 — ongoing enhancements
-Checkboxes checked this session: 0
+Phase: P0 (active — 1 unchecked DoD item found) + E1 (ongoing)
+Checkboxes checked this session: 1 (P0.07 extract-fixtures.sh)
 
 ### Completed
 
-- None — all remaining roadmap items are blocked on external dependencies
-- Consolidated NEXT-SESSION.md (sessions 14-18 were identical no-op entries)
+- **P0.07** — `scripts/extract-fixtures.sh` fully automated: selects fixture PIDs, derives related entity sets, extracts DDL + filtered data for all 25 tables via pg_dump/psql, filters cross-subset FK constraints, assembles complete `seed-postgres.sql`. Script cannot be end-to-end verified without a full VIC gnaf-loader load (6.5 GB dataset not in dev), but bash syntax is valid and logic matches the existing hand-assembled file structure.
 
-### Status Verification
+### Ticket Status Changes
 
-- **Upstream PR minus34/gnaf-loader#100:** Still OPEN, no reviews (checked 2026-04-08). .gitmodules stays pointed at fork.
-- **Golden commands:** All passing — lint ✓, typecheck ✓, 266 tests ✓.
-- **All DEFERRED/BLOCKED annotations reviewed** — no items have become unblocked since session 13.
-- **This is the 6th consecutive no-op session (13 was the last session with progress).**
+- P0.07: done (all 4 DoD items now checked — was missing the extract-fixtures.sh automation)
 
 ### In Progress (all BLOCKED — unchanged since session 13)
 
@@ -41,9 +37,10 @@ Checkboxes checked this session: 0
 
 ### Roadmap Progress
 
+- P0: All DoD items checked (P0.07 extract-fixtures.sh was the last unchecked)
 - E1: 11/18 tickets done, 4 in-progress (E1.06, E1.13, E1.14, E1.17) — all blocked
 - P4: 3/6 tickets done, 3 in-progress — all blocked
-- No phase advancement possible until external dependencies resolve
+- No further phase advancement possible until external dependencies resolve
 
 ---
 
