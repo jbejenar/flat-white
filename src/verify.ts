@@ -138,8 +138,31 @@ export interface VerifyOptions {
   tolerance?: number;
   /** Valid value sets for enum-ish fields. When provided, validates each document. */
   enumSets?: EnumSets;
-  /** Boundary coverage thresholds. When provided, verify fails if any field drops below its threshold. */
+  /**
+   * Boundary coverage thresholds. When provided, verify fails if any field
+   * drops below its threshold.
+   *
+   * - When `boundaryCoveragePerState` is also provided, this is used as the
+   *   FALLBACK for any address whose `state` field is not in the per-state
+   *   map. Single-state production callers can leave this undefined.
+   * - When `boundaryCoveragePerState` is NOT provided, this is applied
+   *   globally against the aggregate coverage (legacy behaviour, used by
+   *   the fixture path and any all-states caller).
+   */
   boundaryCoverageThresholds?: BoundaryCoverageThresholds;
+  /**
+   * Per-state boundary coverage thresholds. When provided, verify buckets
+   * addresses by their `state` field and applies each state's thresholds
+   * to its bucket. This is the correct way to validate multi-state output
+   * because per-state polygon coverage varies (NT 60% ward → VIC 99% ward;
+   * ACT no LGA polygon → NSW full LGA coverage). The CLI populates this
+   * from `PER_STATE_BOUNDARY_THRESHOLDS` keyed by the `STATES` env var.
+   *
+   * For unknown state buckets (e.g. an address with state="XYZ" or a
+   * state not in this map), falls back to `boundaryCoverageThresholds`
+   * if provided, else skips the check for that bucket.
+   */
+  boundaryCoveragePerState?: Record<string, BoundaryCoverageThresholds>;
 }
 
 export interface QualityIssue {
@@ -158,7 +181,15 @@ export interface VerifyResult {
   qualityIssues: QualityIssue[];
   qualityErrors: QualityIssue[];
   qualityWarnings: QualityIssue[];
+  /** Aggregate coverage across the entire output (all states combined). */
   boundaryCoverage: BoundaryCoverage;
+  /**
+   * Per-state coverage breakdown — populated unconditionally during the
+   * streaming pass. Used by the per-state threshold check (when
+   * `boundaryCoveragePerState` is provided) and by the formatted report.
+   * Empty for unstated rows.
+   */
+  boundaryCoverageByState: Map<string, BoundaryCoverage>;
   boundaryCoverageErrors: BoundaryCoverageError[];
   boundaryCoverageChecked: boolean;
   duplicatePids: string[];
@@ -265,46 +296,30 @@ export const PER_STATE_BOUNDARY_THRESHOLDS: Record<string, Required<BoundaryCove
 const KNOWN_STATES = new Set(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"]);
 
 /**
- * Pick the right boundary coverage thresholds for a given STATES env value.
+ * Validate a STATES env value (whitespace-separated state codes) and
+ * return the matching per-state thresholds for the SINGLE-STATE case.
  *
- * Behaviour by input shape:
+ * This function exists as an input validation helper and a convenience
+ * for callers that want a single threshold map for one state. It is
+ * NOT the source of truth for multi-state correctness — that's
+ * `boundaryCoveragePerState` plus per-record state bucketing in
+ * `verify()`. See the doc on the `boundaryCoveragePerState` field of
+ * `VerifyOptions` for why.
+ *
+ * Behaviour:
  *
  * - empty/undefined/whitespace-only → `DEFAULT_BOUNDARY_THRESHOLDS`
- *   (strict-all-five — fixture path and any all-states caller)
+ *   (back-compat: the fixture path and any all-states caller still
+ *   gets strict-all-five via this entry point).
  *
- * - single known state → `PER_STATE_BOUNDARY_THRESHOLDS[state]`
- *   (the production reality — every quarterly job runs one state at
- *   a time per the matrix in `quarterly-build.yml`)
+ * - exactly one known state → `PER_STATE_BOUNDARY_THRESHOLDS[state]`.
  *
- * - multiple known states → element-wise MIN across each selected
- *   state's per-state thresholds
+ * - multiple known states → `DEFAULT_BOUNDARY_THRESHOLDS`. The flat
+ *   threshold map can't faithfully represent multi-state output;
+ *   callers needing correctness MUST pass `boundaryCoveragePerState`
+ *   to `verify()` instead. The CLI does this automatically.
  *
- *   Why MIN: a multi-state output is the union of per-state addresses.
- *   For each boundary field, the field's coverage in the union depends
- *   on the per-state coverages weighted by row counts. Without doing
- *   per-record state bucketing (a larger refactor), the safest correct
- *   thing is to use the LOOSEST threshold across the selected states.
- *   This guarantees the check accepts every legitimate combination
- *   while still catching catastrophic regressions for any field where
- *   AT LEAST ONE selected state has a tight threshold.
- *
- *   Example: STATES="VIC NSW"
- *     - VIC: lga 0.99, ward 0.95, se 0.99, ce 0.99
- *     - NSW: lga 0.99, ward 0   , se 0.99, ce 0.99
- *     - MIN: lga 0.99, ward 0   , se 0.99, ce 0.99
- *     - Ward check is skipped (NSW has no ward polygon, so the union
- *       has only VIC's ward addresses; we don't enforce any minimum).
- *     - LGA / state / cwlth still gate at 0.99 — catastrophic regression
- *       in either state still trips the check.
- *
- *   Trade-off: this is more permissive than per-record bucketing for
- *   fields where states have different non-zero thresholds (e.g.
- *   "WA SA" → ward MIN(0.60, 0.70) = 0.60, slightly looser than what
- *   per-state bucketing would enforce). Per-record bucketing is the
- *   correct future enhancement; for now, MIN is a clean unblock for
- *   the multi-state CLI flag without invasive refactoring.
- *
- * - any unknown token → throws (CLI catches and exits 4)
+ * - any unknown token → throws (CLI catches and exits 4).
  *
  * Tokens are normalized: trimmed, split on shell whitespace, deduped
  * (so `"VIC VIC"` is identical to `"VIC"`), validated against the
@@ -313,9 +328,26 @@ const KNOWN_STATES = new Set(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC
 export function thresholdsForStates(
   states: string | undefined,
 ): Required<BoundaryCoverageThresholds> {
-  if (!states || !states.trim()) return DEFAULT_BOUNDARY_THRESHOLDS;
+  const tokens = parseStatesEnv(states);
+  if (tokens.length === 0) return DEFAULT_BOUNDARY_THRESHOLDS;
+  if (tokens.length === 1) {
+    const t = PER_STATE_BOUNDARY_THRESHOLDS[tokens[0]];
+    if (t) return t;
+  }
+  // Multi-state: flat threshold map can't represent the union correctly.
+  // Callers that need multi-state correctness use boundaryCoveragePerState
+  // + per-record bucketing in verify(). This entry point falls back to
+  // the strict default so it remains usable as a programmatic helper.
+  return DEFAULT_BOUNDARY_THRESHOLDS;
+}
 
-  // Normalize: split on whitespace, drop empties, dedupe (preserving order)
+/**
+ * Parse and validate a STATES env value into a deduped, ordered token
+ * list. Throws on unknown tokens. Used by `thresholdsForStates` and the
+ * CLI to validate input before building the per-state threshold map.
+ */
+export function parseStatesEnv(states: string | undefined): string[] {
+  if (!states || !states.trim()) return [];
   const seen = new Set<string>();
   const tokens: string[] = [];
   for (const raw of states.trim().split(/\s+/)) {
@@ -330,37 +362,7 @@ export function thresholdsForStates(
       tokens.push(raw);
     }
   }
-
-  if (tokens.length === 0) return DEFAULT_BOUNDARY_THRESHOLDS;
-
-  if (tokens.length === 1) {
-    const t = PER_STATE_BOUNDARY_THRESHOLDS[tokens[0]];
-    if (t) return t;
-    // unreachable because every KNOWN_STATES key has a per-state entry,
-    // but fall back defensively
-    return DEFAULT_BOUNDARY_THRESHOLDS;
-  }
-
-  // Multi-state: element-wise MIN across the selected states' per-state
-  // thresholds. See the JSDoc above for the rationale.
-  const result: Required<BoundaryCoverageThresholds> = {
-    lga: Number.POSITIVE_INFINITY,
-    ward: Number.POSITIVE_INFINITY,
-    stateElectorate: Number.POSITIVE_INFINITY,
-    commonwealthElectorate: Number.POSITIVE_INFINITY,
-  };
-  for (const token of tokens) {
-    const t = PER_STATE_BOUNDARY_THRESHOLDS[token];
-    if (!t) continue;
-    result.lga = Math.min(result.lga, t.lga);
-    result.ward = Math.min(result.ward, t.ward);
-    result.stateElectorate = Math.min(result.stateElectorate, t.stateElectorate);
-    result.commonwealthElectorate = Math.min(
-      result.commonwealthElectorate,
-      t.commonwealthElectorate,
-    );
-  }
-  return result;
+  return tokens;
 }
 
 export interface BoundaryCoverageError {
@@ -392,22 +394,8 @@ export function isValidStatePostcode(state: string, postcode: string | null): bo
 /**
  * Run row count verification and data quality checks against an NDJSON file.
  */
-export async function verify(options: VerifyOptions): Promise<VerifyResult> {
-  const {
-    outputPath,
-    expectedCount,
-    tolerance = 0.001,
-    enumSets,
-    boundaryCoverageThresholds,
-  } = options;
-
-  const pids = new Set<string>();
-  const duplicatePids: string[] = [];
-  const qualityIssues: QualityIssue[] = [];
-  const enumUnknownCounts: EnumUnknownCounts = {};
-  let outputCount = 0;
-
-  const coverage: BoundaryCoverage = {
+function emptyCoverage(): BoundaryCoverage {
+  return {
     total: 0,
     lga: 0,
     ward: 0,
@@ -417,6 +405,41 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     sa1: 0,
     sa2: 0,
   };
+}
+
+function tallyBoundaries(cov: BoundaryCoverage, boundaries: Record<string, unknown> | null): void {
+  cov.total++;
+  if (boundaries) {
+    if (boundaries.lga) cov.lga++;
+    if (boundaries.ward) cov.ward++;
+    if (boundaries.stateElectorate) cov.stateElectorate++;
+    if (boundaries.commonwealthElectorate) cov.commonwealthElectorate++;
+    if (boundaries.meshBlock) cov.meshBlock++;
+    if (boundaries.sa1) cov.sa1++;
+    if (boundaries.sa2) cov.sa2++;
+  }
+}
+
+export async function verify(options: VerifyOptions): Promise<VerifyResult> {
+  const {
+    outputPath,
+    expectedCount,
+    tolerance = 0.001,
+    enumSets,
+    boundaryCoverageThresholds,
+    boundaryCoveragePerState,
+  } = options;
+
+  const pids = new Set<string>();
+  const duplicatePids: string[] = [];
+  const qualityIssues: QualityIssue[] = [];
+  const enumUnknownCounts: EnumUnknownCounts = {};
+  let outputCount = 0;
+
+  const coverage: BoundaryCoverage = emptyCoverage();
+  // Per-state buckets — populated unconditionally so the report can show
+  // a per-state breakdown even when no per-state thresholds are configured.
+  const coverageByState = new Map<string, BoundaryCoverage>();
 
   const rl = createInterface({
     input: createReadStream(outputPath),
@@ -472,17 +495,19 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
       });
     }
 
-    // Boundary coverage
+    // Boundary coverage — accumulate both global and per-state buckets in
+    // a single pass. The per-state map is the load-bearing one for
+    // multi-state verification (per-record bucketing prevents one state's
+    // missing polygon from disabling validation for another state).
     const boundaries = doc.boundaries as Record<string, unknown> | null;
-    coverage.total++;
-    if (boundaries) {
-      if (boundaries.lga) coverage.lga++;
-      if (boundaries.ward) coverage.ward++;
-      if (boundaries.stateElectorate) coverage.stateElectorate++;
-      if (boundaries.commonwealthElectorate) coverage.commonwealthElectorate++;
-      if (boundaries.meshBlock) coverage.meshBlock++;
-      if (boundaries.sa1) coverage.sa1++;
-      if (boundaries.sa2) coverage.sa2++;
+    tallyBoundaries(coverage, boundaries);
+    if (state) {
+      let stateBucket = coverageByState.get(state);
+      if (!stateBucket) {
+        stateBucket = emptyCoverage();
+        coverageByState.set(state, stateBucket);
+      }
+      tallyBoundaries(stateBucket, boundaries);
     }
 
     // Enum-ish field validation
@@ -514,22 +539,61 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   // Row-count check is only meaningful when expectedCount > 0
   const rowCountFailed = expectedCount > 0 && differencePercent > tolerancePercent;
 
-  // Boundary coverage threshold check
+  // Boundary coverage threshold check.
+  //
+  // Two modes:
+  //
+  //   1. Per-state mode (preferred for multi-state output): apply each
+  //      state's per-state thresholds to that state's bucket. This is the
+  //      correct way to validate a multi-state file because per-state
+  //      polygon coverage varies dramatically (NT 60% ward → VIC 99%
+  //      ward; ACT no LGA polygon → NSW full LGA coverage). Without
+  //      per-record bucketing, a state with `0` threshold for a field
+  //      would disable validation for every other state in the file.
+  //      Triggered when `boundaryCoveragePerState` is provided.
+  //
+  //   2. Global mode (legacy / fixture path): apply one set of thresholds
+  //      to the global aggregate. Used when only `boundaryCoverageThresholds`
+  //      is provided. Preserved for back-compat with the fixture path
+  //      and any caller that doesn't have per-state context.
+  //
+  // Errors from per-state checks are namespaced as `${state}.${field}`
+  // (e.g. `NSW.lga`) so the report shows which state's check failed.
   const boundaryCoverageErrors: BoundaryCoverageError[] = [];
-  if (boundaryCoverageThresholds && coverage.total > 0) {
-    const checks: { field: keyof BoundaryCoverageThresholds; count: number }[] = [
-      { field: "lga", count: coverage.lga },
-      { field: "ward", count: coverage.ward },
-      { field: "stateElectorate", count: coverage.stateElectorate },
-      { field: "commonwealthElectorate", count: coverage.commonwealthElectorate },
-    ];
-    for (const { field, count } of checks) {
-      const threshold = boundaryCoverageThresholds[field];
-      if (threshold !== undefined) {
-        const actual = count / coverage.total;
+  const fields: (keyof BoundaryCoverageThresholds)[] = [
+    "lga",
+    "ward",
+    "stateElectorate",
+    "commonwealthElectorate",
+  ];
+
+  if (boundaryCoveragePerState) {
+    // Per-state mode — bucket by state and apply each state's thresholds
+    for (const [state, stateBucket] of coverageByState) {
+      if (stateBucket.total === 0) continue;
+      const stateThresholds = boundaryCoveragePerState[state] ?? boundaryCoverageThresholds;
+      if (!stateThresholds) continue;
+      for (const field of fields) {
+        const threshold = stateThresholds[field];
+        if (threshold === undefined) continue;
+        const actual = stateBucket[field] / stateBucket.total;
         if (actual < threshold) {
-          boundaryCoverageErrors.push({ field, actual, threshold });
+          boundaryCoverageErrors.push({
+            field: `${state}.${field}`,
+            actual,
+            threshold,
+          });
         }
+      }
+    }
+  } else if (boundaryCoverageThresholds && coverage.total > 0) {
+    // Global mode — single threshold set against the aggregate
+    for (const field of fields) {
+      const threshold = boundaryCoverageThresholds[field];
+      if (threshold === undefined) continue;
+      const actual = coverage[field] / coverage.total;
+      if (actual < threshold) {
+        boundaryCoverageErrors.push({ field, actual, threshold });
       }
     }
   }
@@ -560,8 +624,9 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     qualityErrors,
     qualityWarnings,
     boundaryCoverage: coverage,
+    boundaryCoverageByState: coverageByState,
     boundaryCoverageErrors,
-    boundaryCoverageChecked: !!boundaryCoverageThresholds,
+    boundaryCoverageChecked: !!(boundaryCoverageThresholds || boundaryCoveragePerState),
     duplicatePids,
     enumUnknownCounts,
     enumChecked: !!enumSets,
@@ -688,19 +753,54 @@ async function main(): Promise<void> {
   const dbUrl = dbUrlIdx !== -1 ? process.argv[dbUrlIdx + 1] : undefined;
 
   // STATES env var (whitespace-separated, matching gnaf-loader's --states
-  // format) selects per-state empirical thresholds. Empty/multi-state →
-  // strict-all-five default. Unknown token → throws → exit 4.
+  // format) selects per-state empirical thresholds. The CLI builds a
+  // `boundaryCoveragePerState` map from STATES so the verify pipeline
+  // can apply each state's thresholds to that state's bucket via
+  // per-record state bucketing — the only correct approach for
+  // multi-state output where polygon coverage varies dramatically
+  // by state. See PER_STATE_BOUNDARY_THRESHOLDS doc for details.
+  //
+  // Empty STATES → fall back to global DEFAULT_BOUNDARY_THRESHOLDS
+  // (strict-all-five) applied to the aggregate. Suitable for the
+  // fixture path and any all-states caller with high coverage.
+  // Unknown token → throws → exit 4 (fail closed).
   let boundaryCoverageThresholds: Required<BoundaryCoverageThresholds> | undefined;
+  let boundaryCoveragePerState: Record<string, BoundaryCoverageThresholds> | undefined;
   if (checkBoundaryCoverage) {
+    const statesEnv = process.env.STATES;
+    let tokens: string[];
     try {
-      boundaryCoverageThresholds = thresholdsForStates(process.env.STATES);
+      tokens = parseStatesEnv(statesEnv);
     } catch (err) {
       console.error(`[verify] ERROR: ${err instanceof Error ? err.message : String(err)}`);
       console.error(
         `[verify] STATES must be a whitespace-separated list of state codes ` +
-          `(e.g. STATES="VIC" or STATES="NSW VIC"). Got: '${process.env.STATES ?? "(unset)"}'`,
+          `(e.g. STATES="VIC" or STATES="NSW VIC"). Got: '${statesEnv ?? "(unset)"}'`,
       );
       process.exit(4);
+    }
+
+    if (tokens.length > 0) {
+      // Build the per-state map from validated tokens. Per-record bucketing
+      // in verify() applies each entry to its state's bucket — this is the
+      // ONLY correct way to verify multi-state output where polygon coverage
+      // varies dramatically by state. A flat threshold map (e.g. taking
+      // MIN of selected states) would either false-fail legitimate
+      // combinations or silently allow regressions in one state by being
+      // pulled loose by another's missing polygon. See the verify() doc.
+      const perState: Record<string, BoundaryCoverageThresholds> = {};
+      for (const token of tokens) {
+        const t = PER_STATE_BOUNDARY_THRESHOLDS[token];
+        if (t) perState[token] = t;
+      }
+      boundaryCoveragePerState = perState;
+      // Fallback for unknown state buckets (shouldn't happen in practice
+      // — the input file should only contain addresses for the requested
+      // states). Use the strict default so anomalies fail loud.
+      boundaryCoverageThresholds = DEFAULT_BOUNDARY_THRESHOLDS;
+    } else {
+      // No STATES → strict global defaults applied to the aggregate.
+      boundaryCoverageThresholds = DEFAULT_BOUNDARY_THRESHOLDS;
     }
   }
 
@@ -720,6 +820,7 @@ async function main(): Promise<void> {
     expectedCount,
     enumSets,
     boundaryCoverageThresholds,
+    boundaryCoveragePerState,
   });
 
   console.log(formatReport(result));
