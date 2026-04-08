@@ -138,8 +138,31 @@ export interface VerifyOptions {
   tolerance?: number;
   /** Valid value sets for enum-ish fields. When provided, validates each document. */
   enumSets?: EnumSets;
-  /** Boundary coverage thresholds. When provided, verify fails if any field drops below its threshold. */
+  /**
+   * Boundary coverage thresholds. When provided, verify fails if any field
+   * drops below its threshold.
+   *
+   * - When `boundaryCoveragePerState` is also provided, this is used as the
+   *   FALLBACK for any address whose `state` field is not in the per-state
+   *   map. Single-state production callers can leave this undefined.
+   * - When `boundaryCoveragePerState` is NOT provided, this is applied
+   *   globally against the aggregate coverage (legacy behaviour, used by
+   *   the fixture path and any all-states caller).
+   */
   boundaryCoverageThresholds?: BoundaryCoverageThresholds;
+  /**
+   * Per-state boundary coverage thresholds. When provided, verify buckets
+   * addresses by their `state` field and applies each state's thresholds
+   * to its bucket. This is the correct way to validate multi-state output
+   * because per-state polygon coverage varies (NT 60% ward → VIC 99% ward;
+   * ACT no LGA polygon → NSW full LGA coverage). The CLI populates this
+   * from `PER_STATE_BOUNDARY_THRESHOLDS` keyed by the `STATES` env var.
+   *
+   * For unknown state buckets (e.g. an address with state="XYZ" or a
+   * state not in this map), falls back to `boundaryCoverageThresholds`
+   * if provided, else skips the check for that bucket.
+   */
+  boundaryCoveragePerState?: Record<string, BoundaryCoverageThresholds>;
 }
 
 export interface QualityIssue {
@@ -158,7 +181,15 @@ export interface VerifyResult {
   qualityIssues: QualityIssue[];
   qualityErrors: QualityIssue[];
   qualityWarnings: QualityIssue[];
+  /** Aggregate coverage across the entire output (all states combined). */
   boundaryCoverage: BoundaryCoverage;
+  /**
+   * Per-state coverage breakdown — populated unconditionally during the
+   * streaming pass. Used by the per-state threshold check (when
+   * `boundaryCoveragePerState` is provided) and by the formatted report.
+   * Empty for unstated rows.
+   */
+  boundaryCoverageByState: Map<string, BoundaryCoverage>;
   boundaryCoverageErrors: BoundaryCoverageError[];
   boundaryCoverageChecked: boolean;
   duplicatePids: string[];
@@ -188,14 +219,151 @@ export interface BoundaryCoverageThresholds {
   commonwealthElectorate?: number;
 }
 
-/** Default thresholds: most boundaries should cover >99% of addresses.
- *  Wards are lower (95%) because some addresses legitimately fall outside ward boundaries. */
+/**
+ * Default thresholds for empty / multi-state / unknown STATES.
+ *
+ * These reflect a "fully populated, all-state" build (e.g. the
+ * docker-smoke fixture path which has all 5 boundary types at 99%+,
+ * or a hypothetical all-9-state production caller). They're strict.
+ *
+ * For per-state production builds, `PER_STATE_BOUNDARY_THRESHOLDS`
+ * provides empirically-tuned per-state values that override these
+ * defaults — see the comment block on that constant.
+ */
 export const DEFAULT_BOUNDARY_THRESHOLDS: Required<BoundaryCoverageThresholds> = {
   lga: 0.99,
   ward: 0.95,
   stateElectorate: 0.99,
   commonwealthElectorate: 0.99,
 };
+
+/**
+ * Per-state empirical boundary coverage thresholds. Each value is set
+ * ~5-8 percentage points BELOW the actual measured coverage from a
+ * 2026.02 local build of every state on a 64 GB MacBook Pro M5,
+ * providing margin for normal quarterly variation while still catching
+ * catastrophic regressions.
+ *
+ * Why per-state: ward coverage varies wildly by state (NT 60.4% → VIC
+ * 99.94%) because not every council in every state has wards in the
+ * Geoscape data set. A single global ward threshold would either fail
+ * for low-ward states (NT, WA) or allow VIC to silently drop 30+
+ * points unnoticed. Per-state thresholds tune to each state's
+ * empirical reality.
+ *
+ * Why state-aware AT ALL: gnaf-loader's per-state shapefile filter
+ * (load-gnaf.py:325-330) means a single-state build only loads
+ * shapefiles whose filename matches the state prefix. The Geoscape
+ * archive doesn't ship `act_lga.shp`, `ot_state_electoral.shp`, etc.
+ * — those administrative units don't exist for those states. The
+ * resulting per-state polygon set comes from
+ * `gnaf-loader/settings.py:208-217` admin_bdy_list logic, mirrored in
+ * `scripts/validate-db-cache.sh`. When a polygon doesn't exist, its
+ * threshold here is 0 (the field will be 0% in the output, and 0 < 0
+ * is false, so the check passes vacuously).
+ *
+ * Source: 2026.02 local build, all 9 states, run #PR-FOLLOWUP. Update
+ * this map after each successful quarterly run if coverage shifts.
+ *
+ * | State | LGA measured | Ward measured | Notes                  |
+ * |-------|--------------|---------------|------------------------|
+ * | ACT   | n/a (no poly)| n/a (no poly) | only ce + se_lower     |
+ * | NSW   | ~100%        | n/a (no poly) | no ward in Geoscape    |
+ * | NT    | 100%         | 60.4%         | lowest ward coverage   |
+ * | OT    | 38.2%        | n/a (no poly) | mostly unincorporated  |
+ * | QLD   | ~100%        | n/a (no poly) | no ward in Geoscape    |
+ * | SA    | 100%         | 77.2%         |                        |
+ * | TAS   | ~100%        | n/a (no poly) | no ward in Geoscape    |
+ * | VIC   | 100%         | 99.94%        | gold standard          |
+ * | WA    | 100%         | 68.07%        |                        |
+ *
+ * Coverage of `0` means: no polygon table for this state (gnaf-loader
+ * didn't load it), so the field is null in the output. We pass the
+ * check vacuously by setting threshold to 0.
+ */
+export const PER_STATE_BOUNDARY_THRESHOLDS: Record<string, Required<BoundaryCoverageThresholds>> = {
+  ACT: { lga: 0, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  NSW: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  NT: { lga: 0.99, ward: 0.55, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  OT: { lga: 0.3, ward: 0, stateElectorate: 0, commonwealthElectorate: 0 },
+  QLD: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  SA: { lga: 0.99, ward: 0.7, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  TAS: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  VIC: { lga: 0.99, ward: 0.95, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  WA: { lga: 0.99, ward: 0.6, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+};
+
+const KNOWN_STATES = new Set(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"]);
+
+/**
+ * Validate a STATES env value (whitespace-separated state codes) and
+ * return the matching per-state thresholds for the SINGLE-STATE case.
+ *
+ * This function exists as an input validation helper and a convenience
+ * for callers that want a single threshold map for one state. It is
+ * NOT the source of truth for multi-state correctness — that's
+ * `boundaryCoveragePerState` plus per-record state bucketing in
+ * `verify()`. See the doc on the `boundaryCoveragePerState` field of
+ * `VerifyOptions` for why.
+ *
+ * Behaviour:
+ *
+ * - empty/undefined/whitespace-only → `DEFAULT_BOUNDARY_THRESHOLDS`
+ *   (back-compat: the fixture path and any all-states caller still
+ *   gets strict-all-five via this entry point).
+ *
+ * - exactly one known state → `PER_STATE_BOUNDARY_THRESHOLDS[state]`.
+ *
+ * - multiple known states → `DEFAULT_BOUNDARY_THRESHOLDS`. The flat
+ *   threshold map can't faithfully represent multi-state output;
+ *   callers needing correctness MUST pass `boundaryCoveragePerState`
+ *   to `verify()` instead. The CLI does this automatically.
+ *
+ * - any unknown token → throws (CLI catches and exits 4).
+ *
+ * Tokens are normalized: trimmed, split on shell whitespace, deduped
+ * (so `"VIC VIC"` is identical to `"VIC"`), validated against the
+ * known set.
+ */
+export function thresholdsForStates(
+  states: string | undefined,
+): Required<BoundaryCoverageThresholds> {
+  const tokens = parseStatesEnv(states);
+  if (tokens.length === 0) return DEFAULT_BOUNDARY_THRESHOLDS;
+  if (tokens.length === 1) {
+    const t = PER_STATE_BOUNDARY_THRESHOLDS[tokens[0]];
+    if (t) return t;
+  }
+  // Multi-state: flat threshold map can't represent the union correctly.
+  // Callers that need multi-state correctness use boundaryCoveragePerState
+  // + per-record bucketing in verify(). This entry point falls back to
+  // the strict default so it remains usable as a programmatic helper.
+  return DEFAULT_BOUNDARY_THRESHOLDS;
+}
+
+/**
+ * Parse and validate a STATES env value into a deduped, ordered token
+ * list. Throws on unknown tokens. Used by `thresholdsForStates` and the
+ * CLI to validate input before building the per-state threshold map.
+ */
+export function parseStatesEnv(states: string | undefined): string[] {
+  if (!states || !states.trim()) return [];
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  for (const raw of states.trim().split(/\s+/)) {
+    if (!raw) continue;
+    if (!KNOWN_STATES.has(raw)) {
+      throw new Error(
+        `Unknown STATES token: '${raw}'. Must be one of: ${[...KNOWN_STATES].sort().join(", ")}`,
+      );
+    }
+    if (!seen.has(raw)) {
+      seen.add(raw);
+      tokens.push(raw);
+    }
+  }
+  return tokens;
+}
 
 export interface BoundaryCoverageError {
   field: string;
@@ -226,22 +394,19 @@ export function isValidStatePostcode(state: string, postcode: string | null): bo
 /**
  * Run row count verification and data quality checks against an NDJSON file.
  */
-export async function verify(options: VerifyOptions): Promise<VerifyResult> {
-  const {
-    outputPath,
-    expectedCount,
-    tolerance = 0.001,
-    enumSets,
-    boundaryCoverageThresholds,
-  } = options;
+/**
+ * Sentinel bucket key for rows whose `state` field is null, empty,
+ * whitespace-only, or otherwise non-string. Such rows are bucketed under
+ * this key so they can't silently evade boundary coverage validation in
+ * per-state mode. The threshold check treats this bucket as "unknown
+ * state" and applies the strict fallback thresholds.
+ *
+ * Exported so tests and debugging tooling can inspect the bucket map.
+ */
+export const UNKNOWN_STATE_BUCKET = "__UNKNOWN_STATE__";
 
-  const pids = new Set<string>();
-  const duplicatePids: string[] = [];
-  const qualityIssues: QualityIssue[] = [];
-  const enumUnknownCounts: EnumUnknownCounts = {};
-  let outputCount = 0;
-
-  const coverage: BoundaryCoverage = {
+function emptyCoverage(): BoundaryCoverage {
+  return {
     total: 0,
     lga: 0,
     ward: 0,
@@ -251,6 +416,41 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     sa1: 0,
     sa2: 0,
   };
+}
+
+function tallyBoundaries(cov: BoundaryCoverage, boundaries: Record<string, unknown> | null): void {
+  cov.total++;
+  if (boundaries) {
+    if (boundaries.lga) cov.lga++;
+    if (boundaries.ward) cov.ward++;
+    if (boundaries.stateElectorate) cov.stateElectorate++;
+    if (boundaries.commonwealthElectorate) cov.commonwealthElectorate++;
+    if (boundaries.meshBlock) cov.meshBlock++;
+    if (boundaries.sa1) cov.sa1++;
+    if (boundaries.sa2) cov.sa2++;
+  }
+}
+
+export async function verify(options: VerifyOptions): Promise<VerifyResult> {
+  const {
+    outputPath,
+    expectedCount,
+    tolerance = 0.001,
+    enumSets,
+    boundaryCoverageThresholds,
+    boundaryCoveragePerState,
+  } = options;
+
+  const pids = new Set<string>();
+  const duplicatePids: string[] = [];
+  const qualityIssues: QualityIssue[] = [];
+  const enumUnknownCounts: EnumUnknownCounts = {};
+  let outputCount = 0;
+
+  const coverage: BoundaryCoverage = emptyCoverage();
+  // Per-state buckets — populated unconditionally so the report can show
+  // a per-state breakdown even when no per-state thresholds are configured.
+  const coverageByState = new Map<string, BoundaryCoverage>();
 
   const rl = createInterface({
     input: createReadStream(outputPath),
@@ -306,18 +506,29 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
       });
     }
 
-    // Boundary coverage
+    // Boundary coverage — accumulate both global and per-state buckets in
+    // a single pass. The per-state map is the load-bearing one for
+    // multi-state verification (per-record bucketing prevents one state's
+    // missing polygon from disabling validation for another state).
+    //
+    // Every row is bucketed unconditionally — including rows whose `state`
+    // field is null, empty, or whitespace-only. Such rows go into the
+    // `UNKNOWN_STATE_BUCKET` sentinel bucket, which gets validated against
+    // the strict fallback thresholds in per-state mode (see threshold
+    // check below). This prevents a silent verification hole where a
+    // regression that drops the `state` field could evade boundary
+    // coverage checks entirely. Same applies to rows whose `state` value
+    // isn't in `boundaryCoveragePerState` — they fall back to strict
+    // thresholds via the same map-lookup miss path.
     const boundaries = doc.boundaries as Record<string, unknown> | null;
-    coverage.total++;
-    if (boundaries) {
-      if (boundaries.lga) coverage.lga++;
-      if (boundaries.ward) coverage.ward++;
-      if (boundaries.stateElectorate) coverage.stateElectorate++;
-      if (boundaries.commonwealthElectorate) coverage.commonwealthElectorate++;
-      if (boundaries.meshBlock) coverage.meshBlock++;
-      if (boundaries.sa1) coverage.sa1++;
-      if (boundaries.sa2) coverage.sa2++;
+    tallyBoundaries(coverage, boundaries);
+    const stateKey = typeof state === "string" && state.trim() ? state : UNKNOWN_STATE_BUCKET;
+    let stateBucket = coverageByState.get(stateKey);
+    if (!stateBucket) {
+      stateBucket = emptyCoverage();
+      coverageByState.set(stateKey, stateBucket);
     }
+    tallyBoundaries(stateBucket, boundaries);
 
     // Enum-ish field validation
     if (enumSets) {
@@ -348,22 +559,74 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   // Row-count check is only meaningful when expectedCount > 0
   const rowCountFailed = expectedCount > 0 && differencePercent > tolerancePercent;
 
-  // Boundary coverage threshold check
+  // Boundary coverage threshold check.
+  //
+  // Two modes:
+  //
+  //   1. Per-state mode (preferred for multi-state output): apply each
+  //      state's per-state thresholds to that state's bucket. This is the
+  //      correct way to validate a multi-state file because per-state
+  //      polygon coverage varies dramatically (NT 60% ward → VIC 99%
+  //      ward; ACT no LGA polygon → NSW full LGA coverage). Without
+  //      per-record bucketing, a state with `0` threshold for a field
+  //      would disable validation for every other state in the file.
+  //      Triggered when `boundaryCoveragePerState` is provided.
+  //
+  //   2. Global mode (legacy / fixture path): apply one set of thresholds
+  //      to the global aggregate. Used when only `boundaryCoverageThresholds`
+  //      is provided. Preserved for back-compat with the fixture path
+  //      and any caller that doesn't have per-state context.
+  //
+  // Errors from per-state checks are namespaced as `${state}.${field}`
+  // (e.g. `NSW.lga`) so the report shows which state's check failed.
   const boundaryCoverageErrors: BoundaryCoverageError[] = [];
-  if (boundaryCoverageThresholds && coverage.total > 0) {
-    const checks: { field: keyof BoundaryCoverageThresholds; count: number }[] = [
-      { field: "lga", count: coverage.lga },
-      { field: "ward", count: coverage.ward },
-      { field: "stateElectorate", count: coverage.stateElectorate },
-      { field: "commonwealthElectorate", count: coverage.commonwealthElectorate },
-    ];
-    for (const { field, count } of checks) {
-      const threshold = boundaryCoverageThresholds[field];
-      if (threshold !== undefined) {
-        const actual = count / coverage.total;
+  const fields: (keyof BoundaryCoverageThresholds)[] = [
+    "lga",
+    "ward",
+    "stateElectorate",
+    "commonwealthElectorate",
+  ];
+
+  if (boundaryCoveragePerState) {
+    // Per-state mode — bucket by state and apply each state's thresholds.
+    //
+    // For known state buckets (state in `boundaryCoveragePerState`): use
+    // that state's per-state thresholds.
+    //
+    // For unknown buckets — the `UNKNOWN_STATE_BUCKET` sentinel (rows
+    // with null/empty `state` field) AND any state value the caller
+    // didn't include in the per-state map — fall back to
+    // `boundaryCoverageThresholds` if provided, else hard-floor to
+    // `DEFAULT_BOUNDARY_THRESHOLDS`. Either way the unknown bucket
+    // gets validated against strict thresholds, NOT silently skipped.
+    // This is the load-bearing safety: a regression that drops the
+    // `state` field MUST NOT silently evade boundary coverage checks.
+    const fallback: BoundaryCoverageThresholds =
+      boundaryCoverageThresholds ?? DEFAULT_BOUNDARY_THRESHOLDS;
+    for (const [state, stateBucket] of coverageByState) {
+      if (stateBucket.total === 0) continue;
+      const stateThresholds = boundaryCoveragePerState[state] ?? fallback;
+      for (const field of fields) {
+        const threshold = stateThresholds[field];
+        if (threshold === undefined) continue;
+        const actual = stateBucket[field] / stateBucket.total;
         if (actual < threshold) {
-          boundaryCoverageErrors.push({ field, actual, threshold });
+          boundaryCoverageErrors.push({
+            field: `${state}.${field}`,
+            actual,
+            threshold,
+          });
         }
+      }
+    }
+  } else if (boundaryCoverageThresholds && coverage.total > 0) {
+    // Global mode — single threshold set against the aggregate
+    for (const field of fields) {
+      const threshold = boundaryCoverageThresholds[field];
+      if (threshold === undefined) continue;
+      const actual = coverage[field] / coverage.total;
+      if (actual < threshold) {
+        boundaryCoverageErrors.push({ field, actual, threshold });
       }
     }
   }
@@ -394,8 +657,9 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     qualityErrors,
     qualityWarnings,
     boundaryCoverage: coverage,
+    boundaryCoverageByState: coverageByState,
     boundaryCoverageErrors,
-    boundaryCoverageChecked: !!boundaryCoverageThresholds,
+    boundaryCoverageChecked: !!(boundaryCoverageThresholds || boundaryCoveragePerState),
     duplicatePids,
     enumUnknownCounts,
     enumChecked: !!enumSets,
@@ -521,6 +785,57 @@ async function main(): Promise<void> {
   const dbUrlIdx = process.argv.indexOf("--db-url");
   const dbUrl = dbUrlIdx !== -1 ? process.argv[dbUrlIdx + 1] : undefined;
 
+  // Boundary coverage threshold setup.
+  //
+  // The verify pipeline ALWAYS uses per-record state bucketing when
+  // boundary coverage checking is enabled. Per-state thresholds come
+  // from `PER_STATE_BOUNDARY_THRESHOLDS` (the empirical map) — every
+  // state in the data is checked against its own thresholds.
+  //
+  // STATES env var is purely an INPUT VALIDATION aid: it confirms the
+  // operator passed valid state codes (typo / wrong delimiter detection).
+  // It does NOT decide whether the verification is state-aware. That
+  // decision is made by the data itself: every observed state in the
+  // NDJSON gets bucketed and validated against its per-state thresholds,
+  // regardless of whether STATES was supplied.
+  //
+  // Why: if the CLI is invoked WITHOUT --states (the default all-9-states
+  // production path), the output contains addresses from every state
+  // and many of them legitimately have ward=0 or other zero-threshold
+  // fields. A global aggregate check against strict thresholds (the
+  // old behaviour) would false-fail. Always-on per-state bucketing
+  // handles this correctly with no operator intervention.
+  //
+  // The strict global default still serves as the fallback for unknown
+  // state buckets — a row with state="ZZZ" or null gets validated
+  // against DEFAULT_BOUNDARY_THRESHOLDS, never silently skipped.
+  // Unknown STATES token in the env → throws → exit 4 (fail closed
+  // on operator typos).
+  let boundaryCoverageThresholds: Required<BoundaryCoverageThresholds> | undefined;
+  let boundaryCoveragePerState: Record<string, BoundaryCoverageThresholds> | undefined;
+  if (checkBoundaryCoverage) {
+    const statesEnv = process.env.STATES;
+    try {
+      // Validate STATES tokens early. Throws on unknown tokens. The
+      // returned token list is used only for the input-validation
+      // error message; the actual threshold map below is the static
+      // PER_STATE_BOUNDARY_THRESHOLDS.
+      parseStatesEnv(statesEnv);
+    } catch (err) {
+      console.error(`[verify] ERROR: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(
+        `[verify] STATES must be a whitespace-separated list of state codes ` +
+          `(e.g. STATES="VIC" or STATES="NSW VIC"). Got: '${statesEnv ?? "(unset)"}'`,
+      );
+      process.exit(4);
+    }
+
+    // Always enable per-record bucketing with the full empirical map.
+    // STATES doesn't gate this — the data does.
+    boundaryCoveragePerState = PER_STATE_BOUNDARY_THRESHOLDS;
+    boundaryCoverageThresholds = DEFAULT_BOUNDARY_THRESHOLDS;
+  }
+
   let enumSets: EnumSets | undefined;
   if (!skipEnumCheck && dbUrl) {
     const postgres = (await import("postgres")).default;
@@ -536,7 +851,8 @@ async function main(): Promise<void> {
     outputPath: filePath,
     expectedCount,
     enumSets,
-    boundaryCoverageThresholds: checkBoundaryCoverage ? DEFAULT_BOUNDARY_THRESHOLDS : undefined,
+    boundaryCoverageThresholds,
+    boundaryCoveragePerState,
   });
 
   console.log(formatReport(result));

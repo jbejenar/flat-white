@@ -12,6 +12,9 @@ import {
   isWithinAustralia,
   isValidStatePostcode,
   DEFAULT_BOUNDARY_THRESHOLDS,
+  PER_STATE_BOUNDARY_THRESHOLDS,
+  UNKNOWN_STATE_BUCKET,
+  thresholdsForStates,
   type EnumSets,
   type BoundaryCoverageThresholds,
 } from "../../src/verify.js";
@@ -546,6 +549,511 @@ describe("verify against fixture with boundary thresholds", () => {
     expect(result.passed).toBe(true);
     expect(result.boundaryCoverageChecked).toBe(true);
     expect(result.boundaryCoverageErrors.length).toBe(0);
+  });
+});
+
+describe("thresholdsForStates", () => {
+  it("returns DEFAULT_BOUNDARY_THRESHOLDS when STATES is undefined", () => {
+    expect(thresholdsForStates(undefined)).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("returns DEFAULT_BOUNDARY_THRESHOLDS when STATES is empty string", () => {
+    expect(thresholdsForStates("")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("returns DEFAULT_BOUNDARY_THRESHOLDS when STATES is whitespace-only", () => {
+    expect(thresholdsForStates("   \t  ")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("returns per-state thresholds for single-state STATES=VIC", () => {
+    expect(thresholdsForStates("VIC")).toEqual(PER_STATE_BOUNDARY_THRESHOLDS.VIC);
+  });
+
+  it("returns per-state thresholds for STATES=OT (lga 0.30, others 0)", () => {
+    const t = thresholdsForStates("OT");
+    expect(t.lga).toBeCloseTo(0.3);
+    expect(t.ward).toBe(0);
+    expect(t.stateElectorate).toBe(0);
+    expect(t.commonwealthElectorate).toBe(0);
+  });
+
+  it("returns per-state thresholds for STATES=ACT (lga 0, ward 0)", () => {
+    const t = thresholdsForStates("ACT");
+    expect(t.lga).toBe(0);
+    expect(t.ward).toBe(0);
+    expect(t.stateElectorate).toBe(0.99);
+    expect(t.commonwealthElectorate).toBe(0.99);
+  });
+
+  it("returns per-state thresholds for low-ward states", () => {
+    expect(thresholdsForStates("NT").ward).toBeCloseTo(0.55);
+    expect(thresholdsForStates("WA").ward).toBeCloseTo(0.6);
+    expect(thresholdsForStates("SA").ward).toBeCloseTo(0.7);
+    expect(thresholdsForStates("VIC").ward).toBeCloseTo(0.95);
+  });
+
+  it("returns ward=0 for states without local_government_wards polygon", () => {
+    for (const state of ["ACT", "NSW", "OT", "QLD", "TAS"]) {
+      expect(thresholdsForStates(state).ward).toBe(0);
+    }
+  });
+
+  it("returns DEFAULT_BOUNDARY_THRESHOLDS for multi-state input", () => {
+    // thresholdsForStates is a single-state convenience helper. For
+    // multi-state correctness, callers must use boundaryCoveragePerState
+    // + per-record bucketing in verify() — the flat threshold map can't
+    // faithfully represent the union of states with different polygon
+    // sets. The function falls back to DEFAULT_BOUNDARY_THRESHOLDS for
+    // multi-state to remain a usable programmatic helper.
+    expect(thresholdsForStates("VIC NSW")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+    expect(thresholdsForStates("WA SA")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+    expect(thresholdsForStates("NSW VIC NT")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("dedupes STATES tokens (VIC VIC === VIC)", () => {
+    expect(thresholdsForStates("VIC VIC")).toEqual(thresholdsForStates("VIC"));
+    // VIC NSW VIC dedupes to [VIC, NSW] which is multi-state → defaults
+    expect(thresholdsForStates("VIC NSW VIC")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("throws on unknown STATES token", () => {
+    expect(() => thresholdsForStates("foo")).toThrow("Unknown STATES token");
+    expect(() => thresholdsForStates("vic")).toThrow("Unknown STATES token");
+  });
+
+  it("throws on comma-delimited STATES (gnaf-loader uses space)", () => {
+    expect(() => thresholdsForStates("VIC,NSW")).toThrow("Unknown STATES token");
+  });
+
+  it("throws on tab-delimited STATES with mixed valid+invalid tokens", () => {
+    expect(() => thresholdsForStates("VIC bogus")).toThrow("Unknown STATES token");
+  });
+
+  it("PER_STATE_BOUNDARY_THRESHOLDS has all 9 states", () => {
+    const states = Object.keys(PER_STATE_BOUNDARY_THRESHOLDS).sort();
+    expect(states).toEqual(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"]);
+  });
+});
+
+describe("verify per-record state bucketing (multi-state correctness)", () => {
+  // The bot caught a real bug in the flat-threshold-map approach: when
+  // multi-state output is verified against a single threshold map (even
+  // a clever MIN-of-per-state map), one state's missing polygon
+  // legitimately disables validation for every other state in the file.
+  //
+  // The fix: per-record state bucketing in verify(). These tests pin
+  // the correct behaviour: each state's bucket is checked against ITS
+  // OWN per-state thresholds, so a regression in one state can't be
+  // hidden by another state's legitimate absence.
+
+  function makeStateDoc(
+    id: string,
+    state: string,
+    boundaries: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return makeDoc({ _id: id, state, boundaries });
+  }
+
+  it("ACT no-LGA + QLD with-LGA: both states pass with their own thresholds", () => {
+    // ACT: no LGA polygon (lga threshold 0). QLD: full LGA at 100%
+    // (lga threshold 0.99). Both legitimately pass.
+    const docs = [
+      makeStateDoc("ACT1", "ACT", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "ACT-Lower" },
+        commonwealthElectorate: { name: "ACT-Cwlth" },
+      }),
+      makeStateDoc("ACT2", "ACT", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "ACT-Lower" },
+        commonwealthElectorate: { name: "ACT-Cwlth" },
+      }),
+      makeStateDoc("QLD1", "QLD", {
+        lga: { name: "Brisbane", code: "L" },
+        ward: null,
+        stateElectorate: { name: "BNE" },
+        commonwealthElectorate: { name: "BNE" },
+      }),
+      makeStateDoc("QLD2", "QLD", {
+        lga: { name: "Gold Coast", code: "L" },
+        ward: null,
+        stateElectorate: { name: "GC" },
+        commonwealthElectorate: { name: "GC" },
+      }),
+    ];
+    const path = tmpFile("bucket-legit.ndjson");
+    writeNdjson(path, docs);
+
+    return verify({
+      outputPath: path,
+      expectedCount: 4,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    }).then((result) => {
+      expect(result.boundaryCoverageErrors).toEqual([]);
+      expect(result.passed).toBe(true);
+      expect(result.boundaryCoverageByState.size).toBe(2);
+      expect(result.boundaryCoverageByState.get("ACT")?.lga).toBe(0);
+      expect(result.boundaryCoverageByState.get("QLD")?.lga).toBe(2);
+    });
+  });
+
+  it("ACT no-LGA + QLD with-LGA-stripped: per-state bucketing catches QLD regression", async () => {
+    // ACT: legitimately no LGA. QLD: SHOULD have LGA but doesn't
+    // (simulated regression). The per-state bucketing must flag
+    // QLD.lga without being misled by ACT's legitimate absence.
+    //
+    // This is the EXACT bug the bot found in the MIN approach: with
+    // MIN-of-per-state, lga = MIN(0, 0.99) = 0, so the QLD regression
+    // would silently pass. With per-record bucketing, ACT passes
+    // vacuously and QLD fails on its own threshold.
+    const docs = [
+      makeStateDoc("ACT1", "ACT", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "ACT" },
+        commonwealthElectorate: { name: "ACT" },
+      }),
+      makeStateDoc("QLD1", "QLD", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "QLD" },
+        commonwealthElectorate: { name: "QLD" },
+      }),
+      makeStateDoc("QLD2", "QLD", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "QLD" },
+        commonwealthElectorate: { name: "QLD" },
+      }),
+    ];
+    const path = tmpFile("bucket-qld-regression.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 3,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.passed).toBe(false);
+    // ACT.lga must NOT be in errors (its threshold is 0)
+    const errors = result.boundaryCoverageErrors;
+    expect(errors.some((e) => e.field === "ACT.lga")).toBe(false);
+    // QLD.lga MUST be in errors (its threshold is 0.99 but actual is 0%)
+    const qldLga = errors.find((e) => e.field === "QLD.lga");
+    expect(qldLga).toBeDefined();
+    expect(qldLga?.actual).toBe(0);
+    expect(qldLga?.threshold).toBe(0.99);
+  });
+
+  it("OT WA mix: OT's 0 thresholds for ce/se don't disable WA's checks", async () => {
+    // OT: legitimately has only LGA (no ce, no se_lower, no se_upper).
+    // WA: has all 5. Stripping WA's commonwealthElectorate to simulate
+    // a regression. Per-record bucketing should flag WA.commonwealthElectorate
+    // even though OT's commonwealthElectorate threshold is 0.
+    //
+    // The MIN approach would have collapsed commonwealthElectorate to
+    // MIN(0, 0.99) = 0 and let this through. Per-record bucketing
+    // catches it.
+    const docs = [
+      makeStateDoc("OT1", "OT", {
+        lga: { name: "X", code: "L" },
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+      makeStateDoc("OT2", "OT", {
+        lga: { name: "X", code: "L" },
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+      // 5 WA addresses with all-null commonwealth electorate (synthetic regression)
+      makeStateDoc("WA1", "WA", {
+        lga: { name: "X", code: "L" },
+        ward: { name: "W" },
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: null,
+      }),
+      makeStateDoc("WA2", "WA", {
+        lga: { name: "X", code: "L" },
+        ward: { name: "W" },
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: null,
+      }),
+      makeStateDoc("WA3", "WA", {
+        lga: { name: "X", code: "L" },
+        ward: { name: "W" },
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: null,
+      }),
+      makeStateDoc("WA4", "WA", {
+        lga: { name: "X", code: "L" },
+        ward: { name: "W" },
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: null,
+      }),
+      makeStateDoc("WA5", "WA", {
+        lga: { name: "X", code: "L" },
+        ward: { name: "W" },
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-ot-wa.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 7,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.passed).toBe(false);
+    const waCe = result.boundaryCoverageErrors.find((e) => e.field === "WA.commonwealthElectorate");
+    expect(waCe).toBeDefined();
+    expect(waCe?.actual).toBe(0);
+    expect(waCe?.threshold).toBe(0.99);
+    // OT.commonwealthElectorate must NOT be flagged (its threshold is 0)
+    expect(result.boundaryCoverageErrors.some((e) => e.field === "OT.commonwealthElectorate")).toBe(
+      false,
+    );
+  });
+
+  // ─── Unknown / falsy state safety (bot bug 2) ────────────────────────────
+  // Rows whose `state` field is null/empty/whitespace MUST NOT silently
+  // evade boundary coverage validation. They get bucketed into the
+  // UNKNOWN_STATE_BUCKET sentinel and validated against strict fallback
+  // thresholds.
+
+  it("rows with null state are bucketed into UNKNOWN_STATE_BUCKET", async () => {
+    const docs = [
+      makeStateDoc("X1", null as unknown as string, {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+      makeStateDoc("X2", null as unknown as string, {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-null-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 2,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has(UNKNOWN_STATE_BUCKET)).toBe(true);
+    expect(result.boundaryCoverageByState.get(UNKNOWN_STATE_BUCKET)?.total).toBe(2);
+    // Strict fallback applied → all 4 fields fail because all are null
+    expect(result.passed).toBe(false);
+    const fields = result.boundaryCoverageErrors.map((e) => e.field).sort();
+    expect(fields).toEqual([
+      `${UNKNOWN_STATE_BUCKET}.commonwealthElectorate`,
+      `${UNKNOWN_STATE_BUCKET}.lga`,
+      `${UNKNOWN_STATE_BUCKET}.stateElectorate`,
+      `${UNKNOWN_STATE_BUCKET}.ward`,
+    ]);
+  });
+
+  it("rows with empty-string state are bucketed into UNKNOWN_STATE_BUCKET", async () => {
+    const docs = [
+      makeStateDoc("E1", "", {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-empty-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has(UNKNOWN_STATE_BUCKET)).toBe(true);
+    expect(result.passed).toBe(false);
+  });
+
+  it("rows with whitespace-only state are bucketed into UNKNOWN_STATE_BUCKET", async () => {
+    const docs = [
+      makeStateDoc("W1", "   ", {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-ws-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has(UNKNOWN_STATE_BUCKET)).toBe(true);
+    expect(result.passed).toBe(false);
+  });
+
+  it("mixed VIC + null-state: VIC bucket passes; UNKNOWN bucket fails", async () => {
+    // Regression scenario: a flatten regression strips state field for some
+    // rows AND drops their boundaries. Per-state mode must still flag the
+    // unknown bucket even though VIC is fine.
+    const docs = [
+      // 5 healthy VIC addresses
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeStateDoc(`V${i}`, "VIC", {
+          lga: { name: "X", code: "L" },
+          ward: { name: "W" },
+          stateElectorate: { name: "S" },
+          commonwealthElectorate: { name: "C" },
+        }),
+      ),
+      // 3 corrupted rows: state stripped, boundaries stripped
+      ...Array.from({ length: 3 }, (_, i) =>
+        makeStateDoc(`X${i}`, null as unknown as string, {
+          lga: null,
+          ward: null,
+          stateElectorate: null,
+          commonwealthElectorate: null,
+        }),
+      ),
+    ];
+    const path = tmpFile("bucket-vic-plus-null.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 8,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.passed).toBe(false);
+    // VIC bucket should pass — not in errors
+    expect(result.boundaryCoverageErrors.some((e) => e.field.startsWith("VIC."))).toBe(false);
+    // UNKNOWN bucket should fail on all 4 fields
+    const unknownErrors = result.boundaryCoverageErrors.filter((e) =>
+      e.field.startsWith(`${UNKNOWN_STATE_BUCKET}.`),
+    );
+    expect(unknownErrors).toHaveLength(4);
+  });
+
+  it("rows with unexpected state code are bucketed under that code and use strict fallback", async () => {
+    // Edge case: a flatten bug emits state="ZZZ". The bucket key is the
+    // raw value (not the sentinel), and the strict fallback is applied
+    // because "ZZZ" isn't in PER_STATE_BOUNDARY_THRESHOLDS.
+    const docs = [
+      makeStateDoc("Z1", "ZZZ", {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-zzz-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has("ZZZ")).toBe(true);
+    expect(result.passed).toBe(false);
+    expect(result.boundaryCoverageErrors.some((e) => e.field.startsWith("ZZZ."))).toBe(true);
+  });
+
+  it("multi-state file passes WITHOUT a global threshold (per-state map only)", async () => {
+    // The default production path is `docker run flat-white ...` with no
+    // --states flag, which leaves STATES unset. The CLI passes
+    // PER_STATE_BOUNDARY_THRESHOLDS to verify() unconditionally so
+    // per-record bucketing handles all-states output without any
+    // operator-supplied state hint AND without a global threshold
+    // fallback that would false-fail on legitimate per-state variation.
+    //
+    // This test mirrors that exact CLI shape: no `boundaryCoverageThresholds`,
+    // just `boundaryCoveragePerState`. ACT (legitimate no-LGA, no-ward)
+    // and VIC (full coverage) must both validate against THEIR thresholds.
+    const docs = [
+      makeStateDoc("A1", "ACT", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: { name: "C" },
+      }),
+      makeStateDoc("A2", "ACT", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: { name: "C" },
+      }),
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeStateDoc(`V${i}`, "VIC", {
+          lga: { name: "X", code: "L" },
+          ward: { name: "W" },
+          stateElectorate: { name: "S" },
+          commonwealthElectorate: { name: "C" },
+        }),
+      ),
+    ];
+    const path = tmpFile("bucket-no-global.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 7,
+      // NO global threshold parameter — only the per-state map.
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.boundaryCoverageByState.has("ACT")).toBe(true);
+    expect(result.boundaryCoverageByState.has("VIC")).toBe(true);
+    // Both states checked against their thresholds; no errors
+    expect(result.boundaryCoverageErrors).toEqual([]);
+  });
+
+  it("populates boundaryCoverageByState even when no per-state thresholds are passed", async () => {
+    // The per-state breakdown is computed unconditionally so the report
+    // can show it even when only the global threshold is checked.
+    const docs = [
+      makeStateDoc("VIC1", "VIC", {
+        lga: { name: "X", code: "L" },
+        ward: { name: "W" },
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: { name: "C" },
+      }),
+      makeStateDoc("NSW1", "NSW", {
+        lga: { name: "X", code: "L" },
+        ward: null,
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: { name: "C" },
+      }),
+    ];
+    const path = tmpFile("bucket-breakdown.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({ outputPath: path, expectedCount: 2 });
+    expect(result.boundaryCoverageByState.size).toBe(2);
+    expect(result.boundaryCoverageByState.get("VIC")?.total).toBe(1);
+    expect(result.boundaryCoverageByState.get("NSW")?.total).toBe(1);
+    expect(result.boundaryCoverageByState.get("VIC")?.ward).toBe(1);
+    expect(result.boundaryCoverageByState.get("NSW")?.ward).toBe(0);
   });
 });
 
