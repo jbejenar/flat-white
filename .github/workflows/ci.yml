@@ -27,4 +27,6 @@ jobs:
         run: node dist/check-schema-compat-cli.js
       - name: Detect-load-failure script integration test
         run: bash test/integration/load-detection/test.sh
+      - name: Boundary prelude integration test
+        run: bash test/integration/boundary-prelude/test.sh
       - run: ./scripts/build-fixture-only.sh

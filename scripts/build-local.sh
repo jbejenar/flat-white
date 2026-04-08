@@ -34,6 +34,32 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
+export POSTGRES_PORT="${POSTGRES_PORT:-$(printf '%s' "$PROJECT_DIR" | cksum | awk '{print 20000 + ($1 % 20000)}')}"
+
+ensure_db_container() {
+  local ps_json
+  ps_json="$(docker compose ps --format json 2>/dev/null || true)"
+
+  if [[ "$ps_json" != *"\"PublishedPort\":${POSTGRES_PORT}"* ]]; then
+    echo "[build] Starting Postgres on host port ${POSTGRES_PORT}..."
+    docker compose up -d db --wait --force-recreate
+    return
+  fi
+
+  if ! docker compose exec -T db pg_isready -U postgres -q 2>/dev/null; then
+    echo "[build] Restarting Postgres..."
+    docker compose up -d db --wait
+  fi
+}
+
+resolve_db_url() {
+  if [[ -n "${DATABASE_URL:-}" ]]; then
+    printf '%s\n' "$DATABASE_URL"
+    return
+  fi
+
+  printf 'postgres://postgres:postgres@localhost:%s/gnaf\n' "$POSTGRES_PORT"
+}
 
 echo "========================================"
 echo " flat-white local build"
@@ -56,6 +82,9 @@ if ! docker compose ps db --format '{{.Status}}' 2>/dev/null | grep -q "Up"; the
   echo "[build] Waiting for Postgres to be ready..."
   sleep 5
 fi
+
+ensure_db_container
+DB_URL="$(resolve_db_url)"
 
 npm run build --silent 2>/dev/null
 
@@ -83,7 +112,7 @@ FLATTEN_START=$(date +%s)
 STATE_LOWER=$(echo "$STATES" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
 OUTPUT_FILE="$OUTPUT_DIR/flat-white-${STATE_LOWER}.ndjson"
 
-GNAF_VERSION="$VERSION" node dist/flatten.js "$OUTPUT_FILE" --materialize
+DATABASE_URL="$DB_URL" GNAF_VERSION="$VERSION" node dist/flatten.js "$OUTPUT_FILE" --materialize
 
 FLATTEN_END=$(date +%s)
 FLATTEN_DURATION=$((FLATTEN_END - FLATTEN_START))

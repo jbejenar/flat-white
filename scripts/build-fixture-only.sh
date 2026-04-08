@@ -15,20 +15,55 @@ OUTPUT_DIR="$PROJECT_DIR/output"
 OUTPUT_FILE="$OUTPUT_DIR/fixture.ndjson"
 OUTPUT_FILE_MAT="$OUTPUT_DIR/fixture-materialize.ndjson"
 FIXTURE_SQL="$PROJECT_DIR/fixtures/seed-postgres.sql"
-DB_URL="${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/gnaf}"
+
+resolve_postgres_port() {
+  if [[ -n "${POSTGRES_PORT:-}" ]]; then
+    printf '%s\n' "$POSTGRES_PORT"
+    return
+  fi
+
+  local checksum
+  checksum="$(printf '%s' "$PROJECT_DIR" | cksum | awk '{print $1}')"
+  printf '%s\n' "$((20000 + (checksum % 20000)))"
+}
+
+ensure_db_container() {
+  local ps_json
+  ps_json="$(docker compose ps --format json 2>/dev/null || true)"
+
+  if [[ "$ps_json" != *"\"PublishedPort\":${POSTGRES_PORT}"* ]]; then
+    echo "[fixture-build] Starting Postgres on host port ${POSTGRES_PORT}..."
+    docker compose up db -d --wait --force-recreate
+    return
+  fi
+
+  if ! docker compose exec -T db pg_isready -U postgres -q 2>/dev/null; then
+    echo "[fixture-build] Postgres not ready. Restarting..."
+    docker compose up db -d --wait
+  fi
+}
+
+resolve_db_url() {
+  if [[ -n "${DATABASE_URL:-}" ]]; then
+    printf '%s\n' "$DATABASE_URL"
+    return
+  fi
+
+  printf 'postgres://postgres:postgres@localhost:%s/gnaf\n' "$POSTGRES_PORT"
+}
 
 echo "[fixture-build] Starting fixture-only build..."
 START_TIME=$(date +%s)
+export POSTGRES_PORT="${POSTGRES_PORT:-$(resolve_postgres_port)}"
 
 # 1. Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
 
 # 2. Check Postgres is reachable
 echo "[fixture-build] Checking Postgres..."
-if ! docker compose exec -T db pg_isready -U postgres -q 2>/dev/null; then
-  echo "[fixture-build] Postgres not ready. Starting..."
-  docker compose up db -d --wait
-fi
+ensure_db_container
+
+DB_URL="$(resolve_db_url)"
 
 # 3. Seed fixture data
 echo "[fixture-build] Seeding fixture data (451 addresses)..."
@@ -47,23 +82,11 @@ sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/fixtures/prep-
 
 # 3d. Run spatial join to populate address_principal_admin_boundaries from polygons
 # This must run BEFORE either flatten path so both legacy and materialize see boundary data.
-# The spatial join fallback is in address_full_prep.sql (lines 1-170). It only runs if the
-# table is empty, so it's safe to re-run during the materialize path.
+# The shared boundary prelude is extracted from address_full_prep.sql by marker, so fixture
+# builds stay in lockstep with production even as the SQL file grows or shifts.
 echo "[fixture-build] Running spatial join (address → boundary assignment)..."
 
-# Guard: verify the cut point hasn't drifted. Line 171 must be blank (the line after
-# the CREATE UNIQUE INDEX statement that ends the spatial join block). We include
-# through line 170 which is the ON clause of that index. If someone adds/removes
-# lines above, this catches it.
-CUT_LINE=$(sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/sql/address_full_prep.sql" | sed -n '169p')
-if [[ "$CUT_LINE" != *'CREATE UNIQUE INDEX'* ]]; then
-  echo "[fixture-build] ERROR: head -170 cut point has drifted in address_full_prep.sql"
-  echo "  Expected line 169 to contain 'CREATE UNIQUE INDEX', got: $CUT_LINE"
-  echo "  Update the line count in build-fixture-only.sh step 3d."
-  exit 1
-fi
-
-head -170 "$PROJECT_DIR/sql/address_full_prep.sql" | \
+node "$PROJECT_DIR/scripts/extract-boundary-prelude.mjs" "$PROJECT_DIR/sql/address_full_prep.sql" | \
   sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" | \
   docker compose exec -T db psql -U postgres -d gnaf -q
 

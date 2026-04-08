@@ -5,6 +5,7 @@
 -- Usage: Run once before cursor-based streaming of address_full_main.sql.
 -- Schema: gnaf___SCHEMA_VERSION__, raw_gnaf___SCHEMA_VERSION__, admin_bdys___SCHEMA_VERSION__
 
+-- FIXTURE_BOUNDARY_PRELUDE_START
 -- 0. Ensure admin boundary tables exist (empty stubs if --no-boundary-tag or partial load).
 -- Both schemas (gnaf___SCHEMA_VERSION__ and admin_bdys___SCHEMA_VERSION__) are created by gnaf-loader.
 CREATE SCHEMA IF NOT EXISTS admin_bdys___SCHEMA_VERSION__;
@@ -216,6 +217,7 @@ END $$;
 -- against an already-indexed table are no-ops.
 CREATE UNIQUE INDEX IF NOT EXISTS address_principal_admin_boundaries_gnaf_pid_uniq
   ON gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries (gnaf_pid);
+-- FIXTURE_BOUNDARY_PRELUDE_END
 
 -- 1a. Best geocode per address (using window function instead of correlated subquery)
 DROP TABLE IF EXISTS tmp_best_geocode;
