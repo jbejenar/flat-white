@@ -144,11 +144,17 @@ set +e
 stderr_capture="$(run_validator 2>&1 1>/dev/null)"
 actual=$?
 set -e
-if [[ "$actual" -eq 1 && "$stderr_capture" == *"abs_2021_mb"* ]]; then
-  echo "  PASS: validator exited 1 with abs_2021_mb in error"
+if [[ "$actual" -eq 1 \
+   && "$stderr_capture" == *"abs_2021_mb"* \
+   && "$stderr_capture" != *"abs_2021_mb_lookup"* ]]; then
+  # Negation check distinguishes `abs_2021_mb` from `abs_2021_mb_lookup`.
+  # If the validator regresses to checking the fixture-only `_lookup` table,
+  # the seed (which has `abs_2021_mb` but NOT `_lookup`) makes the validator
+  # error mention `abs_2021_mb_lookup` — and the negation catches it.
+  echo "  PASS: validator exited 1 with abs_2021_mb (not _lookup) in error"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: expected exit 1 with abs_2021_mb error, got exit $actual"
+  echo "  FAIL: expected exit 1 with abs_2021_mb (not _lookup) in error, got exit $actual"
   echo "  stderr: $stderr_capture"
   FAIL=$((FAIL + 1))
 fi
