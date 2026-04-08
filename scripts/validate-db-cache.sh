@@ -133,17 +133,105 @@ require_table_exists "$GNAF_SCHEMA" "address_principal_admin_boundaries"
 require_min_rows "$ADMIN_SCHEMA" "abs_2021_mb" 1
 
 # 5. Boundary polygon tables — these are what the spatial-join fallback in
-#    address_full_prep.sql joins against. If any are missing or empty, the
-#    fallback silently produces 0% coverage for that boundary type. THIS is
-#    the gate that should have caught the v2026.04 incident class.
-require_min_rows "$ADMIN_SCHEMA" "local_government_areas" "$MIN_BOUNDARY_ROWS"
-require_min_rows "$ADMIN_SCHEMA" "local_government_wards" "$MIN_BOUNDARY_ROWS"
-require_min_rows "$ADMIN_SCHEMA" "commonwealth_electorates" "$MIN_BOUNDARY_ROWS"
-require_min_rows "$ADMIN_SCHEMA" "state_lower_house_electorates" "$MIN_BOUNDARY_ROWS"
-require_min_rows "$ADMIN_SCHEMA" "state_upper_house_electorates" "$MIN_BOUNDARY_ROWS"
+#    address_full_prep.sql joins against. If any required table is missing or
+#    empty, the fallback silently produces 0% coverage for that boundary type.
+#    THIS is the gate that should have caught the v2026.04 incident class.
+#
+# STATE-AWARE FILTERING — important. Production gnaf-loader filters which
+# polygon tables it loads based on which states are being built. The rules
+# come from `gnaf-loader/settings.py:208-217` (the `admin_bdy_list` block):
+#
+#   - ce: NOT loaded if states_to_load == ["OT"]
+#   - lga: NOT loaded if states_to_load == ["ACT"]
+#   - ward: ONLY loaded if any of NT/SA/VIC/WA in states_to_load
+#   - se_lower: NOT loaded if states_to_load == ["OT"]
+#   - se_upper: ONLY loaded if any of TAS/VIC/WA in states_to_load
+#
+# The shapefile loader at `gnaf-loader/load-gnaf.py:325-330` enforces this
+# physically: it only loads shapefiles whose filename starts with the
+# lowercase state prefix (`act_*.shp`, `ot_*.shp`, etc.), and the Geoscape
+# admin boundaries archive only ships shapefiles for boundary types each
+# state actually has. The prep SQL (`02-02a-prep-admin-bdys-tables.sql`)
+# then INNER JOINs against the raw tables — if the raw table doesn't
+# exist, the prep silently fails (`geoscape.multiprocess_list` logs but
+# continues), and the polygon table doesn't get created.
+#
+# Result: a single-state build of OT-only ends up with ONLY local_government_areas
+# in admin_bdys_*. ACT-only has ce + se_lower. NSW/QLD have ce + lga + se_lower.
+# NT has ce + lga + ward + se_lower. SA same as NT. TAS has ce + lga + se_lower
+# + se_upper. Only VIC and WA have all 5.
+#
+# The validator must mirror this exactly. Take a STATES env var from the
+# entrypoint (whitespace-separated, matching gnaf-loader's --states format,
+# e.g. "OT" or "VIC NSW") and only require the polygon tables that gnaf-loader
+# would have loaded for that state set. When STATES is unset or empty (the
+# docker-smoke fixture path and any all-states production caller), fall back
+# to strict-all-five — both of those callers DO have all 5 polygon tables,
+# and the strict default catches future per-state callers that forget to
+# pass STATES.
+
+# Tokenize STATES on whitespace into a bash array — mirrors Python's
+# `states_to_load` list (set from `--states VIC NSW` → `["VIC","NSW"]`).
+# Empty/whitespace STATES produces an empty array.
+read -ra states_arr <<< "${STATES:-}"
+
+# state_in_list — mirrors Python's `"X" in states_to_load`
+state_in_list() {
+  local needle="$1"
+  local s
+  for s in "${states_arr[@]}"; do
+    [[ "$s" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+# is_only_X — mirrors Python's `states_to_load == ["X"]` (length-1 list equality)
+is_only_ot()  { [[ "${#states_arr[@]}" -eq 1 && "${states_arr[0]}" == "OT"  ]]; }
+is_only_act() { [[ "${#states_arr[@]}" -eq 1 && "${states_arr[0]}" == "ACT" ]]; }
+
+need_ce=false
+need_lga=false
+need_ward=false
+need_se_lower=false
+need_se_upper=false
+
+if [[ -z "${STATES// /}" ]]; then
+  # Empty/unset STATES → strict all-five fallback. Matches the fixture path
+  # (which has all 5) and any all-states production caller. A per-state
+  # caller that forgets to set STATES will hit this strict default and
+  # fail loud — which is the safe direction.
+  need_ce=true
+  need_lga=true
+  need_ward=true
+  need_se_lower=true
+  need_se_upper=true
+else
+  # Per-state logic — line-by-line mirror of settings.py:208-217.
+  if ! is_only_ot; then
+    need_ce=true
+    need_se_lower=true
+  fi
+  if ! is_only_act; then
+    need_lga=true
+  fi
+  if state_in_list NT || state_in_list SA || state_in_list VIC || state_in_list WA; then
+    need_ward=true
+  fi
+  if state_in_list TAS || state_in_list VIC || state_in_list WA; then
+    need_se_upper=true
+  fi
+fi
+
+[[ "$need_ce"       == true ]] && require_min_rows "$ADMIN_SCHEMA" "commonwealth_electorates"      "$MIN_BOUNDARY_ROWS"
+[[ "$need_lga"      == true ]] && require_min_rows "$ADMIN_SCHEMA" "local_government_areas"        "$MIN_BOUNDARY_ROWS"
+[[ "$need_ward"     == true ]] && require_min_rows "$ADMIN_SCHEMA" "local_government_wards"        "$MIN_BOUNDARY_ROWS"
+[[ "$need_se_lower" == true ]] && require_min_rows "$ADMIN_SCHEMA" "state_lower_house_electorates" "$MIN_BOUNDARY_ROWS"
+[[ "$need_se_upper" == true ]] && require_min_rows "$ADMIN_SCHEMA" "state_upper_house_electorates" "$MIN_BOUNDARY_ROWS"
 
 # 6. Raw admin boundary source tables — used by fixtures/prep-admin-bdys.sql
-#    in fixture mode and as a debugging fallback in production.
-require_min_rows "$RAW_ADMIN_SCHEMA" "aus_lga" "$MIN_BOUNDARY_ROWS"
+#    in fixture mode and as a debugging fallback in production. Same per-state
+#    rule as lga: ACT and OT don't get raw aus_lga loaded (their archives have
+#    no `act_lga.shp` / `ot_lga.shp`).
+[[ "$need_lga" == true ]] && require_min_rows "$RAW_ADMIN_SCHEMA" "aus_lga" "$MIN_BOUNDARY_ROWS"
 
 echo "[cache-validate] OK: database passed sanity checks for ${GNAF_VERSION}" >&2

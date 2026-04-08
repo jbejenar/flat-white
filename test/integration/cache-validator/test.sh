@@ -4,16 +4,25 @@
 #
 # Provisions a "production-shaped" Postgres schema (one that matches what
 # gnaf-loader actually creates, NOT what the fixture creates) and runs the
-# cache validator against it. Catches the regression class where the
-# validator references a fixture-only table name and silently fails on
-# every production state build (PR #99 introduced exactly this bug —
-# `abs_2021_mb_lookup` is fixture-only; production has `abs_2021_mb`).
+# cache validator against it. Catches two regression classes:
+#
+#   1. Validator references a fixture-only table name and fails on every
+#      production state build. Original PR #99 bug — `abs_2021_mb_lookup`
+#      is fixture-only; production has `abs_2021_mb`.
+#
+#   2. Validator's polygon-table requirements don't match gnaf-loader's
+#      per-state shapefile filtering. Single-state builds for ACT/OT/etc.
+#      end up with only a SUBSET of the 5 polygon tables (per the
+#      `admin_bdy_list` logic in `gnaf-loader/settings.py:208-217`). The
+#      validator must mirror that subset exactly via the STATES env var.
 #
 # Test cases:
-#   1. Positive: full prod-shape schema → validator exits 0
-#   2. Negative: drop a polygon table → validator exits 1
-#   3. Negative: drop the mesh-block table → validator exits 1 (the regression
-#      guard for the bug PR A fixes)
+#   1-3.  Existing checks (empty-STATES strict-all-five, abs_2021_mb regression)
+#   4-9.  Per-state positive cases for all 9 single-state builds
+#         (validates state-aware polygon requirements match settings.py)
+#   10.   Multi-state positive case (NSW VIC) — verifies OR logic
+#   11-12. Negative regression guards: even with STATES, the validator still
+#         hard-fails when an EXPECTED polygon is missing
 #
 # Schemas: 202699 (avoids colliding with the real 202602 fixture state).
 #
@@ -64,13 +73,72 @@ psql_db() {
 
 run_validator() {
   # Pipe the validator script into bash inside the docker compose db container,
-  # passing GNAF_VERSION and minimum-row overrides via env. Returns the
-  # validator's exit code, propagating stderr.
+  # passing GNAF_VERSION, minimum-row overrides, and the optional STATES env
+  # via -e flags. Returns the validator's exit code, propagating stderr.
+  #
+  # Usage: run_validator              # empty STATES → strict-all-five fallback
+  #        run_validator OT           # single-state per-state mode
+  #        run_validator "NSW VIC"    # multi-state space-separated
+  local states="${1:-}"
   docker compose exec -T \
     -e GNAF_VERSION="$TEST_GNAF_VERSION" \
     -e MIN_ADDRESS_ROWS=1 \
     -e MIN_BOUNDARY_ROWS=1 \
+    -e STATES="$states" \
     "$DB_SERVICE" bash -s < "$VALIDATOR_FILE"
+}
+
+# drop_polygons — remove the named admin_bdys polygon tables from the seed
+# (used to simulate per-state gnaf-loader output where some boundary types
+# don't get loaded due to filename-prefix shapefile filtering).
+#
+# Usage: drop_polygons local_government_wards state_upper_house_electorates
+drop_polygons() {
+  local table
+  local sql=""
+  for table in "$@"; do
+    sql+="DROP TABLE IF EXISTS admin_bdys_${TEST_SCHEMA_VERSION}.${table};"
+  done
+  psql_db -q -c "$sql"
+}
+
+# drop_raw_lga — also drop raw_admin_bdys.aus_lga (production gnaf-loader
+# doesn't load it for ACT-only or OT-only builds, where act_lga.shp /
+# ot_lga.shp aren't in the archive). The validator skips checking it when
+# need_lga is false, but the test reflects production reality.
+drop_raw_lga() {
+  psql_db -q -c "DROP TABLE IF EXISTS raw_admin_bdys_${TEST_SCHEMA_VERSION}.aus_lga;"
+}
+
+# assert_pass — exit code 0 expected
+# Usage: assert_pass <test_name> <run_validator output>
+assert_pass() {
+  local name="$1"
+  local actual="$2"
+  if [[ "$actual" -eq 0 ]]; then
+    echo "  PASS: $name"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $name — expected exit 0, got $actual"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# assert_fail_with — exit code 1 expected, stderr must contain the substring
+# Usage: assert_fail_with <test_name> <actual_exit> <stderr> <substring>
+assert_fail_with() {
+  local name="$1"
+  local actual="$2"
+  local stderr="$3"
+  local needle="$4"
+  if [[ "$actual" -eq 1 && "$stderr" == *"$needle"* ]]; then
+    echo "  PASS: $name"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $name — expected exit 1 with '$needle' in error, got exit $actual"
+    echo "  stderr: $stderr"
+    FAIL=$((FAIL + 1))
+  fi
 }
 
 cleanup_test_schemas() {
@@ -97,53 +165,32 @@ trap cleanup_test_schemas EXIT
 PASS=0
 FAIL=0
 
-# Test 1 — positive case: full prod-shape schema → validator exits 0
+# Test 1 — empty STATES → strict-all-five fallback → validator exits 0
 echo
-echo "[cache-validator-test] Test 1/3 — positive case (full prod-shape schema)"
+echo "[cache-validator-test] Test 1/12 — empty STATES (strict-all-five fallback)"
 reseed
-set +e
-run_validator >/dev/null
-actual=$?
-set -e
-if [[ "$actual" -eq 0 ]]; then
-  echo "  PASS: validator exited 0 against full prod-shape schema"
-  PASS=$((PASS + 1))
-else
-  echo "  FAIL: validator exited $actual against full prod-shape schema (expected 0)"
-  FAIL=$((FAIL + 1))
-fi
+set +e; run_validator >/dev/null; actual=$?; set -e
+assert_pass "validator exited 0 against full prod-shape schema (no STATES)" "$actual"
 
-# Test 2 — negative case: missing polygon table → validator exits 1
+# Test 2 — empty STATES, drop a polygon → validator exits 1
 echo
-echo "[cache-validator-test] Test 2/3 — negative (drop local_government_areas)"
+echo "[cache-validator-test] Test 2/12 — empty STATES + drop local_government_areas"
 reseed
-psql_db -q -c "DROP TABLE admin_bdys_${TEST_SCHEMA_VERSION}.local_government_areas;"
-set +e
-stderr_capture="$(run_validator 2>&1 1>/dev/null)"
-actual=$?
-set -e
-if [[ "$actual" -eq 1 && "$stderr_capture" == *"local_government_areas"* ]]; then
-  echo "  PASS: validator exited 1 with local_government_areas in error"
-  PASS=$((PASS + 1))
-else
-  echo "  FAIL: expected exit 1 with local_government_areas error, got exit $actual"
-  echo "  stderr: $stderr_capture"
-  FAIL=$((FAIL + 1))
-fi
+drop_polygons local_government_areas
+set +e; stderr_capture="$(run_validator 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "validator exited 1 with local_government_areas error" \
+  "$actual" "$stderr_capture" "local_government_areas"
 
 # Test 3 — REGRESSION GUARD: drop the production mesh-block table.
-# This is the bug PR A fixes — the original validator referenced
+# This is the original PR #101 bug — the validator referenced
 # `abs_2021_mb_lookup` (fixture-only) instead of `abs_2021_mb` (production).
 # If anyone re-introduces the wrong name, this test catches it because
 # the seed only creates `abs_2021_mb`.
 echo
-echo "[cache-validator-test] Test 3/3 — regression guard (drop abs_2021_mb)"
+echo "[cache-validator-test] Test 3/12 — regression guard (drop abs_2021_mb)"
 reseed
-psql_db -q -c "DROP TABLE admin_bdys_${TEST_SCHEMA_VERSION}.abs_2021_mb;"
-set +e
-stderr_capture="$(run_validator 2>&1 1>/dev/null)"
-actual=$?
-set -e
+drop_polygons abs_2021_mb
+set +e; stderr_capture="$(run_validator 2>&1 1>/dev/null)"; actual=$?; set -e
 if [[ "$actual" -eq 1 \
    && "$stderr_capture" == *"abs_2021_mb"* \
    && "$stderr_capture" != *"abs_2021_mb_lookup"* ]]; then
@@ -158,6 +205,100 @@ else
   echo "  stderr: $stderr_capture"
   FAIL=$((FAIL + 1))
 fi
+
+# ─── Per-state positive cases ───────────────────────────────────────────────
+# Each test simulates what gnaf-loader actually leaves in admin_bdys_* after
+# a single-state load. The polygon set per state comes from the truth table
+# in `gnaf-loader/settings.py:208-217`.
+
+# Test 4 — STATES=OT (Other Territories: Christmas Island, Norfolk, etc.)
+# OT has only LGA. Drop everything else.
+echo
+echo "[cache-validator-test] Test 4/12 — STATES=OT (lga only)"
+reseed
+drop_polygons commonwealth_electorates local_government_wards \
+  state_lower_house_electorates state_upper_house_electorates
+set +e; run_validator OT >/dev/null; actual=$?; set -e
+assert_pass "STATES=OT accepts lga-only schema" "$actual"
+
+# Test 5 — STATES=ACT (Australian Capital Territory)
+# ACT has ce + se_lower (no lga, no ward, no se_upper).
+echo
+echo "[cache-validator-test] Test 5/12 — STATES=ACT (ce, se_lower)"
+reseed
+drop_polygons local_government_areas local_government_wards state_upper_house_electorates
+drop_raw_lga
+set +e; run_validator ACT >/dev/null; actual=$?; set -e
+assert_pass "STATES=ACT accepts ce+se_lower schema" "$actual"
+
+# Test 6 — STATES=NSW (New South Wales)
+# NSW has ce + lga + se_lower (no ward, no se_upper). NSW councils don't
+# have wards in the Geoscape data set.
+echo
+echo "[cache-validator-test] Test 6/12 — STATES=NSW (ce, lga, se_lower)"
+reseed
+drop_polygons local_government_wards state_upper_house_electorates
+set +e; run_validator NSW >/dev/null; actual=$?; set -e
+assert_pass "STATES=NSW accepts ce+lga+se_lower schema" "$actual"
+
+# Test 7 — STATES=NT (Northern Territory)
+# NT has ce + lga + ward + se_lower (no se_upper — NT is unicameral).
+echo
+echo "[cache-validator-test] Test 7/12 — STATES=NT (ce, lga, ward, se_lower)"
+reseed
+drop_polygons state_upper_house_electorates
+set +e; run_validator NT >/dev/null; actual=$?; set -e
+assert_pass "STATES=NT accepts ce+lga+ward+se_lower schema" "$actual"
+
+# Test 8 — STATES=TAS (Tasmania)
+# TAS has ce + lga + se_lower + se_upper (no ward — TAS LGAs aren't subdivided
+# into wards in the Geoscape data set).
+echo
+echo "[cache-validator-test] Test 8/12 — STATES=TAS (ce, lga, se_lower, se_upper)"
+reseed
+drop_polygons local_government_wards
+set +e; run_validator TAS >/dev/null; actual=$?; set -e
+assert_pass "STATES=TAS accepts ce+lga+se_lower+se_upper schema" "$actual"
+
+# Test 9 — STATES=VIC (Victoria, full coverage)
+# VIC has all 5 polygon tables. No drops needed.
+echo
+echo "[cache-validator-test] Test 9/12 — STATES=VIC (all 5)"
+reseed
+set +e; run_validator VIC >/dev/null; actual=$?; set -e
+assert_pass "STATES=VIC accepts full all-five schema" "$actual"
+
+# Test 10 — Multi-state STATES="NSW VIC"
+# Union of NSW (ce, lga, se_lower) and VIC (all 5) = all 5 (because VIC
+# triggers ward and se_upper via the OR conditions in settings.py).
+echo
+echo '[cache-validator-test] Test 10/12 — STATES="NSW VIC" (multi-state, union has all 5)'
+reseed
+set +e; run_validator "NSW VIC" >/dev/null; actual=$?; set -e
+assert_pass 'STATES="NSW VIC" accepts full all-five schema (multi-state OR logic)' "$actual"
+
+# ─── Negative regression guards ─────────────────────────────────────────────
+# These prove that even with state-aware logic, the validator still hard-fails
+# when an EXPECTED polygon is missing for the state being built.
+
+# Test 11 — STATES=VIC, drop ward → should fail (VIC requires ward)
+echo
+echo "[cache-validator-test] Test 11/12 — NEG: STATES=VIC missing ward"
+reseed
+drop_polygons local_government_wards
+set +e; stderr_capture="$(run_validator VIC 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "STATES=VIC fails when ward is missing" \
+  "$actual" "$stderr_capture" "local_government_wards"
+
+# Test 12 — STATES=OT, drop lga → should fail (OT requires lga)
+echo
+echo "[cache-validator-test] Test 12/12 — NEG: STATES=OT missing lga"
+reseed
+drop_polygons commonwealth_electorates local_government_wards \
+  state_lower_house_electorates state_upper_house_electorates local_government_areas
+set +e; stderr_capture="$(run_validator OT 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "STATES=OT fails when lga is missing" \
+  "$actual" "$stderr_capture" "local_government_areas"
 
 echo
 echo "[cache-validator-test] Result: $PASS passed, $FAIL failed"
