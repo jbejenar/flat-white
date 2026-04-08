@@ -67,7 +67,7 @@ export interface VerificationReport {
  * Since verify() expects a file path, we decompress to a temp pipeline.
  * Instead, we directly stream and apply the same checks.
  */
-async function verifyGzippedState(
+export async function verifyGzippedState(
   gzPath: string,
   state: string,
   enumSets?: EnumSets,
@@ -185,14 +185,20 @@ async function verifyGzippedState(
 
   const enumErrorCount = Object.values(enumUnknownCounts).reduce((s, n) => s + n, 0);
 
+  // Threshold evaluation runs regardless of rowCount. An empty state file
+  // (rowCount === 0) is effectively 0% coverage for every field — treating it
+  // as "no thresholds to check" would let a regression that produces an empty
+  // NSW silently ship, because there are also no schema/quality/enum/dupe
+  // errors to flag on zero rows. Coerce missing values to 0 so empty states
+  // explicitly fail every configured threshold.
   const coverageBelowThreshold: CoverageBelowThreshold[] = [];
-  if (thresholds && rowCount > 0) {
+  if (thresholds) {
     for (const [field, threshold] of Object.entries(thresholds) as [
       keyof BoundaryCoverageThresholds,
       number,
     ][]) {
       if (threshold === undefined) continue;
-      const actual = boundaryCoverage[field] ?? 0;
+      const actual = rowCount > 0 ? (boundaryCoverage[field] ?? 0) : 0;
       if (actual < threshold) {
         coverageBelowThreshold.push({ field, actual, threshold });
       }
@@ -210,7 +216,12 @@ async function verifyGzippedState(
     qualityWarnings,
     duplicatePids,
     enumUnknownCounts,
+    // Independent safety: a zero-row state file is always a failure, even if
+    // no thresholds are configured. Every schema/quality/enum check is
+    // vacuously "passing" on an empty file, so without this gate the function
+    // would return passed=true for an empty artifact.
     passed:
+      rowCount > 0 &&
       schemaErrors === 0 &&
       qualityErrors === 0 &&
       duplicatePids === 0 &&
