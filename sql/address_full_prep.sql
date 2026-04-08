@@ -5,6 +5,7 @@
 -- Usage: Run once before cursor-based streaming of address_full_main.sql.
 -- Schema: gnaf___SCHEMA_VERSION__, raw_gnaf___SCHEMA_VERSION__, admin_bdys___SCHEMA_VERSION__
 
+-- FIXTURE_BOUNDARY_PRELUDE_START
 -- 0. Ensure admin boundary tables exist (empty stubs if --no-boundary-tag or partial load).
 -- Both schemas (gnaf___SCHEMA_VERSION__ and admin_bdys___SCHEMA_VERSION__) are created by gnaf-loader.
 CREATE SCHEMA IF NOT EXISTS admin_bdys___SCHEMA_VERSION__;
@@ -23,6 +24,54 @@ CREATE TABLE IF NOT EXISTS admin_bdys___SCHEMA_VERSION__.abs_2021_mb (
   gcc_21name text,
   state text
 );
+
+-- 0a. address_principal_admin_boundaries: drop-and-recreate stub if the existing
+-- table has a state-filtered (incomplete) schema from a partially-failed gnaf-loader
+-- Part 5. gnaf-loader's `boundary_tag_gnaf()` dynamically creates this table with
+-- only the columns for boundary types in `admin_bdy_list` (which is per-state
+-- filtered). When Part 5 fails partway through (e.g. for ACT/OT/NT/SA/TAS where
+-- 04-06-bdy-tags-for-alias-addresses.sql crashes on a missing column), the table
+-- is left in this incomplete state. Since gnaf-loader's `01-01-drop-tables.sql`
+-- does NOT drop these tables on the next attempt (only Part 5 drops them), and
+-- since the retry runs with `--no-boundary-tag` (skipping Part 5 entirely), the
+-- broken table from the first attempt persists. Without this guard, flatten then
+-- fails with `column "ab.ward_name" does not exist` (or similar).
+--
+-- Logic: if the table exists but is missing ANY of the 10 required boundary
+-- columns, drop it and let the CREATE TABLE IF NOT EXISTS below recreate the
+-- full stub. If gnaf-loader completed Part 5 successfully, all 10 columns are
+-- present and the table is preserved (with its data).
+DO $$
+DECLARE
+  missing_cols int;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'gnaf___SCHEMA_VERSION__'
+      AND table_name = 'address_principal_admin_boundaries'
+  ) THEN
+    SELECT COUNT(*) INTO missing_cols
+    FROM (VALUES
+      ('ce_pid'), ('ce_name'),
+      ('lga_pid'), ('lga_name'),
+      ('ward_pid'), ('ward_name'),
+      ('se_lower_pid'), ('se_lower_name'),
+      ('se_upper_pid'), ('se_upper_name')
+    ) AS required(col)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'gnaf___SCHEMA_VERSION__'
+        AND table_name = 'address_principal_admin_boundaries'
+        AND column_name = required.col
+    );
+
+    IF missing_cols > 0 THEN
+      RAISE NOTICE 'address_principal_admin_boundaries is missing % required column(s) — dropping (was likely left in a partial state by a failed gnaf-loader Part 5)', missing_cols;
+      DROP TABLE gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries CASCADE;
+    END IF;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries (
   gid integer,
   gnaf_pid text,
@@ -168,6 +217,7 @@ END $$;
 -- against an already-indexed table are no-ops.
 CREATE UNIQUE INDEX IF NOT EXISTS address_principal_admin_boundaries_gnaf_pid_uniq
   ON gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries (gnaf_pid);
+-- FIXTURE_BOUNDARY_PRELUDE_END
 
 -- 1a. Best geocode per address (using window function instead of correlated subquery)
 DROP TABLE IF EXISTS tmp_best_geocode;
