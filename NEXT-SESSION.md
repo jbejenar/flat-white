@@ -1,5 +1,50 @@
 # Next Session — flat-white
 
+## Session: 2026-04-08 (session 18)
+
+Phase: E1 — ongoing enhancements
+Checkboxes checked this session: 0
+
+### Completed
+
+- None — all remaining roadmap items are blocked on external dependencies
+
+### Status Verification
+
+- **Upstream PR minus34/gnaf-loader#100:** Still OPEN, no reviews (checked 2026-04-08). .gitmodules stays pointed at fork.
+- **Golden commands:** All passing — lint ✓, typecheck ✓, 266 tests ✓.
+- **All DEFERRED/BLOCKED annotations reviewed** — no items have become unblocked since session 17.
+
+### In Progress (all BLOCKED — unchanged)
+
+- E1.14 — 2 items BLOCKED: boundary field population (needs v2026.05), release notes update (needs v2026.04.1)
+- E1.17 — 1 item BLOCKED: needs May 2026 G-NAF data
+- E1.13 — 1 item BLOCKED: v2026.04.1 not published
+- P4.07 — NSW memory: needs 4 more consecutive runs
+- P4.03 — Build comparison: needs second release
+- P4.06 — Runbook: needs human tester
+- E1.06 — Build cache: needs production build
+
+### Key Dates
+
+- **2026-05-01 (approx):** May 2026 G-NAF data available — unblocks E1.17 final validation
+- **2026-05-15:** Quarterly cron fires — E1.14 + E1.17 must be validated by then or v2026.05 ships with same issues as v2026.04
+
+### Next Session Should Start With
+
+1. **Check upstream PR status:** If minus34/gnaf-loader#100 is merged, update .gitmodules back to minus34/gnaf-loader and update submodule pin
+2. **v2026.05 prep:** E1.14 + E1.17 are the two critical blockers. Once May data is available, run a test build to validate both
+3. **E1.13:** Update v2026.04 release notes when v2026.04.1 publishes
+4. **If all above still blocked:** No actionable roadmap items remain — session can be skipped until ~May 2026
+
+### Roadmap Progress
+
+- E1: 11/18 tickets done, 4 in-progress (E1.06, E1.13, E1.14, E1.17) — all blocked
+- P4: 3/6 tickets done, 3 in-progress — all blocked
+- No phase advancement possible until external dependencies resolve
+
+---
+
 ## Session: 2026-04-08 (session 17)
 
 Phase: E1 — ongoing enhancements
