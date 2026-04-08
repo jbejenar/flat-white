@@ -1,0 +1,5 @@
+[download] G-NAF version: 2026.04
+[download] Output directory: /app/data
+[download] G-NAF GDA2020: starting download from data.gov.au
+[download] ERROR: connection refused (status 503 after 3 retries)
+[load] ERROR: download failed before gnaf-loader could run

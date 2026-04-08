@@ -1,0 +1,5 @@
+root        : INFO     Part 4 of 6 : Reference tables created! : 0:00:19
+root        : INFO     Part 5 of 6 : Start boundary tagging addresses : 2026-04-08 04:15:24
+root        : INFO     	- Step 1 of 7 : principal addresses tagged with admin boundary IDs: 0:00:01
+psycopg.errors.SomeOtherError: a hypothetical future gnaf-loader regression we haven't seen yet
+[load] ERROR: gnaf-loader exited with code 1

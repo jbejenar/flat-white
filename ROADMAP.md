@@ -5001,6 +5001,141 @@ Origin: PR #67 audit (round 3). Found while tracing why v2026.04 has all-null bo
 
 ---
 
+### Ticket E1.20 — Push gnaf-loader settings.py / 04-06 fix upstream
+
+```yaml
+id: E1.20
+title: Push upstream PR to minus34/gnaf-loader fixing per-state admin_bdy_list filter
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I'd like the upstream `minus34/gnaf-loader` repository to fix the per-state `admin_bdy_list` filter (or alternatively make `04-06-bdy-tags-for-alias-addresses.sql` dynamic), so that single-state builds work out of the box without needing flat-white's fallback retry mechanism. **This is nice-to-have, not load-bearing** — the broad Part-5 detection in `scripts/detect-load-failure.sh` already handles the current bug and any future regressions of the same shape.
+
+## Problem Statement
+
+`gnaf-loader/settings.py` filters `admin_bdy_list` per-state with conditions like `if states_to_load != ["ACT"]: admin_bdy_list.append(["local_government_areas", "lga_pid"])`. This is an "optimisation" that omits boundary types states don't have data for. But `gnaf-loader/postgres-scripts/04-06-bdy-tags-for-alias-addresses.sql` is **hardcoded** to reference all 5 boundary `*_pid`/`*_name` columns:
+
+```sql
+INSERT INTO gnaf.address_alias_admin_boundaries
+  (gnaf_pid, locality_pid, locality_name, postcode, state,
+   ce_pid, ce_name, lga_pid, lga_name, ward_pid, ward_name,
+   se_lower_pid, se_lower_name, se_upper_pid, se_upper_name)
+SELECT als.gnaf_pid, pcl.locality_pid, ...
+```
+
+When a single-state build (like flat-white's matrix per-state job) excludes any of those boundary types, the dynamically-built `address_alias_admin_boundaries` table doesn't have those columns, and the hardcoded INSERT fails with `psycopg.errors.UndefinedColumn`.
+
+flat-white's matrix build hits this for **7 of 9 states** (ACT lga_pid, NSW/QLD ward_pid, OT ce_pid + se_lower_pid, TAS se_upper_pid, NT se_upper_pid).
+
+## Two upstream fix options (maintainer's call)
+
+1. **Remove the per-state filter** in `settings.py`. Make `admin_bdy_list` always include all 5 boundary types regardless of `states_to_load`. Side effect: the reference table prep step always tries to create `_analysis` tables for all 5 boundary types. For a state without that boundary data (e.g., ACT for LGAs), the underlying `admin_bdys.local_government_areas` table is created (possibly empty) by `02-02a-prep-admin-bdys-tables.sql`, and the `_analysis` derivation works against the empty subset. The boundary tagging step does INNER JOIN against an empty table → 0 matches → NULL columns → matches the documented schema.
+
+2. **Make `04-06-bdy-tags-for-alias-addresses.sql` dynamic** like the principal table flow in `boundary_tag_gnaf()`. Build the INSERT statement at runtime based on `admin_bdy_list`, only including columns that actually exist. More invasive but preserves the per-state optimisation.
+
+Option 1 is simpler. Option 2 is more thorough.
+
+## Definition of Done
+
+- [ ] Open upstream PR to `minus34/gnaf-loader` with one of the two fixes
+- [ ] PR description includes the failure log from a flat-white quarterly build (we have plenty)
+- [ ] PR is reviewed and merged by upstream maintainer
+- [ ] Once merged, bump flat-white's gnaf-loader submodule pin to the version with the fix
+- [ ] Verify the broad Part-5 detection in `scripts/detect-load-failure.sh` no longer fires (because gnaf-loader's first attempt now succeeds)
+- [ ] Update CHANGELOG and ROADMAP to mark E1.20 as done
+
+## Scope
+
+### In
+
+- Drafting and submitting upstream PR
+- Following up on upstream review
+- Bumping submodule pin once merged
+
+### Out
+
+- Modifying flat-white's local code paths (the fallback infrastructure stays in place as belt-and-braces)
+- Removing `scripts/detect-load-failure.sh` or the retry logic in `docker-entrypoint.sh` (they remain useful for any FUTURE Part-5 regression upstream)
+
+## Notes
+
+Origin: "permanent fix" PR (this PR). The local fix uses the broad Part-5 detection + flat-white's spatial-join fallback as the primary recovery mechanism, so this upstream fix is **nice-to-have, not load-bearing**. Filing the ticket so we don't forget; can sit at p3-low until someone has time.
+
+---
+
+### Ticket E1.21 — Optimise spatial-join fallback for NSW scale
+
+```yaml
+id: E1.21
+title: Optimise spatial-join fallback in address_full_prep.sql for large states
+status: planned
+priority: p2-medium
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need flat-white's spatial-join fallback to complete NSW (~4.6M addresses) within the GitHub Actions free-tier 360 min job timeout, so that we don't need to escalate to self-hosted runners (E1.09) every time gnaf-loader's Part 5 fails.
+
+## Problem Statement
+
+The current fallback in `sql/address_full_prep.sql` uses `LEFT JOIN LATERAL (SELECT ... ORDER BY pid LIMIT 1)` per boundary table — guaranteeing one row per address per table (for E1.15 multi-polygon safety). For NSW with 4.6M addresses × 4 boundary tables, that's ~18.4M individual ST_Intersects index lookups. Each lookup uses a GiST index (~0.5-2ms), so the total ranges from **~30 minutes (best case) to ~3 hours (worst case)**.
+
+For comparison, gnaf-loader's bulk approach (single hash join with ST_Intersects) processes 4.6M addresses in ~5-10 minutes for VIC. The LATERAL approach is 5-30x slower.
+
+Today this is acceptable because the fallback is the **secondary path** (only fires when gnaf-loader fails), and the build job timeout has been bumped to 360 min (GitHub Actions free-tier maximum). But:
+
+1. If gnaf-loader is broken for a long stretch (multiple quarterly cycles), every build runs the slow fallback
+2. If NSW exceeds 360 min, we have to escalate to self-hosted runners
+3. The slow fallback pessimises the dev experience even when it works
+
+## Approach
+
+Rewrite the fallback to use **bulk hash joins** like gnaf-loader does internally, but preserve the **one-row-per-address guarantee** (E1.15 multi-polygon safety). Two ways:
+
+1. **`DISTINCT ON (gnaf_pid)` with deterministic `ORDER BY`**: standard hash join produces (potentially) multiple rows per address for boundary points, then DISTINCT ON deduplicates. Single pass per boundary table.
+
+2. **Pre-aggregate boundaries with `ST_Subdivide`** (matches gnaf-loader's `_analysis` table approach): subdivide large polygons into smaller chunks, build a GiST index on the chunks, do a bulk hash join against the chunks. Faster spatial lookups.
+
+Option 1 is simpler. Option 2 matches what gnaf-loader does and would be faster.
+
+## Definition of Done
+
+- [ ] Spatial join fallback completes NSW (~4.6M addresses) in under 30 min on a free GitHub runner
+- [ ] Output is byte-identical to the current LATERAL approach (verified by fixture cross-path test + a new larger-scale test if possible)
+- [ ] One-row-per-address guarantee is preserved (no multi-polygon row multiplication)
+- [ ] Deterministic across runs
+- [ ] UNIQUE INDEX on `gnaf_pid` still enforces structurally
+
+## Scope
+
+### In
+
+- `sql/address_full_prep.sql` spatial join fallback rewrite
+- Performance test (timing on fixture; can't easily test at NSW scale)
+- Update CHANGELOG / ROADMAP
+
+### Out
+
+- Replacing the entire flatten pipeline
+- Touching gnaf-loader (E1.20 covers upstream)
+
+## Notes
+
+Origin: "permanent fix" PR (this PR). Currently p2-medium because the 360-min timeout gives the slow fallback room to run. Promotes to p1-high if the first quarterly build with the fallback exceeds 360 min (then we need this to avoid forcing self-hosted runners).
+
+---
+
 ## Phase P5 — AWS Mirror (Deferred)
 
 **Target:** Post-M4 · **Status:** Planned · **Rationale:** GitHub Releases is the primary distribution. S3 is redundancy — valuable but not required for the first release. Deferred from Phase P3 to avoid overloading the first release week.

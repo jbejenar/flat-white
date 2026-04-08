@@ -99,7 +99,15 @@ jobs:
   build:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     needs: setup
-    timeout-minutes: 90
+    # 360 min is the GitHub Actions free-tier maximum. We need this generous
+    # budget because the spatial-join fallback in address_full_prep.sql can
+    # take 30min-3hr for NSW (~4.6M addresses) when it's the primary path
+    # (i.e., when gnaf-loader's Part 5 fails and we retry with --no-boundary-tag).
+    # When upstream gnaf-loader is fixed (E1.20), the first attempt succeeds
+    # and the build completes in the original ~25 min.
+    # Escalation if even 360 min is insufficient: switch to self-hosted runner
+    # via the `runner` workflow input (E1.09 documents the procedure).
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:

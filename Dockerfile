@@ -68,6 +68,10 @@ COPY gnaf-loader/ ./gnaf-loader/
 # Copy scripts
 COPY scripts/build-fixture-only.sh ./scripts/build-fixture-only.sh
 COPY scripts/build-local.sh ./scripts/build-local.sh
+# detect-load-failure.sh is invoked by docker-entrypoint.sh to classify
+# gnaf-loader failures and decide whether to retry with --no-boundary-tag
+COPY scripts/detect-load-failure.sh ./scripts/detect-load-failure.sh
+RUN chmod +x ./scripts/detect-load-failure.sh
 
 # Copy entrypoint (P2.02 will replace this with a proper orchestrator)
 COPY docker-entrypoint.sh /docker-entrypoint.sh

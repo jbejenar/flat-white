@@ -1,0 +1,20 @@
+root        : INFO     Part 4 of 6 : Reference tables created! : 0:00:19
+root        : INFO     Part 5 of 6 : Start boundary tagging addresses : 2026-04-08 04:19:59.903109
+root        : INFO     		- running 3 processes (adjusted due to low row count in table to split)
+root        : INFO     	- Step 1 of 7 : principal addresses tagged with admin boundary IDs: 0:00:00.812262
+root        : INFO     	- Step 2 of 7 : principal addresses - invalid matches deleted & bdy tag indexes created : 0:00:01.260599
+root        : INFO     	- Step 3 of 7 : principal addresses - bdy tags added to output table : 0:00:00.786788
+root        : INFO     	- Step 4 of 7 : created index on bdy tagged address table : 0:00:01.030755
+root        : INFO     	- Step 5 of 7 : no boundary tag duplicates : 0:00:00.092254
+Traceback (most recent call last):
+  File "/app/gnaf-loader/load-gnaf.py", line 1003, in <module>
+    if main():
+       ^^^^^^
+  File "/app/gnaf-loader/load-gnaf.py", line 133, in main
+    boundary_tag_gnaf(pg_cur)
+  File "/app/gnaf-loader/load-gnaf.py", line 845, in boundary_tag_gnaf
+    pg_cur.execute(geoscape.open_sql_file("04-06-bdy-tags-for-alias-addresses.sql"))
+psycopg.errors.UndefinedColumn: column "lga_pid" of relation "address_alias_admin_boundaries" does not exist
+LINE 1: ... locality_name, postcode, state, ce_pid, ce_name, lga_pid, l...
+                                                              ^
+[load] ERROR: gnaf-loader exited with code 1 after 0.6 minutes
