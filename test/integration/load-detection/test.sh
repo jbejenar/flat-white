@@ -54,6 +54,12 @@ echo
 expect "success.log"               "0" "1" "successful run, no retry needed"
 expect "failure-download.log"      "1" "1" "failed before Part 4 (download), real error"
 expect "failure-prep.log"          "1" "1" "failed in Part 4 (prep SQL), real error"
+# Important false-positive guard: Part 5 completed THEN something later failed.
+# Without the "Part 5 completed?" check, the broad detection would incorrectly
+# retry this and mask the real error in Part 6+.
+expect "failure-part6-after-part5-success.log" "1" "1" "Part 5 succeeded then Part 6 failed — different problem, not retry-eligible"
+# Edge case: success exit code with completion marker — should never happen but verify
+expect "success.log"               "1" "1" "Part 5 completed (false alarm — exit code claims failure but log shows success)"
 
 # Positive cases: should trigger retry (exit 0 from detect)
 expect "failure-act-lga_pid.log"        "1" "0" "ACT lga_pid column mismatch — Part 5"

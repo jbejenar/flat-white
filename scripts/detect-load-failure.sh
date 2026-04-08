@@ -15,15 +15,27 @@
 #   1 — Not a Part-5 failure (real error, do not retry — fail loudly)
 #
 # Detection logic:
-#   The condition is intentionally BROAD: any non-zero exit code from
-#   gnaf-loader where the log shows we reached "Part 5 of 6 : Start
-#   boundary tagging" is treated as Part-5-eligible. This catches:
+#   The condition is BROAD enough to catch any error during boundary tagging
+#   but NARROW enough to exclude failures in unrelated later phases:
+#
+#     1. exit_code != 0 (gnaf-loader failed)
+#     2. AND log contains "Part 5 of 6 : Start boundary tagging"
+#        (got past Parts 1-4, started Part 5)
+#     3. AND log does NOT contain "Part 5 of 6 : Addresses boundary tagged"
+#        (Part 5 did NOT complete successfully)
+#
+#   This catches:
 #     - Today's column-mismatch bugs (lga_pid, ward_pid, ce_pid, se_lower_pid)
-#     - Any future error gnaf-loader introduces in Part 5
+#     - Any future error gnaf-loader introduces during Part 5
 #     - Schema-mismatch errors caused by per-state filter bugs
-#   It does NOT catch:
-#     - Failures before Part 5 (download, raw GNAF load, prep SQL) — those
-#       are real errors and should fail loudly
+#
+#   It does NOT catch (correctly — these are NOT retry-eligible):
+#     - Failures before Part 5 (download, raw GNAF load, prep SQL) — real errors
+#     - Failures in Part 6+ (e.g., QA table errors) where Part 5 completed —
+#       different problem, retrying with --no-boundary-tag would mask it
+#     - Successful runs (exit code 0)
+#     - Runs with --no-boundary-tag already (the "Start boundary tagging" line
+#       is absent — gnaf-loader logs "Addresses NOT boundary tagged" instead)
 #
 # When upstream gnaf-loader is fixed (E1.20), the first attempt succeeds
 # and this detection never fires. When upstream has a bug (today's
@@ -59,10 +71,18 @@ if [[ ! -f "$LOG_PATH" ]]; then
   exit 1
 fi
 
-# Failed AND log shows we reached Part 5 → Part-5-eligible failure
-if grep -q "Part 5 of 6 : Start boundary tagging" "$LOG_PATH"; then
-  exit 0
+# Did Part 5 even start? If not, the failure was earlier (Parts 1-4) → not eligible
+if ! grep -q "Part 5 of 6 : Start boundary tagging" "$LOG_PATH"; then
+  exit 1
 fi
 
-# Failed before Part 5 → real error
-exit 1
+# Did Part 5 complete successfully? If yes, the failure must be in Part 6 or
+# later — that's a different problem, NOT retry-eligible. Note: this match is
+# precise — "Addresses boundary tagged" does NOT match "Addresses NOT boundary
+# tagged" (which is the --no-boundary-tag completion marker).
+if grep -q "Part 5 of 6 : Addresses boundary tagged" "$LOG_PATH"; then
+  exit 1
+fi
+
+# Failed AND Part 5 started AND Part 5 did not complete → Part-5-eligible
+exit 0
