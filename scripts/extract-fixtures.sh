@@ -20,6 +20,10 @@ DB_NAME="gnaf"
 DB_USER="postgres"
 # Fixtures are frozen at the Feb 2026 G-NAF release — default to 202602
 GNAF_VERSION="${GNAF_VERSION:-2026.02}"
+if ! [[ "$GNAF_VERSION" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
+  echo "ERROR: GNAF_VERSION must be YYYY.MM format (got: $GNAF_VERSION)"
+  exit 1
+fi
 SCHEMA="gnaf_$(echo "$GNAF_VERSION" | tr -d '.')"
 RAW_SCHEMA="raw_${SCHEMA}"
 ADMIN_SCHEMA="admin_bdys_$(echo "$GNAF_VERSION" | tr -d '.')"
@@ -31,7 +35,7 @@ echo "Output: $OUTPUT"
 
 # Helper: run psql inside docker
 run_psql() {
-  docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" "$@"
+  timeout 300 docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" "$@"
 }
 
 # Helper: run psql and get a single value
@@ -41,6 +45,8 @@ psql_val() {
 
 # Helper: extract \copy data for a filtered query
 # Usage: extract_copy_data "schema.table" "col1, col2, ..." "WHERE clause or empty"
+# Note: SELECT * is safe here because gnaf-loader always creates tables fresh (no ALTER TABLE
+# column additions), so physical column order matches \copy FROM stdin expectations exactly.
 extract_copy_data() {
   local table="$1"
   local columns="$2"
@@ -59,7 +65,7 @@ extract_copy_data() {
 }
 
 # Verify database is accessible
-docker compose exec db pg_isready -U "$DB_USER" > /dev/null 2>&1 || {
+timeout 30 docker compose exec db pg_isready -U "$DB_USER" > /dev/null 2>&1 || {
   echo "ERROR: Postgres not running. Start with: docker compose up -d db"
   exit 1
 }
@@ -137,29 +143,29 @@ ALIAS_COUNT=$(psql_val "SELECT COUNT(*) FROM ${SCHEMA}.fixture_alias_pids;")
 echo "Selected $FIXTURE_COUNT unique principal addresses, $ALIAS_COUNT aliases"
 
 # Temporary directory for assembly
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"; docker compose exec -T db psql -U '"$DB_USER"' -d '"$DB_NAME"' -c "DROP TABLE IF EXISTS '"$SCHEMA"'.fixture_pids, '"$SCHEMA"'.fixture_alias_pids, '"$SCHEMA"'.fixture_locality_pids, '"$SCHEMA"'.fixture_street_pids, '"$SCHEMA"'.fixture_site_pids;" > /dev/null 2>&1' EXIT
+WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$WORK_DIR"; timeout 30 docker compose exec -T db psql -U '"$DB_USER"' -d '"$DB_NAME"' -c "DROP TABLE IF EXISTS '"$SCHEMA"'.fixture_pids, '"$SCHEMA"'.fixture_alias_pids, '"$SCHEMA"'.fixture_locality_pids, '"$SCHEMA"'.fixture_street_pids, '"$SCHEMA"'.fixture_site_pids;" > /dev/null 2>&1' EXIT
 
 echo "Extracting schema DDL..."
 
 # PART 1A: gnaf schema DDL (pre-data)
-docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
+timeout 600 docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
   --schema="$SCHEMA" --schema-only --section=pre-data \
   --no-owner --no-privileges --no-tablespaces \
-  > "$TMPDIR/gnaf-pre-data.sql"
+  > "$WORK_DIR/gnaf-pre-data.sql"
 
 # PART 1B: raw_gnaf schema DDL (pre-data)
-docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
+timeout 600 docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
   --schema="$RAW_SCHEMA" --schema-only --section=pre-data \
   --no-owner --no-privileges --no-tablespaces \
-  > "$TMPDIR/raw-pre-data.sql"
+  > "$WORK_DIR/raw-pre-data.sql"
 
 # PART 1C: admin_bdys schema DDL (abs_2021_mb_lookup only — we just need the schema)
-docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
+timeout 600 docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
   --schema="$ADMIN_SCHEMA" --schema-only --section=pre-data \
   --no-owner --no-privileges --no-tablespaces \
   -t "${ADMIN_SCHEMA}.abs_2021_mb_lookup" \
-  > "$TMPDIR/admin-pre-data.sql"
+  > "$WORK_DIR/admin-pre-data.sql"
 
 echo "Extracting fixture data..."
 
@@ -211,7 +217,7 @@ echo "Extracting fixture data..."
   echo "-- populates this table from admin_bdys boundary polygons loaded by seed-admin-bdys.sql"
   echo "-- and prepared by prep-admin-bdys.sql."
   echo ""
-} > "$TMPDIR/data-gnaf.sql"
+} > "$WORK_DIR/data-gnaf.sql"
 
 # PART 2B: raw table data
 {
@@ -243,28 +249,28 @@ echo "Extracting fixture data..."
   extract_copy_data "${RAW_SCHEMA}.address_default_geocode" "*" \
     "WHERE address_detail_pid IN (SELECT gnaf_pid FROM ${SCHEMA}.fixture_pids)"
 
-} > "$TMPDIR/data-raw.sql"
+} > "$WORK_DIR/data-raw.sql"
 
 # Address alias admin boundaries data
 {
   extract_copy_data "${SCHEMA}.address_alias_admin_boundaries" "*" \
     "WHERE gnaf_pid IN (SELECT gnaf_pid FROM ${SCHEMA}.fixture_alias_pids)"
-} > "$TMPDIR/data-alias-bdys.sql"
+} > "$WORK_DIR/data-alias-bdys.sql"
 
 # ABS mesh block lookup data
 {
   extract_copy_data "${ADMIN_SCHEMA}.abs_2021_mb_lookup" "*" \
     "WHERE mb21_code IN (SELECT DISTINCT mb_2021_code FROM ${SCHEMA}.address_principals WHERE gnaf_pid IN (SELECT gnaf_pid FROM ${SCHEMA}.fixture_pids) AND mb_2021_code IS NOT NULL)"
-} > "$TMPDIR/data-abs.sql"
+} > "$WORK_DIR/data-abs.sql"
 
 echo "Extracting constraints and indexes..."
 
 # PART 3: Post-data (constraints + indexes) — gnaf schema only
 # The raw schema has no constraints in gnaf-loader's output
-docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
+timeout 600 docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
   --schema="$SCHEMA" --schema-only --section=post-data \
   --no-owner --no-privileges --no-tablespaces \
-  > "$TMPDIR/gnaf-post-data.sql"
+  > "$WORK_DIR/gnaf-post-data.sql"
 
 # Filter out FK constraints that reference rows outside the fixture subset.
 # These constraints would fail because not all referenced rows are in the fixture.
@@ -282,7 +288,13 @@ for name in '${EXCLUDE_CONSTRAINTS}'.split('|'):
     pattern = r'--\n-- Name: \w+ ' + re.escape(name) + r'.*?;\n'
     content = re.sub(pattern, '', content, flags=re.DOTALL)
 sys.stdout.write(content)
-" < "$TMPDIR/gnaf-post-data.sql" > "$TMPDIR/gnaf-post-data-filtered.sql"
+" < "$WORK_DIR/gnaf-post-data.sql" > "$WORK_DIR/gnaf-post-data-filtered.sql"
+
+# Verify excluded FK constraints were actually removed
+if grep -q 'locality_neighbour_lookup_fk2\|address_aliases_fk2' "$WORK_DIR/gnaf-post-data-filtered.sql"; then
+  echo "ERROR: FK constraint filtering failed — excluded constraints still present"
+  exit 1
+fi
 
 echo "Assembling $OUTPUT..."
 
@@ -320,7 +332,7 @@ DROP SCHEMA IF EXISTS ${ADMIN_SCHEMA} CASCADE;
 -- ============================================
 HEADER
 
-  cat "$TMPDIR/gnaf-pre-data.sql"
+  cat "$WORK_DIR/gnaf-pre-data.sql"
 
   cat <<PART1B_HEADER
 
@@ -331,7 +343,7 @@ HEADER
 -- ============================================
 PART1B_HEADER
 
-  cat "$TMPDIR/raw-pre-data.sql"
+  cat "$WORK_DIR/raw-pre-data.sql"
 
   cat <<PART1C_HEADER
 
@@ -342,22 +354,22 @@ PART1B_HEADER
 -- ============================================
 PART1C_HEADER
 
-  cat "$TMPDIR/admin-pre-data.sql"
+  cat "$WORK_DIR/admin-pre-data.sql"
 
   echo ""
   echo "-- ============================================"
   echo "-- ============================================"
 
-  cat "$TMPDIR/data-gnaf.sql"
+  cat "$WORK_DIR/data-gnaf.sql"
 
   echo ""
   echo "-- ============================================"
 
-  cat "$TMPDIR/data-raw.sql"
+  cat "$WORK_DIR/data-raw.sql"
 
-  cat "$TMPDIR/data-alias-bdys.sql"
+  cat "$WORK_DIR/data-alias-bdys.sql"
 
-  cat "$TMPDIR/data-abs.sql"
+  cat "$WORK_DIR/data-abs.sql"
 
   echo ""
   echo ""
@@ -406,7 +418,7 @@ SEQRESET
   echo "--  address_aliases_fk2, locality_neighbour_lookup_fk2)"
   echo "-- ============================================"
 
-  cat "$TMPDIR/gnaf-post-data-filtered.sql"
+  cat "$WORK_DIR/gnaf-post-data-filtered.sql"
 
   echo ""
   echo ""
