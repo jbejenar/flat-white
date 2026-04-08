@@ -170,10 +170,34 @@ require_min_rows "$ADMIN_SCHEMA" "abs_2021_mb" 1
 # and the strict default catches future per-state callers that forget to
 # pass STATES.
 
-# Tokenize STATES on whitespace into a bash array — mirrors Python's
+# Tokenize STATES on shell whitespace into a bash array. Mirrors Python's
 # `states_to_load` list (set from `--states VIC NSW` → `["VIC","NSW"]`).
-# Empty/whitespace STATES produces an empty array.
+# Whitespace-only or empty STATES produces an empty array (length 0).
 read -ra states_arr <<< "${STATES:-}"
+
+# Validate every token against the known set of state codes from
+# gnaf-loader/settings.py (--states choices). Reject unknown tokens with a
+# loud error so a typo (e.g. STATES="vic") or wrong delimiter
+# (e.g. STATES="VIC,NSW" — gnaf-loader uses space, not comma) cannot
+# silently bypass all polygon validation. This is the post-load /
+# post-restore safety gate; failing closed on malformed input is the only
+# correct direction.
+KNOWN_STATES=(ACT NSW NT OT QLD SA TAS VIC WA)
+for token in "${states_arr[@]}"; do
+  found=false
+  for known in "${KNOWN_STATES[@]}"; do
+    if [[ "$token" == "$known" ]]; then
+      found=true
+      break
+    fi
+  done
+  if [[ "$found" == "false" ]]; then
+    echo "[cache-validate] ERROR: invalid STATES token '${token}'" >&2
+    echo "[cache-validate] STATES must be a whitespace-separated list of state codes from: ${KNOWN_STATES[*]}" >&2
+    echo "[cache-validate] Got: '${STATES:-(unset)}'" >&2
+    exit 1
+  fi
+done
 
 # state_in_list — mirrors Python's `"X" in states_to_load`
 state_in_list() {
@@ -195,11 +219,11 @@ need_ward=false
 need_se_lower=false
 need_se_upper=false
 
-if [[ -z "${STATES// /}" ]]; then
-  # Empty/unset STATES → strict all-five fallback. Matches the fixture path
-  # (which has all 5) and any all-states production caller. A per-state
-  # caller that forgets to set STATES will hit this strict default and
-  # fail loud — which is the safe direction.
+# Empty parsed array → strict all-five fallback. Keys off the array length
+# (not a substring strip on $STATES) so any whitespace-only input — spaces,
+# tabs, newlines, etc. — collapses to the same fallback. Matches the
+# fixture path (which has all 5) and any all-states production caller.
+if [[ "${#states_arr[@]}" -eq 0 ]]; then
   need_ce=true
   need_lga=true
   need_ward=true
