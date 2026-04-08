@@ -340,13 +340,22 @@ jobs:
           FIRST=true
           for state in VIC NSW QLD SA WA TAS NT ACT OT; do
             STATE_LOWER=$(echo "$state" | tr '[:upper:]' '[:lower:]')
-            GZ_FILE=$(find "artifacts/flat-white-${state}" -name "*.ndjson.gz" | head -1)
             COUNT_FILE="artifacts/flat-white-${state}/${state}.count"
 
-            if [[ -z "$GZ_FILE" ]]; then
+            # Assert exactly one .ndjson.gz per state artifact. Stale leftovers
+            # from a transient retry would otherwise cause nondeterministic
+            # asset selection (whichever `find` returned first).
+            mapfile -t STATE_GZ_FILES < <(find "artifacts/flat-white-${state}" -name "*.ndjson.gz")
+            if [[ ${#STATE_GZ_FILES[@]} -eq 0 ]]; then
               echo "ERROR: Missing gzip for $state"
               exit 1
             fi
+            if [[ ${#STATE_GZ_FILES[@]} -gt 1 ]]; then
+              echo "ERROR: Found ${#STATE_GZ_FILES[@]} gzips for $state — expected exactly 1:"
+              printf '  %s\n' "${STATE_GZ_FILES[@]}"
+              exit 1
+            fi
+            GZ_FILE="${STATE_GZ_FILES[0]}"
 
             cp "$GZ_FILE" "$ASSET_DIR/flat-white-${RELEASE_VERSION}-${STATE_LOWER}.ndjson.gz"
 

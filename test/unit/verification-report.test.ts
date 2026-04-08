@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   formatVerificationReport,
+  parseBoundaryThresholdsArg,
   parseStatesArg,
   type StateVerification,
   type VerificationReport,
@@ -28,6 +29,7 @@ function makeStateResult(overrides: Partial<StateVerification> = {}): StateVerif
       sa1: 99.9,
       sa2: 99.9,
     },
+    coverageBelowThreshold: [],
     qualityErrors: 0,
     qualityWarnings: 3,
     duplicatePids: 0,
@@ -116,6 +118,72 @@ describe("formatVerificationReport", () => {
     const md = formatVerificationReport(report);
 
     expect(md).toContain("FAIL (3)");
+  });
+});
+
+describe("formatVerificationReport coverage thresholds", () => {
+  it("renders the boundary threshold FAIL section when any state has shortfalls", () => {
+    const report = makeReport({
+      states: [
+        makeStateResult({
+          state: "VIC",
+          passed: false,
+          coverageBelowThreshold: [{ field: "lga", actual: 12.4, threshold: 99 }],
+        }),
+      ],
+      totalCount: 3800000,
+      overallPassed: false,
+    });
+    const md = formatVerificationReport(report);
+
+    expect(md).toContain("Boundary Coverage Threshold: FAIL");
+    expect(md).toContain("| VIC | lga | 12.4 | 99 |");
+  });
+
+  it("omits the threshold section when all states pass", () => {
+    const md = formatVerificationReport(makeReport());
+    expect(md).not.toContain("Boundary Coverage Threshold");
+  });
+});
+
+describe("parseBoundaryThresholdsArg", () => {
+  it("returns undefined for empty input", () => {
+    expect(parseBoundaryThresholdsArg(undefined)).toBeUndefined();
+    expect(parseBoundaryThresholdsArg("")).toBeUndefined();
+  });
+
+  it("parses comma-separated thresholds", () => {
+    expect(parseBoundaryThresholdsArg("lga=99,ward=95,sa1=98.5")).toEqual({
+      lga: 99,
+      ward: 95,
+      sa1: 98.5,
+    });
+  });
+
+  it("rejects unknown fields", () => {
+    expect(() => parseBoundaryThresholdsArg("lga=99,bogus=50")).toThrow(
+      "Unknown boundary threshold field",
+    );
+  });
+
+  it("rejects out-of-range or non-numeric values", () => {
+    expect(() => parseBoundaryThresholdsArg("lga=oops")).toThrow("Invalid threshold value");
+    expect(() => parseBoundaryThresholdsArg("lga=150")).toThrow("Invalid threshold value");
+    expect(() => parseBoundaryThresholdsArg("lga=-1")).toThrow("Invalid threshold value");
+  });
+
+  it("rejects an empty value (lga=)", () => {
+    expect(() => parseBoundaryThresholdsArg("lga=")).toThrow("Missing threshold value");
+  });
+
+  it("rejects a malformed spec without an =", () => {
+    expect(() => parseBoundaryThresholdsArg("lga99")).toThrow("Invalid boundary threshold spec");
+  });
+
+  it("rejects a multi-= spec to avoid silent truncation", () => {
+    expect(() => parseBoundaryThresholdsArg("lga=99=foo")).toThrow(
+      "Invalid boundary threshold spec",
+    );
   });
 });
 

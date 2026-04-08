@@ -19,6 +19,13 @@ success=false
 final_exit_code=1
 restore_validation_failed=false
 used_restore=false
+# `use_restore` is recomputed at the top of every loop iteration based on
+# (a) whether the GH Actions cache restore landed a dump file BEFORE attempt 1
+# and (b) whether a prior attempt within this loop produced a fresh dump
+# (gnaf-loader succeeded but a downstream stage failed). Either way, the
+# next attempt restores from $CACHE_FILE instead of re-running gnaf-loader.
+# This is the load-bearing optimisation that turns a transient flatten
+# failure on NSW from a 1.5-2hr re-run into a ~5min restore.
 use_restore=false
 
 if [[ -n "${CACHE_MATCHED_KEY:-}" && -f "$CACHE_FILE" ]]; then
@@ -33,10 +40,11 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
 
   echo "--- Attempt $attempt of $((MAX_RETRIES + 1)) for ${STATE} ---"
 
-  flags=(--dump-db "/cache/${STATE}.dump")
-  if [[ "$use_restore" == "true" ]]; then
+  if [[ "$use_restore" == "true" && -f "$CACHE_FILE" ]]; then
     flags=(--restore-db "/cache/${STATE}.dump")
     used_restore=true
+  else
+    flags=(--dump-db "/cache/${STATE}.dump")
   fi
 
   set +e
@@ -88,6 +96,12 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
   fi
 
   if [[ "$is_transient" == "false" ]]; then
+    # Pass every attempt log so the summary captures fallback retries / network
+    # / resource flags from earlier attempts (not just the one that failed).
+    log_args=()
+    for f in "${LOG_DIR}/${STATE}-attempt-"*.log; do
+      [[ -f "$f" ]] && log_args+=(--log "$f")
+    done
     python3 scripts/summarize-quarterly-run.py \
       --state "${STATE}" \
       --version "${VERSION}" \
@@ -97,20 +111,42 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
       --final-exit-code "${final_exit_code}" \
       --used-restore "${used_restore}" \
       --restore-validation-failed "${restore_validation_failed}" \
-      --log "${log_file}" \
+      "${log_args[@]}" \
       --output "${TELEMETRY_FILE}"
     echo "::error::${STATE}: persistent failure on attempt ${attempt} (exit code ${final_exit_code}) — not retrying"
     exit "${final_exit_code}"
   fi
 
   if [[ $attempt -le $MAX_RETRIES ]]; then
+    # If a dump file is present, restore from it on the next attempt instead
+    # of re-running gnaf-loader. The dump came from one of:
+    #   - this loop's previous attempt (gnaf-loader succeeded; flatten/etc
+    #     failed transiently); the post-load validate step in
+    #     docker-entrypoint.sh has already vouched for it.
+    #   - the GH Actions cache restore at job start.
+    # In either case, restoring is the right call: it skips the slow load
+    # stage entirely. The cache-validate step inside the entrypoint will
+    # re-verify on restore so a corrupt dump still gets caught.
+    #
+    # The "restore validation failed" branch above explicitly deletes the
+    # cache file before continuing, so this condition only enables restore
+    # when we have a *trusted* dump.
+    if [[ -f "$CACHE_FILE" ]]; then
+      if [[ "$use_restore" != "true" ]]; then
+        echo "::notice::${STATE}: gnaf-loader dump present; next attempt will restore from it (skipping load)"
+      fi
+      use_restore=true
+    fi
     echo "Transient failure — retrying in 30 seconds..."
     sleep 30
     rm -f "${OUTPUT_DIR}"/flat-white-*.ndjson.gz "${OUTPUT_DIR}/${STATE}.count"
   fi
 done
 
-latest_log="${LOG_DIR}/${STATE}-attempt-${attempt}.log"
+log_args=()
+for f in "${LOG_DIR}/${STATE}-attempt-"*.log; do
+  [[ -f "$f" ]] && log_args+=(--log "$f")
+done
 python3 scripts/summarize-quarterly-run.py \
   --state "${STATE}" \
   --version "${VERSION}" \
@@ -120,7 +156,7 @@ python3 scripts/summarize-quarterly-run.py \
   --final-exit-code "${final_exit_code}" \
   --used-restore "${used_restore}" \
   --restore-validation-failed "${restore_validation_failed}" \
-  --log "${latest_log}" \
+  "${log_args[@]}" \
   --output "${TELEMETRY_FILE}"
 
 if [[ "${success}" != "true" ]]; then

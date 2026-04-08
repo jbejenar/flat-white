@@ -114,6 +114,19 @@ async function main() {
   }
 
   const states = Object.keys(splitResult.states).sort();
+
+  // Boundary coverage thresholds for the FIXTURE shape smoke. The committed
+  // fixture sits at 100% on every boundary type except ward (99.6%, two
+  // edge-case addresses fall outside any ward polygon by design — see
+  // fixtures/edge-cases.md). Thresholds are set tight enough that any
+  // regression that drops a boundary type entirely will fail the smoke,
+  // while still passing the legitimate fixture state.
+  //
+  // This is the gate that catches an `address_full_prep.sql` change that
+  // silently breaks LGA tagging — the v2026.04 incident class — at PR time.
+  const FIXTURE_BOUNDARY_THRESHOLDS =
+    "lga=99,ward=99,stateElectorate=99,commonwealthElectorate=99,meshBlock=99,sa1=99,sa2=99";
+
   execFileSync(
     "node",
     [
@@ -123,6 +136,8 @@ async function main() {
       join(assetDir, "verification-report.md"),
       "--states",
       states.join(","),
+      "--boundary-thresholds",
+      FIXTURE_BOUNDARY_THRESHOLDS,
     ],
     { stdio: "inherit" },
   );
