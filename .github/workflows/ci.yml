@@ -29,6 +29,8 @@ jobs:
         run: bash test/integration/load-detection/test.sh
       - name: Boundary prelude integration test
         run: bash test/integration/boundary-prelude/test.sh
+      - name: Cache validator integration test
+        run: bash test/integration/cache-validator/test.sh
       - run: ./scripts/build-fixture-only.sh
 
   docker-smoke:
