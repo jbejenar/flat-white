@@ -394,6 +394,17 @@ export function isValidStatePostcode(state: string, postcode: string | null): bo
 /**
  * Run row count verification and data quality checks against an NDJSON file.
  */
+/**
+ * Sentinel bucket key for rows whose `state` field is null, empty,
+ * whitespace-only, or otherwise non-string. Such rows are bucketed under
+ * this key so they can't silently evade boundary coverage validation in
+ * per-state mode. The threshold check treats this bucket as "unknown
+ * state" and applies the strict fallback thresholds.
+ *
+ * Exported so tests and debugging tooling can inspect the bucket map.
+ */
+export const UNKNOWN_STATE_BUCKET = "__UNKNOWN_STATE__";
+
 function emptyCoverage(): BoundaryCoverage {
   return {
     total: 0,
@@ -499,16 +510,25 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     // a single pass. The per-state map is the load-bearing one for
     // multi-state verification (per-record bucketing prevents one state's
     // missing polygon from disabling validation for another state).
+    //
+    // Every row is bucketed unconditionally — including rows whose `state`
+    // field is null, empty, or whitespace-only. Such rows go into the
+    // `UNKNOWN_STATE_BUCKET` sentinel bucket, which gets validated against
+    // the strict fallback thresholds in per-state mode (see threshold
+    // check below). This prevents a silent verification hole where a
+    // regression that drops the `state` field could evade boundary
+    // coverage checks entirely. Same applies to rows whose `state` value
+    // isn't in `boundaryCoveragePerState` — they fall back to strict
+    // thresholds via the same map-lookup miss path.
     const boundaries = doc.boundaries as Record<string, unknown> | null;
     tallyBoundaries(coverage, boundaries);
-    if (state) {
-      let stateBucket = coverageByState.get(state);
-      if (!stateBucket) {
-        stateBucket = emptyCoverage();
-        coverageByState.set(state, stateBucket);
-      }
-      tallyBoundaries(stateBucket, boundaries);
+    const stateKey = typeof state === "string" && state.trim() ? state : UNKNOWN_STATE_BUCKET;
+    let stateBucket = coverageByState.get(stateKey);
+    if (!stateBucket) {
+      stateBucket = emptyCoverage();
+      coverageByState.set(stateKey, stateBucket);
     }
+    tallyBoundaries(stateBucket, boundaries);
 
     // Enum-ish field validation
     if (enumSets) {
@@ -568,11 +588,24 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   ];
 
   if (boundaryCoveragePerState) {
-    // Per-state mode — bucket by state and apply each state's thresholds
+    // Per-state mode — bucket by state and apply each state's thresholds.
+    //
+    // For known state buckets (state in `boundaryCoveragePerState`): use
+    // that state's per-state thresholds.
+    //
+    // For unknown buckets — the `UNKNOWN_STATE_BUCKET` sentinel (rows
+    // with null/empty `state` field) AND any state value the caller
+    // didn't include in the per-state map — fall back to
+    // `boundaryCoverageThresholds` if provided, else hard-floor to
+    // `DEFAULT_BOUNDARY_THRESHOLDS`. Either way the unknown bucket
+    // gets validated against strict thresholds, NOT silently skipped.
+    // This is the load-bearing safety: a regression that drops the
+    // `state` field MUST NOT silently evade boundary coverage checks.
+    const fallback: BoundaryCoverageThresholds =
+      boundaryCoverageThresholds ?? DEFAULT_BOUNDARY_THRESHOLDS;
     for (const [state, stateBucket] of coverageByState) {
       if (stateBucket.total === 0) continue;
-      const stateThresholds = boundaryCoveragePerState[state] ?? boundaryCoverageThresholds;
-      if (!stateThresholds) continue;
+      const stateThresholds = boundaryCoveragePerState[state] ?? fallback;
       for (const field of fields) {
         const threshold = stateThresholds[field];
         if (threshold === undefined) continue;

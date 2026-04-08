@@ -13,6 +13,7 @@ import {
   isValidStatePostcode,
   DEFAULT_BOUNDARY_THRESHOLDS,
   PER_STATE_BOUNDARY_THRESHOLDS,
+  UNKNOWN_STATE_BUCKET,
   thresholdsForStates,
   type EnumSets,
   type BoundaryCoverageThresholds,
@@ -819,6 +820,162 @@ describe("verify per-record state bucketing (multi-state correctness)", () => {
     expect(result.boundaryCoverageErrors.some((e) => e.field === "OT.commonwealthElectorate")).toBe(
       false,
     );
+  });
+
+  // ─── Unknown / falsy state safety (bot bug 2) ────────────────────────────
+  // Rows whose `state` field is null/empty/whitespace MUST NOT silently
+  // evade boundary coverage validation. They get bucketed into the
+  // UNKNOWN_STATE_BUCKET sentinel and validated against strict fallback
+  // thresholds.
+
+  it("rows with null state are bucketed into UNKNOWN_STATE_BUCKET", async () => {
+    const docs = [
+      makeStateDoc("X1", null as unknown as string, {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+      makeStateDoc("X2", null as unknown as string, {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-null-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 2,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has(UNKNOWN_STATE_BUCKET)).toBe(true);
+    expect(result.boundaryCoverageByState.get(UNKNOWN_STATE_BUCKET)?.total).toBe(2);
+    // Strict fallback applied → all 4 fields fail because all are null
+    expect(result.passed).toBe(false);
+    const fields = result.boundaryCoverageErrors.map((e) => e.field).sort();
+    expect(fields).toEqual([
+      `${UNKNOWN_STATE_BUCKET}.commonwealthElectorate`,
+      `${UNKNOWN_STATE_BUCKET}.lga`,
+      `${UNKNOWN_STATE_BUCKET}.stateElectorate`,
+      `${UNKNOWN_STATE_BUCKET}.ward`,
+    ]);
+  });
+
+  it("rows with empty-string state are bucketed into UNKNOWN_STATE_BUCKET", async () => {
+    const docs = [
+      makeStateDoc("E1", "", {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-empty-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has(UNKNOWN_STATE_BUCKET)).toBe(true);
+    expect(result.passed).toBe(false);
+  });
+
+  it("rows with whitespace-only state are bucketed into UNKNOWN_STATE_BUCKET", async () => {
+    const docs = [
+      makeStateDoc("W1", "   ", {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-ws-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has(UNKNOWN_STATE_BUCKET)).toBe(true);
+    expect(result.passed).toBe(false);
+  });
+
+  it("mixed VIC + null-state: VIC bucket passes; UNKNOWN bucket fails", async () => {
+    // Regression scenario: a flatten regression strips state field for some
+    // rows AND drops their boundaries. Per-state mode must still flag the
+    // unknown bucket even though VIC is fine.
+    const docs = [
+      // 5 healthy VIC addresses
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeStateDoc(`V${i}`, "VIC", {
+          lga: { name: "X", code: "L" },
+          ward: { name: "W" },
+          stateElectorate: { name: "S" },
+          commonwealthElectorate: { name: "C" },
+        }),
+      ),
+      // 3 corrupted rows: state stripped, boundaries stripped
+      ...Array.from({ length: 3 }, (_, i) =>
+        makeStateDoc(`X${i}`, null as unknown as string, {
+          lga: null,
+          ward: null,
+          stateElectorate: null,
+          commonwealthElectorate: null,
+        }),
+      ),
+    ];
+    const path = tmpFile("bucket-vic-plus-null.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 8,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.passed).toBe(false);
+    // VIC bucket should pass — not in errors
+    expect(result.boundaryCoverageErrors.some((e) => e.field.startsWith("VIC."))).toBe(false);
+    // UNKNOWN bucket should fail on all 4 fields
+    const unknownErrors = result.boundaryCoverageErrors.filter((e) =>
+      e.field.startsWith(`${UNKNOWN_STATE_BUCKET}.`),
+    );
+    expect(unknownErrors).toHaveLength(4);
+  });
+
+  it("rows with unexpected state code are bucketed under that code and use strict fallback", async () => {
+    // Edge case: a flatten bug emits state="ZZZ". The bucket key is the
+    // raw value (not the sentinel), and the strict fallback is applied
+    // because "ZZZ" isn't in PER_STATE_BOUNDARY_THRESHOLDS.
+    const docs = [
+      makeStateDoc("Z1", "ZZZ", {
+        lga: null,
+        ward: null,
+        stateElectorate: null,
+        commonwealthElectorate: null,
+      }),
+    ];
+    const path = tmpFile("bucket-zzz-state.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 1,
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.boundaryCoverageByState.has("ZZZ")).toBe(true);
+    expect(result.passed).toBe(false);
+    expect(result.boundaryCoverageErrors.some((e) => e.field.startsWith("ZZZ."))).toBe(true);
   });
 
   it("populates boundaryCoverageByState even when no per-state thresholds are passed", async () => {
