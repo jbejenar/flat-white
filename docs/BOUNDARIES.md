@@ -8,21 +8,28 @@
 
 ## What "boundaries" are
 
-Every address in the output gets enriched with the administrative and statistical areas it sits inside. Five sources, seven fields:
+Every address in the output gets enriched with the administrative and statistical areas it sits inside. The output schema (`src/schema.ts`) defines **ten boundary fields** split between two derivation paths:
 
-| Field                    | What it is                                      | Source polygon table                               | Example              |
-| ------------------------ | ----------------------------------------------- | -------------------------------------------------- | -------------------- |
-| `lga`                    | Local Government Area (council)                 | `admin_bdys.local_government_areas`                | "MARIBYRNONG"        |
-| `ward`                   | Sub-council voting area                         | `admin_bdys.local_government_wards`                | "RIVER WARD"         |
-| `stateElectorate`        | State lower-house electorate                    | `admin_bdys.state_lower_house_electorates`         | "FOOTSCRAY"          |
-| `commonwealthElectorate` | Federal electorate                              | `admin_bdys.commonwealth_electorates`              | "GELLIBRAND"         |
-| `meshBlock`              | ABS Mesh Block (smallest stat geography)        | `admin_bdys.abs_2021_mb_lookup` via `mb_2021_code` | `{ code, category }` |
-| `sa1`                    | ABS Statistical Area 1 (~200-800 people)        | derived from mesh-block lookup                     | `{ code }`           |
-| `sa2`                    | ABS Statistical Area 2 (~3k-25k people, suburb) | derived from mesh-block lookup                     | `{ code, name }`     |
+| Field                    | What it is                                      | How it's derived                                                                    |
+| ------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `lga`                    | Local Government Area (council)                 | spatial join — `admin_bdys.local_government_areas`                                  |
+| `ward`                   | Sub-council voting area                         | spatial join — `admin_bdys.local_government_wards`                                  |
+| `stateElectorate`        | State lower-house electorate                    | spatial join — `admin_bdys.state_lower_house_electorates`                           |
+| `commonwealthElectorate` | Federal electorate                              | spatial join — `admin_bdys.commonwealth_electorates`                                |
+| `meshBlock`              | ABS Mesh Block (smallest stat geography)        | code lookup — `admin_bdys.abs_2021_mb_lookup` via `address_principals.mb_2021_code` |
+| `sa1`                    | ABS Statistical Area 1 (~200-800 people)        | derived from mesh-block lookup (`abs_2021_mb_lookup.sa1_21code`)                    |
+| `sa2`                    | ABS Statistical Area 2 (~3k-25k people, suburb) | derived from mesh-block lookup (`abs_2021_mb_lookup.sa2_21code` + `sa2_21name`)     |
+| `sa3`                    | ABS Statistical Area 3 (~30k-130k people)       | derived from mesh-block lookup                                                      |
+| `sa4`                    | ABS Statistical Area 4 (~100k-500k people)      | derived from mesh-block lookup                                                      |
+| `gccsa`                  | Greater Capital City Statistical Area           | derived from mesh-block lookup                                                      |
 
-The `lga`/`ward`/`stateElectorate`/`commonwealthElectorate` fields come from a **point-in-polygon spatial join** — for each address point, find which polygon it sits inside. The mesh block / SA1 / SA2 fields come from a much simpler **non-spatial code lookup**: `address_principals.mb_2021_code` is already populated by gnaf-loader during the load stage; flatten just joins it against `abs_2021_mb_lookup` to expand the code into mesh-block category, SA1, SA2, SA3, SA4, GCC, etc.
+**Two derivation paths, very different characters:**
 
-So when this doc talks about "the boundary problem", it almost always means **the spatial join for the four polygon-derived fields**. Mesh block / SA1 / SA2 are mechanical and have never been a source of trouble.
+The **first four fields** (`lga`, `ward`, `stateElectorate`, `commonwealthElectorate`) come from a **point-in-polygon spatial join** — for each address point, find which polygon it sits inside. This is where all the complexity lives.
+
+The **other six fields** (`meshBlock` + `sa1` through `gccsa`) come from a much simpler **non-spatial code lookup**. `address_principals.mb_2021_code` is already populated by gnaf-loader during the load stage (Parts 1-4, before Part 5 boundary tagging). Flatten just joins it against `abs_2021_mb_lookup` to expand one mesh block code into category, SA1, SA2, SA2 name, SA3, SA3 name, SA4, SA4 name, GCC, GCC name. No `ST_Intersects`, no polygon math, no performance issue.
+
+So when this doc talks about "the boundary problem", it almost always means **the spatial join for the four polygon-derived fields**. Mesh block / SA1 / SA2 / SA3 / SA4 / gccsa are mechanical and have never been a source of trouble.
 
 ---
 
@@ -58,7 +65,7 @@ download admin bdys ──→ │ gnaf-loader Part 5               │
 
 Upstream gnaf-loader's `load-gnaf.py` runs a stage called `Part 5 of 6 : Start boundary tagging addresses`. It does the spatial join in two stacked optimisations:
 
-**(a) `ST_Subdivide` pre-processing.** Before tagging, gnaf-loader runs `02-03-create-admin-bdy-analysis-tables_template.sql` to build "analysis" copies of every boundary table:
+**(a) `ST_Subdivide` pre-processing.** Before tagging, gnaf-loader runs `02-03-create-admin-bdy-analysis-tables_template.sql` to build "analysis" copies of every boundary table. The actual template uses `{0}` (table name) and `{1}` (pid column) placeholders; below is the LGA-case expansion:
 
 ```sql
 INSERT INTO admin_bdys.local_government_areas_analysis (lga_pid, name, state, geom)
@@ -71,16 +78,18 @@ This is the single biggest speedup. LGA polygons can be enormous — Western Aus
 
 `ST_Subdivide` chops each polygon into pieces of at most 512 vertices. A giant LGA becomes hundreds of small tiles, each with a tight bounding box. Now the GiST index is razor-sharp: a point in Perth only matches the ~5 tiles around Perth, not all of WA. **Spatial index hit rate goes from ~1% to ~99%** — typically a 10–50× speedup.
 
-**(b) Bulk hash join (one big SQL).** Then it does one `INSERT ... SELECT` per boundary table:
+**(b) Bulk hash join (one big SQL).** Then it does one `INSERT ... SELECT` per boundary table. The actual upstream template uses `{0}` (boundary table name) and `{1}` (PID column name) placeholders:
 
 ```sql
 -- gnaf-loader/postgres-scripts/04-01b-bdy-tag-template.sql
-INSERT INTO gnaf.temp_local_government_areas_tags (gnaf_pid, lga_pid, ...)
-SELECT pnts.gnaf_pid, bdys.lga_pid, ...
+INSERT INTO gnaf.temp_{0}_tags (gnaf_pid, gnaf_state, alias_principal, bdy_pid, bdy_name, bdy_state)
+SELECT pnts.gnaf_pid, pnts.state, 'P', bdys.{1}, bdys.name, bdys.state
   FROM gnaf.address_principals AS pnts
-  INNER JOIN admin_bdys.local_government_areas_analysis AS bdys
-    ON ST_Within(pnts.geom, bdys.geom);
+  INNER JOIN admin_bdys.{0} AS bdys
+  ON ST_Within(pnts.geom, bdys.geom);
 ```
+
+For an LGA tag, `{0}` becomes `local_government_areas_analysis` (the subdivided table — see `load-gnaf.py:684-690`, with the literal comment "WARNING: this can add hours to the processing" if the subdivided table isn't available) and `{1}` becomes `lga_pid`. Note the destination columns are **generic** (`bdy_pid`, `bdy_name`) — gnaf-loader uses one templated table per boundary type and joins them later.
 
 One INSERT, one query plan, the planner picks a hash join with the GiST index, processes all 4.6M NSW addresses in one shot. PostgreSQL is excellent at this kind of single big set-oriented operation.
 
@@ -201,18 +210,25 @@ When a single-state build excludes any boundary type, the dynamic `CREATE TABLE 
 
 ### Affected states
 
-| State you're building | Boundary excluded by `settings.py` | Hardcoded SQL crashes on |
-| --------------------- | ---------------------------------- | ------------------------ |
-| ACT                   | LGA                                | `lga_pid`                |
-| NSW                   | ward                               | `ward_pid`               |
-| QLD                   | ward                               | `ward_pid`               |
-| OT                    | ce, se_lower                       | `ce_pid`                 |
-| TAS                   | se_upper                           | `se_upper_pid`           |
-| NT                    | se_upper                           | `se_upper_pid`           |
+This is the matrix derived directly from `gnaf-loader/settings.py:208-217`. Each row lists the boundary types that are NOT loaded into `admin_bdy_list` for a single-state build of that state, which means the dynamic `CREATE TABLE address_alias_admin_boundaries` doesn't include those columns. Any single missing boundary type is enough to make the hardcoded `INSERT` in `04-06-bdy-tags-for-alias-addresses.sql` crash.
 
-That's **7 of 9 states fail Path 1 with a scary-looking SQL error on every quarterly run.** Only VIC and SA are spared (they have all 5 boundary types).
+| State (single-state build) | Boundary types missing from `admin_bdy_list` | Path 1 status |
+| -------------------------- | -------------------------------------------- | ------------- |
+| ACT                        | lga, ward, se_upper                          | FAIL          |
+| NSW                        | ward, se_upper                               | FAIL          |
+| NT                         | se_upper                                     | FAIL          |
+| OT                         | ce, ward, se_lower, se_upper                 | FAIL          |
+| QLD                        | ward, se_upper                               | FAIL          |
+| SA                         | se_upper                                     | FAIL          |
+| TAS                        | ward                                         | FAIL          |
+| VIC                        | (none)                                       | OK            |
+| WA                         | (none)                                       | OK            |
 
-The detection in `detect-load-failure.sh` catches them all (broad Part-5 detection), the entrypoint retries with `--no-boundary-tag`, and Path 2 takes over at flatten time.
+That's **7 of 9 states fail Path 1 with a scary-looking SQL error on every quarterly run.** Only **VIC and WA** are spared (they have all 5 boundary types in `admin_bdy_list`).
+
+Note: PostgreSQL's `UndefinedColumn` error reports one of the missing columns (typically the first one the planner encounters), so the exact error text varies between states. The fixture log files in `test/integration/load-detection/fixtures/` (e.g. `failure-tas-se_upper_pid.log`) are **synthetic** — the filenames don't always match what would actually fail for that state in production. The detection in `detect-load-failure.sh` is broad-by-design and catches them all regardless of which specific column the planner reports.
+
+The detection in `detect-load-failure.sh` catches all 7, the entrypoint retries with `--no-boundary-tag`, and Path 2 takes over at flatten time.
 
 ### What you see in the logs
 
@@ -526,7 +542,7 @@ Send a PR to `minus34/gnaf-loader` that fixes the per-state column mismatch in `
 
 - The scary `SQL FAILED` block stops appearing in quarterly logs.
 - ~5 min saved per state (no retry needed).
-- Path 1 starts running for all 9 states instead of just VIC and SA.
+- Path 1 starts running for all 9 states instead of just VIC and WA.
 - Path 2 stops being the primary path and becomes a true fallback again.
 
 **Why low priority:** the broad Part-5 detection in `detect-load-failure.sh` handles the bug transparently. Path 2 produces correct output. Nice to have, not load-bearing.
@@ -597,7 +613,7 @@ Defer until E1.21 is landed and measured. May not be worth doing if E1.20 also l
 | Path 1 (upstream)             | `gnaf-loader/load-gnaf.py` `boundary_tag_gnaf` + `04-01b-bdy-tag-template.sql`                        |
 | Path 1 polygon prep (subdiv)  | `gnaf-loader/postgres-scripts/02-03-create-admin-bdy-analysis-tables_template.sql`                    |
 | Path 1 column-mismatch bug    | `gnaf-loader/postgres-scripts/04-06-bdy-tags-for-alias-addresses.sql`                                 |
-| Path 2 (our fallback)         | `sql/address_full_prep.sql` (DO block, lines ~95–215)                                                 |
+| Path 2 (our fallback)         | `sql/address_full_prep.sql` (header comment + DO block + unique index, lines 94-219)                  |
 | Detection / retry routing     | `scripts/detect-load-failure.sh` + `docker-entrypoint.sh` Stage 3                                     |
 | Cache validator               | `scripts/validate-db-cache.sh`                                                                        |
 | Per-state retry orchestration | `scripts/run-quarterly-state.sh`                                                                      |
@@ -614,13 +630,14 @@ Defer until E1.21 is landed and measured. May not be worth doing if E1.20 also l
 
 ## Appendix: relevant PRs and roadmap entries
 
-- **PR #66** — initial spatial-join fallback (introduced the LATERAL + LIMIT 1 pattern) — fixes E1.10
-- **PR #67** — multi-polygon row multiplication audit — found and fixed the multi-polygon dedup bug — E1.15
-- **PR #96** — permanent fix for quarterly build (Bug A column-mismatch detection + Bug B `/dev/shm` → sysv)
-- **PR #97** — fixture boundary prelude + db port targeting + schema-validating stub for `address_principal_admin_boundaries`
-- **PR #99** — harden quarterly safety net (cache validator strict polygon checks, shape-smoke thresholds, retry-from-dump, path filter, log accumulation, exact-one-match guard)
-- **E1.10** — fixture coverage for boundary fields
+- **PR #66** — `feat: spatial join fallback for admin boundaries` — initial spatial-join fallback **and** the multi-polygon row multiplication fix (E1.15). The LATERAL + LIMIT 1 pattern was added before merge in commit `6bb9eea` after the multi-polygon dedup bug was caught in audit.
+- **PR #74** — `feat: e1.10 shapefile fixtures + spatial join regression test` — committed boundary polygon fixtures + the build script glue that lets the fixture path exercise the full boundary pipeline. This is the work that made the shape smoke possible.
+- **PR #96** — `fix: permanent fix for quarterly build (Bug A column-mismatch + Bug B /dev/shm)` — broad Part-5 detection in `detect-load-failure.sh` AND the `dynamic_shared_memory_type = sysv` postgresql.conf change.
+- **PR #97** — `fix: schema-validating stub for address_principal_admin_boundaries` — fixture boundary prelude wiring + db port targeting + the structural stub that prevents an empty boundaries table from breaking flatten.
+- **PR #99** — `Harden quarterly safety net` — cache validator strict polygon checks, shape-smoke coverage thresholds, retry-from-dump, path filter, log accumulation, exact-one-match guard.
+- **PR #100** — `docs: add comprehensive BOUNDARIES.md` — this document.
+- **E1.10** — fixture coverage for boundary fields (shipped in PR #74)
 - **E1.14** — restore LGA / ward / state / commonwealth electorate fields after v2026.04
-- **E1.15** — fix multi-polygon row multiplication in PR #66 spatial join fallback
-- **E1.20** — push gnaf-loader settings.py / 04-06 fix upstream
-- **E1.21** — optimise spatial-join fallback for NSW scale
+- **E1.15** — fix multi-polygon row multiplication in PR #66 spatial join fallback (shipped within PR #66 itself)
+- **E1.20** — push gnaf-loader `settings.py` / `04-06` fix upstream (not started)
+- **E1.21** — optimise spatial-join fallback for NSW scale (designed, not started — see "Future work" section)
