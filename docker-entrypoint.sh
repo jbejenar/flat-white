@@ -303,7 +303,11 @@ elif [[ -n "$RESTORE_DB" ]]; then
   log "Database restored from $DUMP_SIZE dump"
   # validate-db-cache.sh prints "[cache-validate] FAIL: <reason>" to stderr
   # on the failing check; that line is the operator-actionable detail.
-  if ! /app/scripts/validate-db-cache.sh; then
+  # STATES is passed via inline env so the validator can apply state-aware
+  # polygon table requirements (mirroring gnaf-loader's per-state filtering
+  # in settings.py:208-217). $STATES is a local bash variable in this
+  # entrypoint and is NOT exported, so the inline prefix is required.
+  if ! STATES="$STATES" /app/scripts/validate-db-cache.sh; then
     log "ERROR: Restored database failed validation (see [cache-validate] FAIL line above for reason)"
     exit 2
   fi
@@ -381,10 +385,12 @@ else
   stage_end
 
   # Stage 3a: Validate post-load DB state. Catches silent regressions
-  # (missing boundary polygon tables, empty raw tables) BEFORE we propagate
-  # them via cache dump or burn time on flatten.
+  # (missing required boundary polygon tables, empty raw tables) BEFORE we
+  # propagate them via cache dump or burn time on flatten.
+  # STATES is passed inline so the validator applies state-aware polygon
+  # table requirements (see scripts/validate-db-cache.sh comment block).
   stage_start "validate"
-  if ! /app/scripts/validate-db-cache.sh; then
+  if ! STATES="$STATES" /app/scripts/validate-db-cache.sh; then
     log "ERROR: Post-load database failed validation (see [cache-validate] FAIL line above for reason)"
     exit 2
   fi
