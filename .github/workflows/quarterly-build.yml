@@ -11,6 +11,18 @@ on:
         description: "Patch version for hotfix releases (e.g. '1' produces v2026.04.1). Leave empty for normal quarterly builds. See E1.13 for the design rationale."
         required: false
         default: ""
+      download_url_gnaf:
+        description: "Optional override for the G-NAF zip URL. Required for releases newer than the built-in Feb 2026 fallback, and for patch rebuilds of those releases."
+        required: false
+        default: ""
+      download_url_admin_bdys:
+        description: "Optional override for the Admin Boundaries zip URL. Required for releases newer than the built-in Feb 2026 fallback, and for patch rebuilds of those releases."
+        required: false
+        default: ""
+      admin_bdys_extracted_dir:
+        description: "Optional override for the extracted Admin Boundaries directory name inside /data (e.g. APR26_AdminBounds_GDA_2020_SHP). Required when download_url_admin_bdys is set and the extracted dir is not FEB26_AdminBounds_GDA_2020_SHP."
+        required: false
+        default: ""
       runner:
         description: "Runner label (e.g. 'self-hosted', 'high-memory'). Default: ubuntu-latest"
         required: false
@@ -136,6 +148,9 @@ jobs:
               -v "$(pwd)/output:/output" \
               -v "$(pwd)/cache:/cache" \
               -e "GNAF_VERSION=${{ needs.setup.outputs.version }}" \
+              -e "DOWNLOAD_URL_GNAF=${{ inputs.download_url_gnaf }}" \
+              -e "DOWNLOAD_URL_ADMIN_BDYS=${{ inputs.download_url_admin_bdys }}" \
+              -e "ADMIN_BDYS_EXTRACTED_DIR=${{ inputs.admin_bdys_extracted_dir }}" \
               ${{ env.DOCKER_IMAGE }}:build \
               --states ${{ matrix.state }} \
               --split-states \

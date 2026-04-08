@@ -90,10 +90,15 @@ The G-NAF data version stays at `2026.04` for all `v2026.04.N` patches — the p
    ```bash
    gh workflow run quarterly-build.yml \
      -f gnaf_version=2026.04 \
-     -f patch_version=1
+     -f patch_version=1 \
+     -f download_url_gnaf="https://data.gov.au/data/dataset/.../download/g-naf_apr26_....zip" \
+     -f download_url_admin_bdys="https://data.gov.au/data/dataset/.../download/apr26_adminbounds_....zip" \
+     -f admin_bdys_extracted_dir="APR26_AdminBounds_GDA_2020_SHP"
    ```
 
    This builds against the same G-NAF data version (`2026.04`) and publishes as `v2026.04.1`. The build cache may be a hit (~30 min saved per state) if the cache key is still warm. Total wall time: ~25 min on free runners.
+
+   For any release newer than the built-in Feb 2026 fallback, you must also provide the matching data.gov.au URLs and the Admin Boundaries extracted directory name. Patch releases still rebuild the original quarterly data, so `v2026.04.1` needs the April 2026 dataset URLs, not the Feb 2026 fallback.
 
 4. **Wait for the build to complete and the draft release to publish.** Watch with:
 
