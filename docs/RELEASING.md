@@ -12,7 +12,7 @@ gh workflow run quarterly-build.yml -f gnaf_version=2026.05
 
 ### Version configuration
 
-`GNAF_VERSION` is **required** for all production builds — there is no hardcoded default. The workflow sets it automatically from the `gnaf_version` input (or `date +%Y.%m` if omitted). For local builds, set it explicitly:
+`GNAF_VERSION` is **required** for all production builds — there is no hardcoded default inside the container. The workflow sets it automatically from the `gnaf_version` input, or if omitted, defaults to the latest published quarterly release for the current date (`02`, `05`, `08`, `11`). For local builds, set it explicitly:
 
 ```bash
 # Local build

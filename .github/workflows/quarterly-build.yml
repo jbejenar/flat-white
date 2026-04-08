@@ -32,7 +32,7 @@ on:
     - cron: "0 2 15 2,5,8,11 *"
 
 env:
-  # Default version: YYYY.MM from trigger date (overridden by workflow_dispatch input)
+  # Default version: latest published quarterly release for the trigger date
   DOCKER_IMAGE: flat-white
   # Optional manual release-data overrides.
   # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery > Feb 2026 fallback for 2026.02 only
@@ -65,7 +65,20 @@ jobs:
             fi
             VERSION="$GNAF_INPUT"
           else
-            VERSION="$(date +%Y.%m)"
+            YEAR="$(date +%Y)"
+            MONTH="$(date +%m)"
+            if ((10#$MONTH >= 11)); then
+              VERSION="${YEAR}.11"
+            elif ((10#$MONTH >= 8)); then
+              VERSION="${YEAR}.08"
+            elif ((10#$MONTH >= 5)); then
+              VERSION="${YEAR}.05"
+            elif ((10#$MONTH >= 2)); then
+              VERSION="${YEAR}.02"
+            else
+              VERSION="$((YEAR - 1)).11"
+            fi
+            echo "::notice::No gnaf_version input provided; defaulting to latest quarterly release ${VERSION}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
