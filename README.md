@@ -162,8 +162,9 @@ graph TB
 
 ```bash
 # Full build — all states
+# Omit --states to process every state/territory.
 docker run -v $(pwd)/output:/output flat-white \
-  --states ALL --split-states --compress --output /output/
+  --split-states --compress --output /output/
 
 # Single state
 docker run -v $(pwd)/output:/output flat-white \
@@ -173,6 +174,34 @@ docker run -v $(pwd)/output:/output flat-white \
 docker run -v $(pwd)/output:/output flat-white \
   --fixture-only --output /output/fixture.ndjson
 ```
+
+### Build Defaults
+
+- `GNAF_VERSION` is required for production builds. Example: `-e GNAF_VERSION=2026.04`.
+- If `--states` is omitted, flat-white builds all states/territories.
+- Production release data is resolved in this order:
+  1. explicit workflow input
+  2. automatic discovery from data.gov.au for the target `GNAF_VERSION`
+  3. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02` only
+- Normal quarterly production runs should not need manual inputs.
+- These overrides are only for patch rebuilds or emergency/manual runs:
+  - `DOWNLOAD_URL_GNAF`
+  - `DOWNLOAD_URL_ADMIN_BDYS`
+  - `ADMIN_BDYS_EXTRACTED_DIR`
+
+### Patch Releases
+
+Patch releases rebuild the original quarterly data version and publish new asset filenames such as `flat-white-2026.04.1-vic.ndjson.gz`.
+
+With the default auto-discovery path, a manual patch run normally only needs:
+
+```bash
+gh workflow run quarterly-build.yml \
+  -f gnaf_version=2026.04 \
+  -f patch_version=1
+```
+
+Only provide the three download override inputs if you need to force a specific resource URL or work around a data.gov.au naming issue. See [docs/RELEASING.md](docs/RELEASING.md) for the full procedure.
 
 ### State Sizes
 

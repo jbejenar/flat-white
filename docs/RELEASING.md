@@ -12,7 +12,7 @@ gh workflow run quarterly-build.yml -f gnaf_version=2026.05
 
 ### Version configuration
 
-`GNAF_VERSION` is **required** for all production builds — there is no hardcoded default. The workflow sets it automatically from the `gnaf_version` input (or `date +%Y.%m` if omitted). For local builds, set it explicitly:
+`GNAF_VERSION` is **required** for all production builds — there is no hardcoded default inside the container. The workflow sets it automatically from the `gnaf_version` input, or if omitted, discovers the newest overlapping G-NAF/Admin Boundaries quarterly release from data.gov.au. For local builds, set it explicitly:
 
 ```bash
 # Local build
@@ -24,14 +24,22 @@ GNAF_VERSION=2026.05 ./scripts/build-local.sh --version 2026.05 --states VIC
 
 ### Download URLs for new G-NAF releases
 
-Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. The Feb 2026 URLs are built-in as a fallback. For newer releases, set these env vars before triggering the build:
+Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. flat-white now resolves those automatically from data.gov.au for the target `GNAF_VERSION`. Use manual overrides only when you need to pin a specific resource URL for a patch rebuild or emergency/manual run:
 
 ```bash
-# In the workflow dispatch, or in docker run -e flags:
+# Manual overrides (optional), or docker run -e flags locally:
 DOWNLOAD_URL_GNAF="https://data.gov.au/data/dataset/.../download/g-naf_may26_....zip"
 DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/may26_adminbounds_....zip"
 ADMIN_BDYS_EXTRACTED_DIR="MAY26_AdminBounds_GDA_2020_SHP"
 ```
+
+Priority order for production builds:
+
+1. workflow_dispatch input
+2. automatic discovery from data.gov.au for the target `GNAF_VERSION`
+3. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02`
+
+If automatic discovery cannot find the matching G-NAF GDA2020 ZIP or Administrative Boundaries GDA2020 shapefile ZIP for the requested version, the build fails before download with a clear error. That prevents a release tagged as `2026.04` or `2026.05` from silently downloading the wrong source data.
 
 Find the correct URLs by browsing the G-NAF dataset page on data.gov.au, or by querying the CKAN API:
 
@@ -90,10 +98,15 @@ The G-NAF data version stays at `2026.04` for all `v2026.04.N` patches — the p
    ```bash
    gh workflow run quarterly-build.yml \
      -f gnaf_version=2026.04 \
-     -f patch_version=1
+     -f patch_version=1 \
+     -f download_url_gnaf="https://data.gov.au/data/dataset/.../download/g-naf_apr26_....zip" \
+     -f download_url_admin_bdys="https://data.gov.au/data/dataset/.../download/apr26_adminbounds_....zip" \
+     -f admin_bdys_extracted_dir="APR26_AdminBounds_GDA_2020_SHP"
    ```
 
    This builds against the same G-NAF data version (`2026.04`) and publishes as `v2026.04.1`. The build cache may be a hit (~30 min saved per state) if the cache key is still warm. Total wall time: ~25 min on free runners.
+
+   Patch releases still rebuild the original quarterly data, so `v2026.04.1` resolves the April 2026 source data automatically. Only provide the three download override inputs if you need to force a specific resource URL or work around a data.gov.au naming issue.
 
 4. **Wait for the build to complete and the draft release to publish.** Watch with:
 

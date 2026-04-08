@@ -41,6 +41,8 @@ export interface LoadOptions {
   srid?: number;
   /** Max parallel processes for gnaf-loader. Default: 4 */
   maxProcesses?: number;
+  /** Skip gnaf-loader boundary tagging and rely on flat-white's SQL fallback. */
+  noBoundaryTag?: boolean;
   /**
    * The path the Postgres SERVER sees for the data directory.
    * When Postgres runs in Docker with ./data mounted as /data,
@@ -159,6 +161,10 @@ export function buildArgs(opts: LoadOptions): string[] {
 
   if (opts.states && opts.states.length > 0) {
     args.push("--states", ...opts.states);
+  }
+
+  if (opts.noBoundaryTag) {
+    args.push("--no-boundary-tag");
   }
 
   return args;
@@ -280,6 +286,9 @@ async function main(): Promise<void> {
       }
       case "--server-data-dir":
         opts.serverDataDir = args[++i];
+        break;
+      case "--no-boundary-tag":
+        opts.noBoundaryTag = true;
         break;
       default:
         console.error(`Unknown argument: ${args[i]}`);

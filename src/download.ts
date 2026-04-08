@@ -64,6 +64,212 @@ export const DEFAULT_DATA_SOURCES: DataSource[] = [
   },
 ];
 
+export const DEFAULT_FALLBACK_VERSION = "2026.02";
+export const GNAF_PACKAGE_ID = "19432f89-dc3a-4ef3-b943-5326ef1dbecc";
+export const ADMIN_BDYS_PACKAGE_ID = "bdcf5b09-89bc-47ec-9281-6b8e9ee147aa";
+
+interface CkanResource {
+  format?: string;
+  name?: string;
+  state?: string;
+  url?: string;
+}
+
+interface CkanPackageResponse {
+  success?: boolean;
+  result?: {
+    resources?: CkanResource[];
+  };
+}
+
+function readEnvOverride(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
+function monthToken(month: number): string {
+  const tokens = [
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
+  ];
+  const token = tokens[month - 1];
+  if (!token) {
+    throw new Error(`Invalid G-NAF month: ${month}`);
+  }
+  return token;
+}
+
+export function versionTokens(version: string): {
+  year: number;
+  month: number;
+  shortYear: string;
+  monthAbbrev: string;
+  gnafNameToken: string;
+  compactTokenLower: string;
+  compactTokenUpper: string;
+  adminExtractedDir: string;
+} {
+  const match = version.match(/^(\d{4})\.(\d{2})$/);
+  if (!match) {
+    throw new Error(`Invalid G-NAF version: "${version}" (expected YYYY.MM)`);
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const monthAbbrev = monthToken(month);
+  const shortYear = String(year).slice(-2);
+  const compactTokenUpper = `${monthAbbrev}${shortYear}`;
+  const compactTokenLower = compactTokenUpper.toLowerCase();
+
+  return {
+    year,
+    month,
+    shortYear,
+    monthAbbrev,
+    gnafNameToken: `${monthAbbrev} ${year}`,
+    compactTokenLower,
+    compactTokenUpper,
+    adminExtractedDir: `${compactTokenUpper}_AdminBounds_GDA_2020_SHP`,
+  };
+}
+
+export function hasManualDataSourceOverrides(): boolean {
+  return Boolean(
+    readEnvOverride("DOWNLOAD_URL_GNAF") ||
+    readEnvOverride("DOWNLOAD_URL_ADMIN_BDYS") ||
+    readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR"),
+  );
+}
+
+function assertCompleteManualOverrides(): void {
+  if (!hasManualDataSourceOverrides()) {
+    return;
+  }
+
+  const missing: string[] = [];
+  if (!readEnvOverride("DOWNLOAD_URL_GNAF")) missing.push("DOWNLOAD_URL_GNAF");
+  if (!readEnvOverride("DOWNLOAD_URL_ADMIN_BDYS")) missing.push("DOWNLOAD_URL_ADMIN_BDYS");
+  if (!readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR")) missing.push("ADMIN_BDYS_EXTRACTED_DIR");
+  if (missing.length === 0) return;
+
+  throw new Error(
+    `Manual release data overrides must be provided together. Missing: ${missing.join(", ")}.\n` +
+      "Set all three values or omit them entirely and let flat-white auto-discover the target quarterly release.",
+  );
+}
+
+function isZipResource(resource: CkanResource): boolean {
+  return (
+    (resource.state ?? "active") === "active" && (resource.format ?? "").toUpperCase() === "ZIP"
+  );
+}
+
+function findMatchingResource(
+  resources: CkanResource[],
+  predicates: Array<(resource: CkanResource) => boolean>,
+): CkanResource | undefined {
+  return resources.find((resource) => predicates.every((predicate) => predicate(resource)));
+}
+
+function resourceText(resource: CkanResource): string {
+  return `${resource.name ?? ""} ${resource.url ?? ""}`.toLowerCase();
+}
+
+async function fetchCkanPackage(
+  packageId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CkanResource[]> {
+  const url = `https://data.gov.au/data/api/3/action/package_show?id=${packageId}`;
+  const response = await fetchImpl(url, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error(`data.gov.au CKAN lookup failed for ${packageId}: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as CkanPackageResponse;
+  const resources = payload.result?.resources;
+  if (!payload.success || !resources) {
+    throw new Error(`data.gov.au CKAN lookup for ${packageId} returned an unexpected payload`);
+  }
+
+  return resources;
+}
+
+export async function discoverDataSources(
+  version: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<DataSource[]> {
+  const tokens = versionTokens(version);
+  const [gnafResources, adminResources] = await Promise.all([
+    fetchCkanPackage(GNAF_PACKAGE_ID, fetchImpl),
+    fetchCkanPackage(ADMIN_BDYS_PACKAGE_ID, fetchImpl),
+  ]);
+
+  const gnaf = findMatchingResource(gnafResources, [
+    isZipResource,
+    (resource) => {
+      const text = resourceText(resource);
+      return (
+        text.includes("gda2020") &&
+        (text.includes(tokens.gnafNameToken.toLowerCase()) ||
+          text.includes(tokens.compactTokenLower))
+      );
+    },
+    (resource) => !resourceText(resource).includes("gda94"),
+  ]);
+
+  if (!gnaf?.url) {
+    throw new Error(
+      `Could not find the ${version} G-NAF GDA2020 ZIP on data.gov.au. ` +
+        "Use manual download overrides if Geoscape has changed the resource naming.",
+    );
+  }
+
+  const admin = findMatchingResource(adminResources, [
+    isZipResource,
+    (resource) => {
+      const text = resourceText(resource);
+      return (
+        text.includes("gda2020") &&
+        (text.includes("shapefile") || text.includes("_shp") || text.includes(" shp")) &&
+        text.includes(tokens.compactTokenLower)
+      );
+    },
+    (resource) => !resourceText(resource).includes("gda94"),
+  ]);
+
+  if (!admin?.url) {
+    throw new Error(
+      `Could not find the ${version} Administrative Boundaries GDA2020 shapefile ZIP on data.gov.au. ` +
+        "Use manual download overrides if Geoscape has changed the resource naming.",
+    );
+  }
+
+  return [
+    {
+      name: "G-NAF GDA2020",
+      url: gnaf.url,
+      extractedDir: "G-NAF",
+      sentinelPaths: ["G-NAF */Standard", "G-NAF */Authority Code"],
+    },
+    {
+      name: "Administrative Boundaries GDA2020",
+      url: admin.url,
+      extractedDir: tokens.adminExtractedDir,
+      sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+    },
+  ];
+}
+
 /**
  * Resolve data sources, applying env var URL overrides if set.
  *
@@ -76,10 +282,12 @@ export const DEFAULT_DATA_SOURCES: DataSource[] = [
  * sentinelPaths for G-NAF are relaxed to a wildcard when URLs are overridden
  * (the versioned directory name inside the zip changes per release).
  */
-export function resolveDataSources(): DataSource[] {
-  const gnafUrl = process.env.DOWNLOAD_URL_GNAF;
-  const adminUrl = process.env.DOWNLOAD_URL_ADMIN_BDYS;
-  const adminExtractedDir = process.env.ADMIN_BDYS_EXTRACTED_DIR;
+export function resolveDataSources(_version?: string): DataSource[] {
+  assertCompleteManualOverrides();
+
+  const gnafUrl = readEnvOverride("DOWNLOAD_URL_GNAF");
+  const adminUrl = readEnvOverride("DOWNLOAD_URL_ADMIN_BDYS");
+  const adminExtractedDir = readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR");
 
   const sources = DEFAULT_DATA_SOURCES.map((s) => ({ ...s, sentinelPaths: [...s.sentinelPaths] }));
 
@@ -104,6 +312,22 @@ export function resolveDataSources(): DataSource[] {
   }
 
   return sources;
+}
+
+export async function resolveDownloadDataSources(
+  version: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<DataSource[]> {
+  if (hasManualDataSourceOverrides()) {
+    return resolveDataSources(version);
+  }
+
+  if (version === DEFAULT_FALLBACK_VERSION) {
+    return resolveDataSources(version);
+  }
+
+  console.error(`[download] Auto-discovering data.gov.au sources for ${version}...`);
+  return discoverDataSources(version, fetchImpl);
 }
 
 // --- Types ---
@@ -341,7 +565,7 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
   mkdirSync(outputDir, { recursive: true });
 
   const results: DownloadResult[] = [];
-  const dataSources = resolveDataSources();
+  const dataSources = await resolveDownloadDataSources(version);
 
   for (const source of dataSources) {
     const extractedPath = resolve(outputDir, source.extractedDir);
@@ -450,7 +674,7 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
  * Throws if GNAF_DATA_PATH and ADMIN_BDYS_PATH point to different parent directories,
  * or if their final directory names don't match the expected extractedDir values.
  */
-export function resolveOutputDir(): string {
+export function resolveOutputDir(version?: string): string {
   // Explicit download root takes priority
   if (process.env.DATA_DIR) {
     return resolve(process.env.DATA_DIR);
@@ -463,9 +687,27 @@ export function resolveOutputDir(): string {
     return resolve("./data");
   }
 
-  const sources = resolveDataSources();
+  const sources = resolveDataSources(version);
+  const effectiveVersion = version ?? process.env.GNAF_VERSION;
+  const fallbackAdminExtractedDir = DEFAULT_DATA_SOURCES.find((s) =>
+    s.name.includes("Administrative"),
+  )?.extractedDir;
+  const adminExtractedDir =
+    readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR") ??
+    (effectiveVersion && effectiveVersion !== DEFAULT_FALLBACK_VERSION
+      ? versionTokens(effectiveVersion).adminExtractedDir
+      : fallbackAdminExtractedDir);
   const gnafSource = sources.find((s) => s.name.includes("G-NAF"));
-  const adminSource = sources.find((s) => s.name.includes("Administrative"));
+  const adminSource = adminExtractedDir
+    ? {
+        ...(sources.find((s) => s.name.includes("Administrative")) ?? {
+          name: "Administrative Boundaries GDA2020",
+          url: "",
+          sentinelPaths: [],
+        }),
+        extractedDir: adminExtractedDir,
+      }
+    : sources.find((s) => s.name.includes("Administrative"));
 
   if (!gnafSource || !adminSource) {
     throw new Error("DATA_SOURCES is missing expected G-NAF or Administrative Boundaries entry");
@@ -532,7 +774,7 @@ async function main() {
     console.error("[download] Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.05)");
     process.exit(1);
   }
-  const outputDir = resolveOutputDir();
+  const outputDir = resolveOutputDir(version);
 
   const results = await download({ outputDir, skipIfExists, version });
 

@@ -11,6 +11,18 @@ on:
         description: "Patch version for hotfix releases (e.g. '1' produces v2026.04.1). Leave empty for normal quarterly builds. See E1.13 for the design rationale."
         required: false
         default: ""
+      download_url_gnaf:
+        description: "Optional manual override for the G-NAF zip URL. Normal quarterly and patch runs auto-discover the target release from data.gov.au."
+        required: false
+        default: ""
+      download_url_admin_bdys:
+        description: "Optional manual override for the Admin Boundaries zip URL. Normal quarterly and patch runs auto-discover the target release from data.gov.au."
+        required: false
+        default: ""
+      admin_bdys_extracted_dir:
+        description: "Optional manual override for the extracted Admin Boundaries directory name inside /data (e.g. APR26_AdminBounds_GDA_2020_SHP). Only needed with manual URL overrides."
+        required: false
+        default: ""
       runner:
         description: "Runner label (e.g. 'self-hosted', 'high-memory'). Default: ubuntu-latest"
         required: false
@@ -20,8 +32,13 @@ on:
     - cron: "0 2 15 2,5,8,11 *"
 
 env:
-  # Default version: YYYY.MM from trigger date (overridden by workflow_dispatch input)
+  # Default version: latest published quarterly release for the trigger date
   DOCKER_IMAGE: flat-white
+  # Optional manual release-data overrides.
+  # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery > Feb 2026 fallback for 2026.02 only
+  DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || '' }}
+  DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE: ${{ inputs.download_url_admin_bdys || '' }}
+  ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE: ${{ inputs.admin_bdys_extracted_dir || '' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -34,6 +51,9 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release_version: ${{ steps.version.outputs.release_version }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Determine version
         id: version
         env:
@@ -48,7 +68,82 @@ jobs:
             fi
             VERSION="$GNAF_INPUT"
           else
-            VERSION="$(date +%Y.%m)"
+            VERSION="$(python3 <<'PY'
+            import json
+            import re
+            import urllib.request
+
+            GNAF_PACKAGE_ID = "19432f89-dc3a-4ef3-b943-5326ef1dbecc"
+            ADMIN_PACKAGE_ID = "bdcf5b09-89bc-47ec-9281-6b8e9ee147aa"
+            MONTHS = {
+                "JAN": "01",
+                "FEB": "02",
+                "MAR": "03",
+                "APR": "04",
+                "MAY": "05",
+                "JUN": "06",
+                "JUL": "07",
+                "AUG": "08",
+                "SEP": "09",
+                "OCT": "10",
+                "NOV": "11",
+                "DEC": "12",
+            }
+
+            def fetch_resources(package_id: str) -> list[dict]:
+                url = f"https://data.gov.au/data/api/3/action/package_show?id={package_id}"
+                with urllib.request.urlopen(url, timeout=30) as response:
+                    payload = json.load(response)
+                if (
+                    not payload.get("success")
+                    or "result" not in payload
+                    or "resources" not in payload["result"]
+                ):
+                    raise RuntimeError(f"Unexpected CKAN payload for {package_id}")
+                return payload["result"]["resources"]
+
+            def extract_versions(resources: list[dict], *, admin: bool) -> set[str]:
+                versions: set[str] = set()
+                for resource in resources:
+                    if resource.get("state", "active") != "active":
+                        continue
+                    if str(resource.get("format", "")).upper() != "ZIP":
+                        continue
+
+                    text = f"{resource.get('name', '')} {resource.get('url', '')}".upper()
+                    if "GDA2020" not in text or "GDA94" in text:
+                        continue
+                    if admin and not any(token in text for token in ("SHAPEFILE", "_SHP", " SHP")):
+                        continue
+
+                    for match in re.finditer(
+                        r"\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\s_-]?(\d{2}|\d{4})\b",
+                        text,
+                    ):
+                        month = MONTHS[match.group(1)]
+                        year = match.group(2)
+                        if len(year) == 2:
+                            year = f"20{year}"
+                        versions.add(f"{year}.{month}")
+                return versions
+
+            gnaf_versions = extract_versions(fetch_resources(GNAF_PACKAGE_ID), admin=False)
+            admin_versions = extract_versions(fetch_resources(ADMIN_PACKAGE_ID), admin=True)
+            common_versions = sorted(gnaf_versions & admin_versions)
+
+            if not common_versions:
+                raise RuntimeError(
+                    "No overlapping quarterly G-NAF/Admin Boundaries releases found on data.gov.au"
+                )
+
+            print(common_versions[-1])
+            PY
+            )"
+            if [[ -z "$VERSION" ]]; then
+              echo "ERROR: Failed to determine latest quarterly G-NAF release from data.gov.au"
+              exit 1
+            fi
+            echo "::notice::No gnaf_version input provided; auto-discovered latest quarterly release ${VERSION}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -136,6 +231,9 @@ jobs:
               -v "$(pwd)/output:/output" \
               -v "$(pwd)/cache:/cache" \
               -e "GNAF_VERSION=${{ needs.setup.outputs.version }}" \
+              -e "DOWNLOAD_URL_GNAF=${{ env.DOWNLOAD_URL_GNAF_EFFECTIVE }}" \
+              -e "DOWNLOAD_URL_ADMIN_BDYS=${{ env.DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE }}" \
+              -e "ADMIN_BDYS_EXTRACTED_DIR=${{ env.ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE }}" \
               ${{ env.DOCKER_IMAGE }}:build \
               --states ${{ matrix.state }} \
               --split-states \

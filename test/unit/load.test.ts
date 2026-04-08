@@ -120,6 +120,11 @@ describe("buildArgs", () => {
     expect(args).not.toContain("secret123");
   });
 
+  it("includes --no-boundary-tag when requested", () => {
+    const args = buildArgs({ states: ["VIC"], noBoundaryTag: true });
+    expect(args).toContain("--no-boundary-tag");
+  });
+
   it("computes --local-server-dir when serverDataDir is set", () => {
     const args = buildArgs({ states: ["VIC"], serverDataDir: "/data" });
     const idx = args.indexOf("--local-server-dir");

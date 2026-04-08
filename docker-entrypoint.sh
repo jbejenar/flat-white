@@ -257,7 +257,14 @@ elif [[ -n "$RESTORE_DB" ]]; then
     exit 2
   fi
   log "Restoring database from cache: $RESTORE_DB"
-  su postgres -c "pg_restore -d $PGDB --no-owner --no-privileges --jobs=2 $RESTORE_DB" || {
+  PGPASSWORD="$PGPASSWORD" pg_restore \
+    -h localhost \
+    -U "$PGUSER" \
+    -d "$PGDB" \
+    --no-owner \
+    --no-privileges \
+    --jobs=2 \
+    "$RESTORE_DB" || {
     log "ERROR: Database restore failed"
     exit 2
   }
@@ -299,7 +306,26 @@ else
     LOAD_ARGS="$LOAD_ARGS --states $STATES"
   fi
 
-  if ! GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS; then
+  LOAD_LOG="/tmp/load.log"
+  rm -f "$LOAD_LOG"
+
+  set +e
+  GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS 2>&1 | tee "$LOAD_LOG"
+  LOAD_EXIT=${PIPESTATUS[0]}
+  set -e
+
+  if [[ $LOAD_EXIT -ne 0 ]]; then
+    if grep -qE 'address_alias_admin_boundaries.*(ward_pid|se_upper_pid)|(ward_pid|se_upper_pid).*address_alias_admin_boundaries' "$LOAD_LOG"; then
+      log "WARNING: gnaf-loader boundary tagging failed; retrying with --no-boundary-tag so flat-white fallback can populate boundaries"
+      rm -f "$LOAD_LOG"
+      set +e
+      GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS --no-boundary-tag 2>&1 | tee "$LOAD_LOG"
+      LOAD_EXIT=${PIPESTATUS[0]}
+      set -e
+    fi
+  fi
+
+  if [[ $LOAD_EXIT -ne 0 ]]; then
     log "ERROR: gnaf-loader failed"
     exit 2
   fi
@@ -310,7 +336,13 @@ else
     stage_start "dump"
     DUMP_DIR=$(dirname "$DUMP_DB")
     mkdir -p "$DUMP_DIR"
-    su postgres -c "pg_dump -Fc --compress=6 -f $DUMP_DB $PGDB" || {
+    PGPASSWORD="$PGPASSWORD" pg_dump \
+      -h localhost \
+      -U "$PGUSER" \
+      -d "$PGDB" \
+      -Fc \
+      --compress=6 \
+      -f "$DUMP_DB" || {
       log "ERROR: Database dump failed"
       exit 2
     }
