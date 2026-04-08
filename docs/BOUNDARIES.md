@@ -318,18 +318,36 @@ In v2026.04:
 4. Verify didn't have boundary coverage thresholds yet.
 5. Output shipped.
 
-### The layered defence we now have
+### The defence we now have
 
-After the v2026.04 incident, the project added **three independent gates** that all need to fail for empty boundaries to ship:
+Two parts to the model — keep them separate. The **recovery mechanism** is what makes sure the data gets populated in the first place. The **validation gates** are independent checks that can each abort the build if the data turns out to be wrong. A v2026.04-class silent ship is now structurally impossible because the gates exist; the recovery mechanism is what makes successful runs possible in the first place.
 
-| Layer | What it checks                                                  | When it runs             | Implemented in                              |
-| ----- | --------------------------------------------------------------- | ------------------------ | ------------------------------------------- |
-| 1     | Path 1 OR Path 2 populates the table                            | Load + flatten time      | gnaf-loader + `address_full_prep.sql`       |
-| 2     | Boundary polygon tables in the cache are populated              | Post-load + post-restore | `scripts/validate-db-cache.sh` (#99)        |
-| 3     | Per-state coverage ≥ thresholds (lga ≥ 99%, etc.)               | Post-flatten verify      | `src/verify.ts` `--check-boundary-coverage` |
-| 4     | PR-time shape smoke catches `address_full_prep.sql` regressions | Every relevant PR        | `quarterly-shape-smoke` in `ci.yml` (#99)   |
+#### Recovery mechanism (data population)
 
-Layers 1 and 3 existed before #99. Layers 2 and 4 are the new gates from #99 (the "harden quarterly safety net" PR). Together they make a v2026.04-class silent failure structurally impossible to ship.
+```
+gnaf-loader Path 1 → if it populates the table, Path 2 is a no-op
+                  ↓ else (--no-boundary-tag retry)
+flat-white Path 2 → spatial-join fallback in address_full_prep.sql
+                    populates the table at flatten time
+```
+
+This is **not a gate** — it doesn't stop a bad release. It's the code path that makes correct boundary data exist when both upstream and our own SQL are working. If both Path 1 AND Path 2 silently produce wrong data (e.g. 0% coverage), nothing in this layer would notice. That's what the gates are for.
+
+#### Validation gates (each independently aborts a bad build)
+
+| #   | Gate                                | What it asserts                                                                                                   | When                             | Implemented in                                                                                     | Added           |
+| --- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- | --------------- |
+| 1   | Cache validator                     | Boundary polygon tables exist with rows in the post-load / restored DB                                            | Post-load + post-restore         | `scripts/validate-db-cache.sh`                                                                     | #99             |
+| 2   | Production verify boundary coverage | Per-state LGA / ward / electorate coverage ≥ defaults (99% / 95% / 99%)                                           | Post-flatten verify, every state | `src/verify.ts` `--check-boundary-coverage` (`DEFAULT_BOUNDARY_THRESHOLDS`)                        | E1.14 (pre-#99) |
+| 3   | PR-time shape smoke thresholds      | Fixture-scale per-state coverage ≥ tight thresholds (catches regressions in `address_full_prep.sql` before merge) | Every relevant PR                | `scripts/run-quarterly-fixture-smoke.mjs` + `verification-report.ts` `--boundary-thresholds` (#99) | #99             |
+
+**Three independent gates**, in order of when they fire:
+
+- **Gate 1** runs first (post-load and post-restore). Cheapest, narrowest. Catches "the polygon tables we need for the spatial join aren't there at all".
+- **Gate 2** runs after the flatten produces a per-state NDJSON. Catches "the spatial join produced output, but the coverage is too low to ship". This existed before #99 (E1.14 added it).
+- **Gate 3** runs at PR time on the fixture, before any quarterly data ever runs. Catches "someone changed `address_full_prep.sql` and the spatial join now silently drops a boundary type". This is the only gate that runs _before_ a quarterly build.
+
+Gate 1 is the new gate #99 added at the cache layer. Gates 2 and 3 (and the threshold-aware verification-report.ts plumbing) are the gate set #99 either added or made stricter. Pre-#99, only Gate 2 existed — which meant a regression couldn't ship, but you'd burn an entire quarterly run before hitting it. Adding Gate 1 (catches it post-load, ~25 min in) and Gate 3 (catches it at PR time, never runs) is the speed/cost win.
 
 ---
 
