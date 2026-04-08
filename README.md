@@ -179,11 +179,13 @@ docker run -v $(pwd)/output:/output flat-white \
 
 - `GNAF_VERSION` is required for production builds. Example: `-e GNAF_VERSION=2026.04`.
 - If `--states` is omitted, flat-white builds all states/territories.
-- Release-specific download URLs are resolved in this order:
+- Production release data is resolved in this order:
   1. explicit workflow input
   2. repository variable
-  3. built-in Feb 2026 fallback in `src/download.ts`
-- The built-in fallback is only valid for `GNAF_VERSION=2026.02`. For newer production releases, flat-white fails fast unless these are configured:
+  3. automatic discovery from data.gov.au for the target `GNAF_VERSION`
+  4. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02` only
+- Normal quarterly production runs should not need manual inputs.
+- These overrides are only for patch rebuilds or emergency/manual runs:
   - `DOWNLOAD_URL_GNAF`
   - `DOWNLOAD_URL_ADMIN_BDYS`
   - `ADMIN_BDYS_EXTRACTED_DIR`

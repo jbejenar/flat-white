@@ -12,15 +12,15 @@ on:
         required: false
         default: ""
       download_url_gnaf:
-        description: "Optional override for the G-NAF zip URL. Required for releases newer than the built-in Feb 2026 fallback, and for patch rebuilds of those releases."
+        description: "Optional manual override for the G-NAF zip URL. Normal quarterly and patch runs auto-discover the target release from data.gov.au."
         required: false
         default: ""
       download_url_admin_bdys:
-        description: "Optional override for the Admin Boundaries zip URL. Required for releases newer than the built-in Feb 2026 fallback, and for patch rebuilds of those releases."
+        description: "Optional manual override for the Admin Boundaries zip URL. Normal quarterly and patch runs auto-discover the target release from data.gov.au."
         required: false
         default: ""
       admin_bdys_extracted_dir:
-        description: "Optional override for the extracted Admin Boundaries directory name inside /data (e.g. APR26_AdminBounds_GDA_2020_SHP). Required when download_url_admin_bdys is set and the extracted dir is not FEB26_AdminBounds_GDA_2020_SHP."
+        description: "Optional manual override for the extracted Admin Boundaries directory name inside /data (e.g. APR26_AdminBounds_GDA_2020_SHP). Only needed with manual URL overrides."
         required: false
         default: ""
       runner:
@@ -34,8 +34,8 @@ on:
 env:
   # Default version: YYYY.MM from trigger date (overridden by workflow_dispatch input)
   DOCKER_IMAGE: flat-white
-  # Release-specific data source overrides.
-  # Priority: workflow_dispatch input > repository variable > built-in Feb 2026 fallback in src/download.ts
+  # Optional manual release-data overrides.
+  # Priority inside the downloader: workflow_dispatch input > repository variable > data.gov.au auto-discovery > Feb 2026 fallback for 2026.02 only
   DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || vars.DOWNLOAD_URL_GNAF || '' }}
   DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE: ${{ inputs.download_url_admin_bdys || vars.DOWNLOAD_URL_ADMIN_BDYS || '' }}
   ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE: ${{ inputs.admin_bdys_extracted_dir || vars.ADMIN_BDYS_EXTRACTED_DIR || '' }}

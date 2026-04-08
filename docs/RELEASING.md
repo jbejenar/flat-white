@@ -24,10 +24,10 @@ GNAF_VERSION=2026.05 ./scripts/build-local.sh --version 2026.05 --states VIC
 
 ### Download URLs for new G-NAF releases
 
-Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. The built-in download defaults only support the frozen Feb 2026 dataset. For any newer production release, set these as repository variables for scheduled/manual runs, or pass them as workflow inputs to override them for a single dispatch:
+Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. flat-white now resolves those automatically from data.gov.au for the target `GNAF_VERSION`. Use manual overrides only when you need to pin a specific resource URL for a patch rebuild or emergency/manual run:
 
 ```bash
-# Repository variables (preferred), or docker run -e flags locally:
+# Manual overrides (optional), or docker run -e flags locally:
 DOWNLOAD_URL_GNAF="https://data.gov.au/data/dataset/.../download/g-naf_may26_....zip"
 DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/may26_adminbounds_....zip"
 ADMIN_BDYS_EXTRACTED_DIR="MAY26_AdminBounds_GDA_2020_SHP"
@@ -37,9 +37,10 @@ Priority order in the GitHub Actions workflow:
 
 1. workflow_dispatch input
 2. repository variable
-3. built-in Feb 2026 fallback in `src/download.ts`
+3. automatic discovery from data.gov.au for the target `GNAF_VERSION`
+4. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02`
 
-For production builds with `GNAF_VERSION` newer than `2026.02`, flat-white now fails fast if any of those three settings are missing. This prevents a release tagged as `2026.04` or `2026.05` from silently downloading the wrong Feb 2026 source data.
+If automatic discovery cannot find the matching G-NAF GDA2020 ZIP or Administrative Boundaries GDA2020 shapefile ZIP for the requested version, the build fails before download with a clear error. That prevents a release tagged as `2026.04` or `2026.05` from silently downloading the wrong source data.
 
 Find the correct URLs by browsing the G-NAF dataset page on data.gov.au, or by querying the CKAN API:
 
@@ -106,7 +107,7 @@ The G-NAF data version stays at `2026.04` for all `v2026.04.N` patches — the p
 
    This builds against the same G-NAF data version (`2026.04`) and publishes as `v2026.04.1`. The build cache may be a hit (~30 min saved per state) if the cache key is still warm. Total wall time: ~25 min on free runners.
 
-   Patch releases still rebuild the original quarterly data, so `v2026.04.1` needs the April 2026 dataset URLs, not the Feb 2026 fallback. If the matching repository variables are already configured, you can omit the three download override inputs and pass only `gnaf_version` plus `patch_version`.
+   Patch releases still rebuild the original quarterly data, so `v2026.04.1` resolves the April 2026 source data automatically. Only provide the three download override inputs if you need to force a specific resource URL or work around a data.gov.au naming issue.
 
 4. **Wait for the build to complete and the draft release to publish.** Watch with:
 
