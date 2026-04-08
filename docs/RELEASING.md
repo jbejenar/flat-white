@@ -33,12 +33,11 @@ DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/may26_adm
 ADMIN_BDYS_EXTRACTED_DIR="MAY26_AdminBounds_GDA_2020_SHP"
 ```
 
-Priority order in the GitHub Actions workflow:
+Priority order for production builds:
 
 1. workflow_dispatch input
-2. repository variable
-3. automatic discovery from data.gov.au for the target `GNAF_VERSION`
-4. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02`
+2. automatic discovery from data.gov.au for the target `GNAF_VERSION`
+3. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02`
 
 If automatic discovery cannot find the matching G-NAF GDA2020 ZIP or Administrative Boundaries GDA2020 shapefile ZIP for the requested version, the build fails before download with a clear error. That prevents a release tagged as `2026.04` or `2026.05` from silently downloading the wrong source data.
 
