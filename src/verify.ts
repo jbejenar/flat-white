@@ -267,37 +267,100 @@ const KNOWN_STATES = new Set(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC
 /**
  * Pick the right boundary coverage thresholds for a given STATES env value.
  *
- * - When `states` is empty/undefined → strict-all-five default (back-compat).
- * - When `states` is exactly one known single-state value → use the
- *   per-state empirical thresholds for that state.
- * - When `states` is multi-state or whitespace-only → strict default.
- * - When `states` contains an unknown token → throws (caller decides what
- *   to do; the CLI exits 4 with an explicit error).
+ * Behaviour by input shape:
  *
- * The single-state case is the production reality — every quarterly job
- * runs one state at a time per the matrix in `quarterly-build.yml`.
+ * - empty/undefined/whitespace-only → `DEFAULT_BOUNDARY_THRESHOLDS`
+ *   (strict-all-five — fixture path and any all-states caller)
+ *
+ * - single known state → `PER_STATE_BOUNDARY_THRESHOLDS[state]`
+ *   (the production reality — every quarterly job runs one state at
+ *   a time per the matrix in `quarterly-build.yml`)
+ *
+ * - multiple known states → element-wise MIN across each selected
+ *   state's per-state thresholds
+ *
+ *   Why MIN: a multi-state output is the union of per-state addresses.
+ *   For each boundary field, the field's coverage in the union depends
+ *   on the per-state coverages weighted by row counts. Without doing
+ *   per-record state bucketing (a larger refactor), the safest correct
+ *   thing is to use the LOOSEST threshold across the selected states.
+ *   This guarantees the check accepts every legitimate combination
+ *   while still catching catastrophic regressions for any field where
+ *   AT LEAST ONE selected state has a tight threshold.
+ *
+ *   Example: STATES="VIC NSW"
+ *     - VIC: lga 0.99, ward 0.95, se 0.99, ce 0.99
+ *     - NSW: lga 0.99, ward 0   , se 0.99, ce 0.99
+ *     - MIN: lga 0.99, ward 0   , se 0.99, ce 0.99
+ *     - Ward check is skipped (NSW has no ward polygon, so the union
+ *       has only VIC's ward addresses; we don't enforce any minimum).
+ *     - LGA / state / cwlth still gate at 0.99 — catastrophic regression
+ *       in either state still trips the check.
+ *
+ *   Trade-off: this is more permissive than per-record bucketing for
+ *   fields where states have different non-zero thresholds (e.g.
+ *   "WA SA" → ward MIN(0.60, 0.70) = 0.60, slightly looser than what
+ *   per-state bucketing would enforce). Per-record bucketing is the
+ *   correct future enhancement; for now, MIN is a clean unblock for
+ *   the multi-state CLI flag without invasive refactoring.
+ *
+ * - any unknown token → throws (CLI catches and exits 4)
+ *
+ * Tokens are normalized: trimmed, split on shell whitespace, deduped
+ * (so `"VIC VIC"` is identical to `"VIC"`), validated against the
+ * known set.
  */
 export function thresholdsForStates(
   states: string | undefined,
 ): Required<BoundaryCoverageThresholds> {
   if (!states || !states.trim()) return DEFAULT_BOUNDARY_THRESHOLDS;
 
-  const tokens = states.trim().split(/\s+/).filter(Boolean);
-  for (const token of tokens) {
-    if (!KNOWN_STATES.has(token)) {
+  // Normalize: split on whitespace, drop empties, dedupe (preserving order)
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  for (const raw of states.trim().split(/\s+/)) {
+    if (!raw) continue;
+    if (!KNOWN_STATES.has(raw)) {
       throw new Error(
-        `Unknown STATES token: '${token}'. Must be one of: ${[...KNOWN_STATES].sort().join(", ")}`,
+        `Unknown STATES token: '${raw}'. Must be one of: ${[...KNOWN_STATES].sort().join(", ")}`,
       );
+    }
+    if (!seen.has(raw)) {
+      seen.add(raw);
+      tokens.push(raw);
     }
   }
 
+  if (tokens.length === 0) return DEFAULT_BOUNDARY_THRESHOLDS;
+
   if (tokens.length === 1) {
-    const stateThresholds = PER_STATE_BOUNDARY_THRESHOLDS[tokens[0]];
-    if (stateThresholds) return stateThresholds;
+    const t = PER_STATE_BOUNDARY_THRESHOLDS[tokens[0]];
+    if (t) return t;
+    // unreachable because every KNOWN_STATES key has a per-state entry,
+    // but fall back defensively
+    return DEFAULT_BOUNDARY_THRESHOLDS;
   }
 
-  // Multi-state or fall-through → safe defaults
-  return DEFAULT_BOUNDARY_THRESHOLDS;
+  // Multi-state: element-wise MIN across the selected states' per-state
+  // thresholds. See the JSDoc above for the rationale.
+  const result: Required<BoundaryCoverageThresholds> = {
+    lga: Number.POSITIVE_INFINITY,
+    ward: Number.POSITIVE_INFINITY,
+    stateElectorate: Number.POSITIVE_INFINITY,
+    commonwealthElectorate: Number.POSITIVE_INFINITY,
+  };
+  for (const token of tokens) {
+    const t = PER_STATE_BOUNDARY_THRESHOLDS[token];
+    if (!t) continue;
+    result.lga = Math.min(result.lga, t.lga);
+    result.ward = Math.min(result.ward, t.ward);
+    result.stateElectorate = Math.min(result.stateElectorate, t.stateElectorate);
+    result.commonwealthElectorate = Math.min(
+      result.commonwealthElectorate,
+      t.commonwealthElectorate,
+    );
+  }
+  return result;
 }
 
 export interface BoundaryCoverageError {

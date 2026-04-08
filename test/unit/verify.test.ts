@@ -597,9 +597,56 @@ describe("thresholdsForStates", () => {
     }
   });
 
-  it("falls back to defaults for multi-state STATES", () => {
-    expect(thresholdsForStates("VIC NSW")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
-    expect(thresholdsForStates("NSW VIC NT")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  it("multi-state STATES uses element-wise MIN of per-state thresholds", () => {
+    // STATES="VIC NSW": NSW has no ward polygon (ward=0), VIC has 0.95.
+    // MIN ward = 0 (skipped). Other fields: both at 0.99 → MIN 0.99.
+    const vicNsw = thresholdsForStates("VIC NSW");
+    expect(vicNsw.ward).toBe(0);
+    expect(vicNsw.lga).toBe(0.99);
+    expect(vicNsw.stateElectorate).toBe(0.99);
+    expect(vicNsw.commonwealthElectorate).toBe(0.99);
+  });
+
+  it('multi-state "WA SA": ward MIN(0.60, 0.70) = 0.60', () => {
+    // WA ward 0.60, SA ward 0.70 → MIN 0.60
+    const t = thresholdsForStates("WA SA");
+    expect(t.ward).toBeCloseTo(0.6);
+    expect(t.lga).toBe(0.99);
+    expect(t.stateElectorate).toBe(0.99);
+    expect(t.commonwealthElectorate).toBe(0.99);
+  });
+
+  it('multi-state "NT VIC" picks the looser ward (NT 0.55)', () => {
+    // NT ward 0.55, VIC ward 0.95 → MIN 0.55
+    expect(thresholdsForStates("NT VIC").ward).toBeCloseTo(0.55);
+  });
+
+  it('multi-state "ACT NSW": both have no LGA (ACT) or ward (NSW); MIN preserves them at 0', () => {
+    // ACT lga 0, NSW lga 0.99 → MIN 0 (LGA check skipped)
+    // ACT ward 0, NSW ward 0 → MIN 0 (ward check skipped)
+    // se 0.99 0.99 → 0.99; ce 0.99 0.99 → 0.99
+    const t = thresholdsForStates("ACT NSW");
+    expect(t.lga).toBe(0);
+    expect(t.ward).toBe(0);
+    expect(t.stateElectorate).toBe(0.99);
+    expect(t.commonwealthElectorate).toBe(0.99);
+  });
+
+  it('multi-state "OT WA": OT pulls every threshold to its loose value', () => {
+    // OT lga 0.30, WA lga 0.99 → MIN 0.30
+    // OT ward 0, WA ward 0.60 → MIN 0
+    // OT se_lower 0, WA se_lower 0.99 → MIN 0
+    // OT ce 0, WA ce 0.99 → MIN 0
+    const t = thresholdsForStates("OT WA");
+    expect(t.lga).toBeCloseTo(0.3);
+    expect(t.ward).toBe(0);
+    expect(t.stateElectorate).toBe(0);
+    expect(t.commonwealthElectorate).toBe(0);
+  });
+
+  it("dedupes STATES tokens (VIC VIC === VIC)", () => {
+    expect(thresholdsForStates("VIC VIC")).toEqual(thresholdsForStates("VIC"));
+    expect(thresholdsForStates("VIC NSW VIC")).toEqual(thresholdsForStates("VIC NSW"));
   });
 
   it("throws on unknown STATES token", () => {
