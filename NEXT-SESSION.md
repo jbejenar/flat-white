@@ -15,7 +15,7 @@ Checkboxes checked this session: 0
 - **Upstream PR minus34/gnaf-loader#100:** Still OPEN, no reviews (checked 2026-04-08). .gitmodules stays pointed at fork.
 - **Golden commands:** All passing — lint ✓, typecheck ✓, 266 tests ✓.
 - **All DEFERRED/BLOCKED annotations reviewed** — no items have become unblocked since session 13.
-- **This is the 7th consecutive no-op session (13 was the last session with progress).**
+- **This is the 6th consecutive no-op session (13 was the last session with progress).**
 
 ### In Progress (all BLOCKED — unchanged since session 13)
 
