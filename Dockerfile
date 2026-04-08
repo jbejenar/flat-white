@@ -17,9 +17,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
-# Copy source and build
+# Copy source and build inputs
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY sql/ ./sql/
 RUN npm run build
 
 # ---------------------------------------------------------------------------
@@ -53,8 +55,8 @@ COPY --from=builder /app/dist/ ./dist/
 COPY --from=builder /app/node_modules/ ./node_modules/
 COPY package.json ./
 
-# Copy SQL files (used by flatten)
-COPY sql/ ./sql/
+# Copy SQL files generated/validated during the builder stage
+COPY --from=builder /app/sql/ ./sql/
 
 # Copy fixtures (for --fixture-only mode)
 COPY fixtures/seed-postgres.sql ./fixtures/seed-postgres.sql
