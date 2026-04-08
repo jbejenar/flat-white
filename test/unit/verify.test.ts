@@ -12,6 +12,8 @@ import {
   isWithinAustralia,
   isValidStatePostcode,
   DEFAULT_BOUNDARY_THRESHOLDS,
+  PER_STATE_BOUNDARY_THRESHOLDS,
+  thresholdsForStates,
   type EnumSets,
   type BoundaryCoverageThresholds,
 } from "../../src/verify.js";
@@ -546,6 +548,76 @@ describe("verify against fixture with boundary thresholds", () => {
     expect(result.passed).toBe(true);
     expect(result.boundaryCoverageChecked).toBe(true);
     expect(result.boundaryCoverageErrors.length).toBe(0);
+  });
+});
+
+describe("thresholdsForStates", () => {
+  it("returns DEFAULT_BOUNDARY_THRESHOLDS when STATES is undefined", () => {
+    expect(thresholdsForStates(undefined)).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("returns DEFAULT_BOUNDARY_THRESHOLDS when STATES is empty string", () => {
+    expect(thresholdsForStates("")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("returns DEFAULT_BOUNDARY_THRESHOLDS when STATES is whitespace-only", () => {
+    expect(thresholdsForStates("   \t  ")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("returns per-state thresholds for single-state STATES=VIC", () => {
+    expect(thresholdsForStates("VIC")).toEqual(PER_STATE_BOUNDARY_THRESHOLDS.VIC);
+  });
+
+  it("returns per-state thresholds for STATES=OT (lga 0.30, others 0)", () => {
+    const t = thresholdsForStates("OT");
+    expect(t.lga).toBeCloseTo(0.3);
+    expect(t.ward).toBe(0);
+    expect(t.stateElectorate).toBe(0);
+    expect(t.commonwealthElectorate).toBe(0);
+  });
+
+  it("returns per-state thresholds for STATES=ACT (lga 0, ward 0)", () => {
+    const t = thresholdsForStates("ACT");
+    expect(t.lga).toBe(0);
+    expect(t.ward).toBe(0);
+    expect(t.stateElectorate).toBe(0.99);
+    expect(t.commonwealthElectorate).toBe(0.99);
+  });
+
+  it("returns per-state thresholds for low-ward states", () => {
+    expect(thresholdsForStates("NT").ward).toBeCloseTo(0.55);
+    expect(thresholdsForStates("WA").ward).toBeCloseTo(0.6);
+    expect(thresholdsForStates("SA").ward).toBeCloseTo(0.7);
+    expect(thresholdsForStates("VIC").ward).toBeCloseTo(0.95);
+  });
+
+  it("returns ward=0 for states without local_government_wards polygon", () => {
+    for (const state of ["ACT", "NSW", "OT", "QLD", "TAS"]) {
+      expect(thresholdsForStates(state).ward).toBe(0);
+    }
+  });
+
+  it("falls back to defaults for multi-state STATES", () => {
+    expect(thresholdsForStates("VIC NSW")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+    expect(thresholdsForStates("NSW VIC NT")).toEqual(DEFAULT_BOUNDARY_THRESHOLDS);
+  });
+
+  it("throws on unknown STATES token", () => {
+    expect(() => thresholdsForStates("foo")).toThrow("Unknown STATES token");
+    expect(() => thresholdsForStates("vic")).toThrow("Unknown STATES token");
+  });
+
+  it("throws on comma-delimited STATES (gnaf-loader uses space)", () => {
+    expect(() => thresholdsForStates("VIC,NSW")).toThrow("Unknown STATES token");
+  });
+
+  it("throws on tab-delimited STATES with mixed valid+invalid tokens", () => {
+    expect(() => thresholdsForStates("VIC bogus")).toThrow("Unknown STATES token");
+  });
+
+  it("PER_STATE_BOUNDARY_THRESHOLDS has all 9 states", () => {
+    const states = Object.keys(PER_STATE_BOUNDARY_THRESHOLDS).sort();
+    expect(states).toEqual(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"]);
   });
 });
 

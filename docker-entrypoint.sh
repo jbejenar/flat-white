@@ -453,6 +453,7 @@ if [[ ! -s "$FLATTEN_OUTPUT" ]]; then
 fi
 
 DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
+STATES="$STATES" \
   node /app/dist/verify.js "$FLATTEN_OUTPUT" --expected-count "$LINE_COUNT" \
     --db-url "postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
     --check-boundary-coverage || {

@@ -188,14 +188,117 @@ export interface BoundaryCoverageThresholds {
   commonwealthElectorate?: number;
 }
 
-/** Default thresholds: most boundaries should cover >99% of addresses.
- *  Wards are lower (95%) because some addresses legitimately fall outside ward boundaries. */
+/**
+ * Default thresholds for empty / multi-state / unknown STATES.
+ *
+ * These reflect a "fully populated, all-state" build (e.g. the
+ * docker-smoke fixture path which has all 5 boundary types at 99%+,
+ * or a hypothetical all-9-state production caller). They're strict.
+ *
+ * For per-state production builds, `PER_STATE_BOUNDARY_THRESHOLDS`
+ * provides empirically-tuned per-state values that override these
+ * defaults — see the comment block on that constant.
+ */
 export const DEFAULT_BOUNDARY_THRESHOLDS: Required<BoundaryCoverageThresholds> = {
   lga: 0.99,
   ward: 0.95,
   stateElectorate: 0.99,
   commonwealthElectorate: 0.99,
 };
+
+/**
+ * Per-state empirical boundary coverage thresholds. Each value is set
+ * ~5-8 percentage points BELOW the actual measured coverage from a
+ * 2026.02 local build of every state on a 64 GB MacBook Pro M5,
+ * providing margin for normal quarterly variation while still catching
+ * catastrophic regressions.
+ *
+ * Why per-state: ward coverage varies wildly by state (NT 60.4% → VIC
+ * 99.94%) because not every council in every state has wards in the
+ * Geoscape data set. A single global ward threshold would either fail
+ * for low-ward states (NT, WA) or allow VIC to silently drop 30+
+ * points unnoticed. Per-state thresholds tune to each state's
+ * empirical reality.
+ *
+ * Why state-aware AT ALL: gnaf-loader's per-state shapefile filter
+ * (load-gnaf.py:325-330) means a single-state build only loads
+ * shapefiles whose filename matches the state prefix. The Geoscape
+ * archive doesn't ship `act_lga.shp`, `ot_state_electoral.shp`, etc.
+ * — those administrative units don't exist for those states. The
+ * resulting per-state polygon set comes from
+ * `gnaf-loader/settings.py:208-217` admin_bdy_list logic, mirrored in
+ * `scripts/validate-db-cache.sh`. When a polygon doesn't exist, its
+ * threshold here is 0 (the field will be 0% in the output, and 0 < 0
+ * is false, so the check passes vacuously).
+ *
+ * Source: 2026.02 local build, all 9 states, run #PR-FOLLOWUP. Update
+ * this map after each successful quarterly run if coverage shifts.
+ *
+ * | State | LGA measured | Ward measured | Notes                  |
+ * |-------|--------------|---------------|------------------------|
+ * | ACT   | n/a (no poly)| n/a (no poly) | only ce + se_lower     |
+ * | NSW   | ~100%        | n/a (no poly) | no ward in Geoscape    |
+ * | NT    | 100%         | 60.4%         | lowest ward coverage   |
+ * | OT    | 38.2%        | n/a (no poly) | mostly unincorporated  |
+ * | QLD   | ~100%        | n/a (no poly) | no ward in Geoscape    |
+ * | SA    | 100%         | 77.2%         |                        |
+ * | TAS   | ~100%        | n/a (no poly) | no ward in Geoscape    |
+ * | VIC   | 100%         | 99.94%        | gold standard          |
+ * | WA    | 100%         | 68.07%        |                        |
+ *
+ * Coverage of `0` means: no polygon table for this state (gnaf-loader
+ * didn't load it), so the field is null in the output. We pass the
+ * check vacuously by setting threshold to 0.
+ */
+export const PER_STATE_BOUNDARY_THRESHOLDS: Record<string, Required<BoundaryCoverageThresholds>> = {
+  ACT: { lga: 0, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  NSW: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  NT: { lga: 0.99, ward: 0.55, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  OT: { lga: 0.3, ward: 0, stateElectorate: 0, commonwealthElectorate: 0 },
+  QLD: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  SA: { lga: 0.99, ward: 0.7, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  TAS: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  VIC: { lga: 0.99, ward: 0.95, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  WA: { lga: 0.99, ward: 0.6, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+};
+
+const KNOWN_STATES = new Set(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"]);
+
+/**
+ * Pick the right boundary coverage thresholds for a given STATES env value.
+ *
+ * - When `states` is empty/undefined → strict-all-five default (back-compat).
+ * - When `states` is exactly one known single-state value → use the
+ *   per-state empirical thresholds for that state.
+ * - When `states` is multi-state or whitespace-only → strict default.
+ * - When `states` contains an unknown token → throws (caller decides what
+ *   to do; the CLI exits 4 with an explicit error).
+ *
+ * The single-state case is the production reality — every quarterly job
+ * runs one state at a time per the matrix in `quarterly-build.yml`.
+ */
+export function thresholdsForStates(
+  states: string | undefined,
+): Required<BoundaryCoverageThresholds> {
+  if (!states || !states.trim()) return DEFAULT_BOUNDARY_THRESHOLDS;
+
+  const tokens = states.trim().split(/\s+/).filter(Boolean);
+  for (const token of tokens) {
+    if (!KNOWN_STATES.has(token)) {
+      throw new Error(
+        `Unknown STATES token: '${token}'. Must be one of: ${[...KNOWN_STATES].sort().join(", ")}`,
+      );
+    }
+  }
+
+  if (tokens.length === 1) {
+    const stateThresholds = PER_STATE_BOUNDARY_THRESHOLDS[tokens[0]];
+    if (stateThresholds) return stateThresholds;
+  }
+
+  // Multi-state or fall-through → safe defaults
+  return DEFAULT_BOUNDARY_THRESHOLDS;
+}
 
 export interface BoundaryCoverageError {
   field: string;
@@ -521,6 +624,23 @@ async function main(): Promise<void> {
   const dbUrlIdx = process.argv.indexOf("--db-url");
   const dbUrl = dbUrlIdx !== -1 ? process.argv[dbUrlIdx + 1] : undefined;
 
+  // STATES env var (whitespace-separated, matching gnaf-loader's --states
+  // format) selects per-state empirical thresholds. Empty/multi-state →
+  // strict-all-five default. Unknown token → throws → exit 4.
+  let boundaryCoverageThresholds: Required<BoundaryCoverageThresholds> | undefined;
+  if (checkBoundaryCoverage) {
+    try {
+      boundaryCoverageThresholds = thresholdsForStates(process.env.STATES);
+    } catch (err) {
+      console.error(`[verify] ERROR: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(
+        `[verify] STATES must be a whitespace-separated list of state codes ` +
+          `(e.g. STATES="VIC" or STATES="NSW VIC"). Got: '${process.env.STATES ?? "(unset)"}'`,
+      );
+      process.exit(4);
+    }
+  }
+
   let enumSets: EnumSets | undefined;
   if (!skipEnumCheck && dbUrl) {
     const postgres = (await import("postgres")).default;
@@ -536,7 +656,7 @@ async function main(): Promise<void> {
     outputPath: filePath,
     expectedCount,
     enumSets,
-    boundaryCoverageThresholds: checkBoundaryCoverage ? DEFAULT_BOUNDARY_THRESHOLDS : undefined,
+    boundaryCoverageThresholds,
   });
 
   console.log(formatReport(result));
