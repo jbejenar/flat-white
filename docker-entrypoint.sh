@@ -315,7 +315,7 @@ else
   set -e
 
   if [[ $LOAD_EXIT -ne 0 ]]; then
-    if grep -qE 'address_alias_admin_boundaries|boundary_tag_gnaf|UndefinedColumn' "$LOAD_LOG"; then
+    if grep -qE 'address_alias_admin_boundaries.*(ward_pid|se_upper_pid)|(ward_pid|se_upper_pid).*address_alias_admin_boundaries' "$LOAD_LOG"; then
       log "WARNING: gnaf-loader boundary tagging failed; retrying with --no-boundary-tag so flat-white fallback can populate boundaries"
       rm -f "$LOAD_LOG"
       set +e

@@ -24,14 +24,20 @@ GNAF_VERSION=2026.05 ./scripts/build-local.sh --version 2026.05 --states VIC
 
 ### Download URLs for new G-NAF releases
 
-Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. The Feb 2026 URLs are built-in as a fallback. For newer releases, set these env vars before triggering the build:
+Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. The Feb 2026 URLs are built-in as a fallback. For newer releases, set these as repository variables for scheduled/manual runs, or pass them as workflow inputs to override them for a single dispatch:
 
 ```bash
-# In the workflow dispatch, or in docker run -e flags:
+# Repository variables (preferred), or docker run -e flags locally:
 DOWNLOAD_URL_GNAF="https://data.gov.au/data/dataset/.../download/g-naf_may26_....zip"
 DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/may26_adminbounds_....zip"
 ADMIN_BDYS_EXTRACTED_DIR="MAY26_AdminBounds_GDA_2020_SHP"
 ```
+
+Priority order in the GitHub Actions workflow:
+
+1. workflow_dispatch input
+2. repository variable
+3. built-in Feb 2026 fallback in `src/download.ts`
 
 Find the correct URLs by browsing the G-NAF dataset page on data.gov.au, or by querying the CKAN API:
 

@@ -34,6 +34,11 @@ on:
 env:
   # Default version: YYYY.MM from trigger date (overridden by workflow_dispatch input)
   DOCKER_IMAGE: flat-white
+  # Release-specific data source overrides.
+  # Priority: workflow_dispatch input > repository variable > built-in Feb 2026 fallback in src/download.ts
+  DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || vars.DOWNLOAD_URL_GNAF || '' }}
+  DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE: ${{ inputs.download_url_admin_bdys || vars.DOWNLOAD_URL_ADMIN_BDYS || '' }}
+  ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE: ${{ inputs.admin_bdys_extracted_dir || vars.ADMIN_BDYS_EXTRACTED_DIR || '' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -148,9 +153,9 @@ jobs:
               -v "$(pwd)/output:/output" \
               -v "$(pwd)/cache:/cache" \
               -e "GNAF_VERSION=${{ needs.setup.outputs.version }}" \
-              -e "DOWNLOAD_URL_GNAF=${{ inputs.download_url_gnaf }}" \
-              -e "DOWNLOAD_URL_ADMIN_BDYS=${{ inputs.download_url_admin_bdys }}" \
-              -e "ADMIN_BDYS_EXTRACTED_DIR=${{ inputs.admin_bdys_extracted_dir }}" \
+              -e "DOWNLOAD_URL_GNAF=${{ env.DOWNLOAD_URL_GNAF_EFFECTIVE }}" \
+              -e "DOWNLOAD_URL_ADMIN_BDYS=${{ env.DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE }}" \
+              -e "ADMIN_BDYS_EXTRACTED_DIR=${{ env.ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE }}" \
               ${{ env.DOCKER_IMAGE }}:build \
               --states ${{ matrix.state }} \
               --split-states \
