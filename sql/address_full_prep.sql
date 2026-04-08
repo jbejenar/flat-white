@@ -91,27 +91,50 @@ CREATE TABLE IF NOT EXISTS gnaf___SCHEMA_VERSION__.address_principal_admin_bound
   se_upper_name text
 );
 
--- 0b. FALLBACK: spatial join for admin boundaries
+-- 0b. FALLBACK: spatial join for admin boundaries (E1.21 bulk-join rewrite)
 -- Runs ONLY if gnaf-loader's boundary tagging didn't populate the table
 -- (e.g. when --no-boundary-tag was used or upstream tagging crashed).
 --
--- Each boundary table is checked independently — missing tables (e.g. wards)
--- are silently skipped, populating only what's available.
+-- Each boundary table is checked independently — missing tables (legitimately
+-- absent for some states per gnaf-loader's per-state shapefile filter) are
+-- silently skipped, leaving the corresponding columns NULL.
 --
--- IMPORTANT — multi-polygon row multiplication safety (E1.15):
--- Each boundary is matched via `LEFT JOIN LATERAL (... LIMIT 1)` rather than
--- `LEFT JOIN ... ON ST_Intersects(...)`. ST_Intersects returns true for points
--- on a polygon edge, so a single point on the shared boundary between two
--- adjacent LGAs would match BOTH polygons. With four LEFT JOINs cartesian-
--- multiplied, that produced up to 16 duplicate rows per address (one per
--- combination of matching CE × LGA × ward × SE polygons). The LATERAL form
--- guarantees AT MOST ONE row per (address, boundary table), and the ORDER BY
--- pid ensures the choice is deterministic across runs (same point always picks
--- the same polygon).
+-- SHAPE: insert one shell row per address with NULL boundary fields, then run
+-- five INDEPENDENT UPDATE passes — one per boundary table — each picking the
+-- lowest-pid intersecting polygon via DISTINCT ON.
 --
--- A UNIQUE INDEX on gnaf_pid below makes this guarantee structural — if any
--- future code path inserts duplicates, the insert fails fast instead of
--- silently producing duplicate addresses in the released NDJSON.
+-- Why this shape (E1.21 — replaces the prior LATERAL+LIMIT loop):
+--
+--   The prior `LEFT JOIN LATERAL (... ORDER BY pid LIMIT 1)` form forced
+--   per-outer-row evaluation: Postgres executed the inner subquery against
+--   the GIST index once per address, in serial. The planner could not batch,
+--   parallelize, or reorder the join. NSW empirically crashed at ~55 min
+--   producing 0 bytes on local M5 64GB.
+--
+--   Plain INNER JOIN (no LATERAL wrapper) frees the planner to pick its
+--   preferred shape — parallel sequential scan over address_principals plus
+--   per-row GIST index seek into the polygon table. This is the same plan
+--   gnaf-loader Part 5 gets (postgres-scripts/04-01b-bdy-tag-template.sql)
+--   and which completes VIC's full address set in ~2 min on the same hardware.
+--
+-- Why FIVE independent UPDATE passes instead of one joint INSERT with five
+-- LEFT JOINs + DISTINCT ON:
+--
+--   A single joint INSERT would compute the cartesian product of all five
+--   boundary tables for each address, then pick one tuple via DISTINCT ON.
+--   For an address sitting on a polygon edge in multiple boundary tables,
+--   the joint tiebreak picks the lowest-cartesian-tuple, which can choose
+--   a different (lga, ward) combination than the prior LATERAL form (which
+--   picked each table's lowest pid INDEPENDENTLY). Five separate UPDATE
+--   passes preserve the per-table independence exactly, so the byte-for-byte
+--   regression against fixtures/expected-output.ndjson stays clean.
+--
+-- Multi-polygon row multiplication safety (E1.15):
+--
+--   DISTINCT ON (ap.gnaf_pid) ORDER BY ap.gnaf_pid, {pid} guarantees AT MOST
+--   ONE source row per address per UPDATE. The UNIQUE INDEX on gnaf_pid
+--   below makes this structural — any future code path that inserts
+--   duplicates fails fast instead of silently producing duplicate addresses.
 DO $$
 DECLARE
   bdy_count bigint;
@@ -144,70 +167,95 @@ BEGIN
     RETURN;
   END IF;
 
-  RAISE NOTICE 'Running spatial join fallback (ce=%, lga=%, ward=%, se_lower=%, se_upper=%)', has_ce, has_lga, has_ward, has_se, has_se_upper;
+  RAISE NOTICE 'Running bulk spatial join fallback (ce=%, lga=%, ward=%, se_lower=%, se_upper=%)', has_ce, has_lga, has_ward, has_se, has_se_upper;
 
-  -- Build the insert dynamically based on which tables exist.
-  -- Each boundary table is matched via LEFT JOIN LATERAL (...) LIMIT 1 to
-  -- prevent multi-polygon row multiplication on boundary points (see comment
-  -- block above).
-  EXECUTE format($sql$
-    INSERT INTO gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries
-      (gnaf_pid, locality_pid, locality_name, postcode, state,
-       ce_pid, ce_name, lga_pid, lga_name, ward_pid, ward_name,
-       se_lower_pid, se_lower_name, se_upper_pid, se_upper_name)
-    SELECT
-      ap.gnaf_pid,
-      ap.locality_pid,
-      ap.locality_name,
-      ap.postcode,
-      ap.state,
-      %s AS ce_pid, %s AS ce_name,
-      %s AS lga_pid, %s AS lga_name,
-      %s AS ward_pid, %s AS ward_name,
-      %s AS se_lower_pid, %s AS se_lower_name,
-      %s AS se_upper_pid, %s AS se_upper_name
-    FROM gnaf___SCHEMA_VERSION__.address_principals ap
-    %s
-    %s
-    %s
-    %s
-    %s
-  $sql$,
-    -- ce_pid, ce_name
-    CASE WHEN has_ce THEN 'ce.ce_pid' ELSE 'NULL::text' END,
-    CASE WHEN has_ce THEN 'ce.name' ELSE 'NULL::text' END,
-    -- lga_pid, lga_name
-    CASE WHEN has_lga THEN 'lga.lga_pid' ELSE 'NULL::text' END,
-    CASE WHEN has_lga THEN 'lga.full_name' ELSE 'NULL::text' END,
-    -- ward_pid, ward_name
-    CASE WHEN has_ward THEN 'ward.ward_pid' ELSE 'NULL::text' END,
-    CASE WHEN has_ward THEN 'ward.name' ELSE 'NULL::text' END,
-    -- se_lower_pid, se_lower_name
-    CASE WHEN has_se THEN 'se.se_lower_pid' ELSE 'NULL::text' END,
-    CASE WHEN has_se THEN 'se.name' ELSE 'NULL::text' END,
-    -- se_upper_pid, se_upper_name
-    CASE WHEN has_se_upper THEN 'se_up.se_upper_pid' ELSE 'NULL::text' END,
-    CASE WHEN has_se_upper THEN 'se_up.name' ELSE 'NULL::text' END,
-    -- joins (LATERAL + LIMIT 1 + deterministic ORDER BY)
-    CASE WHEN has_ce THEN
-      'LEFT JOIN LATERAL (SELECT ce_pid, name FROM admin_bdys___SCHEMA_VERSION__.commonwealth_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY ce_pid LIMIT 1) ce ON true'
-      ELSE '' END,
-    CASE WHEN has_lga THEN
-      'LEFT JOIN LATERAL (SELECT lga_pid, full_name FROM admin_bdys___SCHEMA_VERSION__.local_government_areas WHERE ST_Intersects(ap.geom, geom) ORDER BY lga_pid LIMIT 1) lga ON true'
-      ELSE '' END,
-    CASE WHEN has_ward THEN
-      'LEFT JOIN LATERAL (SELECT ward_pid, name FROM admin_bdys___SCHEMA_VERSION__.local_government_wards WHERE ST_Intersects(ap.geom, geom) ORDER BY ward_pid LIMIT 1) ward ON true'
-      ELSE '' END,
-    CASE WHEN has_se THEN
-      'LEFT JOIN LATERAL (SELECT se_lower_pid, name FROM admin_bdys___SCHEMA_VERSION__.state_lower_house_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY se_lower_pid LIMIT 1) se ON true'
-      ELSE '' END,
-    CASE WHEN has_se_upper THEN
-      'LEFT JOIN LATERAL (SELECT se_upper_pid, name FROM admin_bdys___SCHEMA_VERSION__.state_upper_house_electorates WHERE ST_Intersects(ap.geom, geom) ORDER BY se_upper_pid LIMIT 1) se_up ON true'
-      ELSE '' END
-  );
+  -- Step 1 — INSERT one shell row per address with NULL boundary fields.
+  -- Subsequent UPDATE passes set the boundary columns where there's a match;
+  -- non-matching rows keep NULL (same as the prior LEFT JOIN LATERAL form).
+  INSERT INTO gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries
+    (gnaf_pid, locality_pid, locality_name, postcode, state)
+  SELECT ap.gnaf_pid, ap.locality_pid, ap.locality_name, ap.postcode, ap.state
+  FROM gnaf___SCHEMA_VERSION__.address_principals ap;
 
+  -- Reuse bdy_count for the inserted-row count (the early-return value above
+  -- is no longer needed past this point).
   GET DIAGNOSTICS bdy_count = ROW_COUNT;
-  RAISE NOTICE 'Spatial join fallback inserted % rows into address_principal_admin_boundaries', bdy_count;
+  RAISE NOTICE 'Spatial join fallback inserted % shell rows', bdy_count;
+
+  -- Step 2 — five independent UPDATEs, one per boundary table.
+  -- Each picks the lowest-pid polygon for each address INDEPENDENTLY of the
+  -- other boundary tables. Plain INNER JOIN (no LATERAL wrapper) lets the
+  -- planner pick its preferred parallel-aware spatial join plan.
+
+  IF has_ce THEN
+    UPDATE gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries dst
+       SET ce_pid = src.ce_pid, ce_name = src.name
+      FROM (
+        SELECT DISTINCT ON (ap.gnaf_pid)
+               ap.gnaf_pid, ce.ce_pid, ce.name
+          FROM gnaf___SCHEMA_VERSION__.address_principals ap
+          JOIN admin_bdys___SCHEMA_VERSION__.commonwealth_electorates ce
+            ON ST_Intersects(ap.geom, ce.geom)
+         ORDER BY ap.gnaf_pid, ce.ce_pid
+      ) src
+     WHERE dst.gnaf_pid = src.gnaf_pid;
+  END IF;
+
+  IF has_lga THEN
+    UPDATE gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries dst
+       SET lga_pid = src.lga_pid, lga_name = src.full_name
+      FROM (
+        SELECT DISTINCT ON (ap.gnaf_pid)
+               ap.gnaf_pid, lga.lga_pid, lga.full_name
+          FROM gnaf___SCHEMA_VERSION__.address_principals ap
+          JOIN admin_bdys___SCHEMA_VERSION__.local_government_areas lga
+            ON ST_Intersects(ap.geom, lga.geom)
+         ORDER BY ap.gnaf_pid, lga.lga_pid
+      ) src
+     WHERE dst.gnaf_pid = src.gnaf_pid;
+  END IF;
+
+  IF has_ward THEN
+    UPDATE gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries dst
+       SET ward_pid = src.ward_pid, ward_name = src.name
+      FROM (
+        SELECT DISTINCT ON (ap.gnaf_pid)
+               ap.gnaf_pid, ward.ward_pid, ward.name
+          FROM gnaf___SCHEMA_VERSION__.address_principals ap
+          JOIN admin_bdys___SCHEMA_VERSION__.local_government_wards ward
+            ON ST_Intersects(ap.geom, ward.geom)
+         ORDER BY ap.gnaf_pid, ward.ward_pid
+      ) src
+     WHERE dst.gnaf_pid = src.gnaf_pid;
+  END IF;
+
+  IF has_se THEN
+    UPDATE gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries dst
+       SET se_lower_pid = src.se_lower_pid, se_lower_name = src.name
+      FROM (
+        SELECT DISTINCT ON (ap.gnaf_pid)
+               ap.gnaf_pid, se.se_lower_pid, se.name
+          FROM gnaf___SCHEMA_VERSION__.address_principals ap
+          JOIN admin_bdys___SCHEMA_VERSION__.state_lower_house_electorates se
+            ON ST_Intersects(ap.geom, se.geom)
+         ORDER BY ap.gnaf_pid, se.se_lower_pid
+      ) src
+     WHERE dst.gnaf_pid = src.gnaf_pid;
+  END IF;
+
+  IF has_se_upper THEN
+    UPDATE gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries dst
+       SET se_upper_pid = src.se_upper_pid, se_upper_name = src.name
+      FROM (
+        SELECT DISTINCT ON (ap.gnaf_pid)
+               ap.gnaf_pid, se_up.se_upper_pid, se_up.name
+          FROM gnaf___SCHEMA_VERSION__.address_principals ap
+          JOIN admin_bdys___SCHEMA_VERSION__.state_upper_house_electorates se_up
+            ON ST_Intersects(ap.geom, se_up.geom)
+         ORDER BY ap.gnaf_pid, se_up.se_upper_pid
+      ) src
+     WHERE dst.gnaf_pid = src.gnaf_pid;
+  END IF;
 END $$;
 
 -- UNIQUE index on gnaf_pid (E1.15 — structural guard against multi-polygon
