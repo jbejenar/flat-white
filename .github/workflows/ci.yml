@@ -60,9 +60,9 @@ jobs:
       - name: Verify fixture container output
         run: |
           shopt -s nullglob
-          files=(output/flat-white-*.ndjson.gz)
+          files=(output/fixture.ndjson.gz)
           if [[ ${#files[@]} -ne 1 ]]; then
-            echo "ERROR: Expected exactly one gzipped output file, found ${#files[@]}"
+            echo "ERROR: Expected fixture.ndjson.gz, found ${#files[@]} matching files"
             ls -la output || true
             exit 1
           fi
