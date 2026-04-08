@@ -34,7 +34,7 @@ Core table — one row per principal address. **Primary driving table in address
 | confidence          | smallint             | NO       | 0-2                                    |
 | legal_parcel_id     | text                 | YES      |                                        |
 | mb_2016_code        | bigint               | YES      |                                        |
-| mb_2021_code        | bigint               | YES      | FK -> abs_2021_mb_lookup               |
+| mb_2021_code        | bigint               | YES      | FK -> abs_2021_mb                      |
 | latitude            | numeric(10,8)        | NO       | GDA2020                                |
 | longitude           | numeric(11,8)        | NO       | GDA2020                                |
 | geocode_type        | text                 | NO       |                                        |
@@ -47,7 +47,7 @@ Core table — one row per principal address. **Primary driving table in address
 - -> gnaf_202602.localities ON locality_pid
 - -> gnaf_202602.streets ON street_locality_pid
 - -> address_principal_admin_boundaries ON gnaf_pid
-- -> admin_bdys_202602.abs_2021_mb_lookup ON mb_2021_code = mb21_code
+- -> admin_bdys_202602.abs_2021_mb ON mb_2021_code = mb21_code
 - -> address_alias_lookup ON gnaf_pid = principal_pid
 - -> address_secondary_lookup ON gnaf_pid = primary_pid
 
@@ -224,9 +224,42 @@ All authority tables have: `code` (PK), `name` (varchar 50), `description`.
 
 ## admin_bdys_202602
 
-### abs_2021_mb_lookup (430 rows)
+### abs_2021_mb (430 rows)
 
-ABS mesh block to statistical area mapping.
+**Canonical mesh-block table** — matches the production table name created by
+gnaf-loader's `02-02d-prep-census-2021-bdys-tables.sql`. Both the fixture path
+and the production path now join this table by name. Populated at the end of
+`seed-postgres.sql` via `CREATE TABLE … AS SELECT FROM abs_2021_mb_lookup`
+(see back-compat shim below).
+
+| Column     | Type        | Notes                                   |
+| ---------- | ----------- | --------------------------------------- |
+| gid        | int         | Synthetic, ROW_NUMBER over mb21_code    |
+| mb21_code  | bigint      | FK from address_principals.mb_2021_code |
+| mb_cat     | text        | Mesh block category, e.g. 'COMMERCIAL'  |
+| sa1_21code | varchar(11) |                                         |
+| sa2_21code | varchar(9)  |                                         |
+| sa2_21name | text        |                                         |
+| sa3_21code | varchar(5)  |                                         |
+| sa3_21name | text        |                                         |
+| sa4_21code | varchar(3)  |                                         |
+| sa4_21name | text        |                                         |
+| gcc_21code | text        | Greater capital city statistical area   |
+| gcc_21name | text        |                                         |
+| state      | text        |                                         |
+
+**Known gap (E1.22):** this fixture table has no `geom` column. The production
+table populated by gnaf-loader has a PostGIS polygon column. Anything that adds
+a spatial query on `abs_2021_mb` will silently break against the fixture.
+Tracked by ROADMAP ticket E1.22 alongside the `extract-fixtures.sh` repair.
+
+### abs_2021_mb_lookup (430 rows — back-compat shim)
+
+Original fixture-only denormalized lookup table. Same column data as
+`abs_2021_mb` but without the synthetic `gid`. Retained as a back-compat shim
+for any external tooling that historically referenced the lookup name. **Not
+joined by any of our SQL** — both fixture and production paths read
+`abs_2021_mb` directly.
 
 | Column     | Type        | Notes                                       |
 | ---------- | ----------- | ------------------------------------------- |
@@ -242,26 +275,6 @@ ABS mesh block to statistical area mapping.
 | gcc_21code | text        | Greater capital city statistical area       |
 | gcc_21name | text        |                                             |
 | state      | text        |                                             |
-
-### abs_2021_mb (430 rows — fixture mirror)
-
-Identical column data to `abs_2021_mb_lookup`, plus a synthetic `gid` column.
-Created at the end of `seed-postgres.sql` via `CREATE TABLE … AS SELECT`. Exists
-so the production (`--materialize`) flatten path — which reads `abs_2021_mb`,
-populated by gnaf-loader from shapefiles in production — produces byte-identical
-output to the legacy path against the fixture.
-
-**Known gap:** the mirror has no `geom` column. The production table populated
-by gnaf-loader has a PostGIS polygon column. Anything that adds a spatial query
-on `abs_2021_mb` will silently break against the fixture until E1.10 lands real
-shapefile fixtures.
-
-| Column    | Type      | Notes                                |
-| --------- | --------- | ------------------------------------ |
-| gid       | int       | Synthetic, ROW_NUMBER over mb21_code |
-| mb21_code | bigint    | Mirrors `abs_2021_mb_lookup`         |
-| (others)  | (same)    | Same as `abs_2021_mb_lookup`         |
-| _geom_    | _missing_ | Production has PostGIS polygon       |
 
 ---
 

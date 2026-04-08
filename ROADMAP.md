@@ -5136,6 +5136,98 @@ Origin: "permanent fix" PR (this PR). Currently p2-medium because the 360-min ti
 
 ---
 
+### Ticket E1.22 — Fix extract-fixtures.sh fixture/prod naming divergence
+
+```yaml
+id: E1.22
+title: Repair extract-fixtures.sh — references abs_2021_mb_lookup which gnaf-loader does not create
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer who wants to refresh the committed fixture from a real gnaf-loader VIC load, I need `scripts/extract-fixtures.sh` to actually run end-to-end against modern gnaf-loader, instead of failing on a non-existent table.
+
+## Problem Statement
+
+`scripts/extract-fixtures.sh` references `${ADMIN_SCHEMA}.abs_2021_mb_lookup` in three places (lines 167, 262, 391-398):
+
+```bash
+# Line 167 — schema-only pg_dump
+-t "${ADMIN_SCHEMA}.abs_2021_mb_lookup"
+
+# Line 262 — data extraction
+extract_copy_data "${ADMIN_SCHEMA}.abs_2021_mb_lookup" "*" \
+  "WHERE mb21_code IN (...)"
+
+# Lines 391-398 — emits the mirror block into the generated seed-postgres.sql
+DROP TABLE IF EXISTS ${ADMIN_SCHEMA}.abs_2021_mb;
+CREATE TABLE ${ADMIN_SCHEMA}.abs_2021_mb AS
+SELECT ... FROM ${ADMIN_SCHEMA}.abs_2021_mb_lookup;
+```
+
+But gnaf-loader does NOT create `abs_2021_mb_lookup`. It creates `admin_bdys.abs_2021_mb` (no `_lookup` suffix) — see `gnaf-loader/postgres-scripts/02-02d-prep-census-2021-bdys-tables.sql:7`. The `abs_2021_mb_lookup` name is fixture-only, originating from an older fixture-authoring vintage.
+
+This means `extract-fixtures.sh` would fail with `relation "..." does not exist` if anyone tried to re-run it against a current gnaf-loader VIC load. The script has been broken since the gnaf-loader submodule was bumped past whatever version originally had the `_lookup` table — possibly years.
+
+This is the same fixture/prod divergence class that PR #99's validator regression exposed and that PRs A and B (post-#99) cleaned up in the live SQL paths. extract-fixtures.sh was deferred from those PRs to keep their scope tight.
+
+## Approach
+
+Two questions to resolve:
+
+1. **What columns to extract?** Production `admin_bdys.abs_2021_mb` has 24 columns including PostGIS geometry. The flatten SQL only uses 11 of them (mb21_code, mb_cat, sa1_21code, sa2_21code, sa2_21name, sa3_21code, sa3_21name, sa4_21code, sa4_21name, gcc_21code, gcc_21name) plus state. Extract the full 24 (matches production exactly, larger fixture) or just the 11 (smaller fixture, but a partial view of the production table)?
+
+2. **What about geometry?** If we extract geom, the fixture grows substantially. If we don't, we cement the "KNOWN GAP" forever — anything that adds a spatial query on `abs_2021_mb` will silently break against the fixture (the same hazard the comment at `seed-postgres.sql:8801` warned about).
+
+Recommended approach: extract the **subset of columns the flatten SQL actually uses**, NO geom. This keeps the fixture size manageable and matches the existing fixture's schema (which is also no-geom). When/if a future code path adds a spatial query on `abs_2021_mb`, that change owns adding the geometry to the fixture (and the test that motivates needing it).
+
+Update `extract-fixtures.sh` to:
+
+- Reference `${ADMIN_SCHEMA}.abs_2021_mb` everywhere (drop `_lookup`)
+- Extract only the columns the flatten SQL uses
+- Drop the mirror block at lines 378-398 (no longer needed after PRs A and B make `abs_2021_mb` the canonical fixture name)
+
+After running the updated script, regenerate the committed fixture (`fixtures/seed-postgres.sql`) and `fixtures/expected-output.ndjson`. The output may differ in the synthesized `gid` ordering — that's acceptable if the byte-identical regression is updated in the same change.
+
+## Definition of Done
+
+- [ ] `extract-fixtures.sh` references `abs_2021_mb` (no `_lookup`) in all three locations
+- [ ] Script runs end-to-end against a modern gnaf-loader VIC load without errors
+- [ ] Fixture extracts only the columns the flatten SQL uses
+- [ ] Mirror block at lines 378-398 of `extract-fixtures.sh` removed
+- [ ] Regenerated `fixtures/seed-postgres.sql` and `fixtures/expected-output.ndjson` committed
+- [ ] `./scripts/build-fixture-only.sh` produces byte-identical output against the new baseline
+- [ ] All CI tests pass against the regenerated fixture
+- [ ] Update CHANGELOG / ROADMAP, mark E1.22 done
+
+## Scope
+
+### In
+
+- `scripts/extract-fixtures.sh` repair
+- One round of fixture regeneration + new baseline `expected-output.ndjson`
+- A short note in `fixtures/README.md` clarifying the canonical name is now `abs_2021_mb`
+
+### Out
+
+- Adding polygon geometry to the fixture (separate ticket if/when needed)
+- Removing the back-compat `abs_2021_mb_lookup` table from the regenerated `seed-postgres.sql` (low risk, but explicitly out of scope to keep the change minimal)
+- Auditing every other potential fixture/prod naming divergence (worth a separate "fixture audit" ticket)
+
+## Notes
+
+Origin: discovered during the PR B (`fix-fixture-prod-divergence`) audit pass. The divergence existed before PR #99's validator landed; PR #99 just exposed it more loudly. PRs A and B cleaned up the live SQL paths but explicitly deferred this script repair to keep scope tight and avoid touching the regression baseline in the same PR as the validator unblock.
+
+Risk: low. The script is manual (not CI), nobody is currently blocked. Promote priority if/when someone needs to refresh the fixture from a real production load.
+
+---
+
 ## Phase P5 — AWS Mirror (Deferred)
 
 **Target:** Post-M4 · **Status:** Planned · **Rationale:** GitHub Releases is the primary distribution. S3 is redundancy — valuable but not required for the first release. Deferred from Phase P3 to avoid overloading the first release week.

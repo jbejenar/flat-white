@@ -105,10 +105,10 @@ The flatten pipeline code must reference these schema names. When a new G-NAF qu
 
 ## ABS statistical area lookup
 
-The fixture includes a lightweight `admin_bdys_202602.abs_2021_mb_lookup` table (430 rows, no geometry) that maps mesh block codes to the full ABS statistical area hierarchy:
+The fixture includes a lightweight `admin_bdys_202602.abs_2021_mb` table (430 rows, no geometry) that maps mesh block codes to the full ABS statistical area hierarchy:
 
 ```
-address_principals.mb_2021_code → abs_2021_mb_lookup.mb21_code
+address_principals.mb_2021_code → abs_2021_mb.mb21_code
   → mb_cat (mesh block category: Residential, Commercial, etc.)
   → sa1_21code
   → sa2_21code, sa2_21name
@@ -117,4 +117,6 @@ address_principals.mb_2021_code → abs_2021_mb_lookup.mb21_code
   → gcc_21code, gcc_21name (GCCSA: Greater Melbourne, Rest of Vic., etc.)
 ```
 
-This is a derived table (not from gnaf-loader directly) — it extracts non-geometry columns from `admin_bdys_202602.abs_2021_mb` to avoid committing multi-megabyte polygon data. The flatten pipeline should join on `mb21_code` to populate the `boundaries.meshBlock`, `boundaries.sa1` through `boundaries.gccsa` output fields.
+The fixture's `abs_2021_mb` matches the production table name created by gnaf-loader's `02-02d-prep-census-2021-bdys-tables.sql`, but only carries the columns the flatten SQL actually uses (no PostGIS polygon — committing real shapefile geometry would inflate the fixture by multiple megabytes). The flatten pipeline joins on `mb21_code` to populate the `boundaries.meshBlock`, `boundaries.sa1` through `boundaries.gccsa` output fields.
+
+A back-compat shim table `admin_bdys_202602.abs_2021_mb_lookup` is also created (same column data, no `gid`). It is not joined by any of our SQL — retained only for any external tooling that historically referenced the lookup name. ROADMAP ticket E1.22 tracks the eventual removal of the shim along with the `extract-fixtures.sh` repair.

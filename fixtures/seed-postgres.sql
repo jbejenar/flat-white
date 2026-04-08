@@ -8793,15 +8793,20 @@ FCS714824244	2017-07-26	\N	714824244	\N	\N	FCS	2	\N	\N	\N	144.95513882	-37.80319
 \.
 
 
--- Mirror abs_2021_mb_lookup as abs_2021_mb so the materialize/production SQL path
--- (sql/address_full_main.sql, which reads admin_bdys_202602.abs_2021_mb) produces
--- byte-identical output to the legacy path against the fixture. In production
--- gnaf-loader creates abs_2021_mb directly from shapefiles.
+-- abs_2021_mb is the canonical fixture table for the mesh-block lookup,
+-- matching the production table name created by gnaf-loader's
+-- 02-02d-prep-census-2021-bdys-tables.sql. Both the fixture path
+-- (sql/address_full.sql) and the production path (sql/address_full_main.sql)
+-- now join this table by name — no per-environment substitution needed.
 --
--- KNOWN GAP: this mirror has no `geom` column. The production table populated by
--- gnaf-loader has a PostGIS polygon. Anything that adds a spatial query on
--- abs_2021_mb will silently break against the fixture. E1.10 (shapefile fixtures)
--- will replace this stub with real per-LGA shapefile loading.
+-- abs_2021_mb_lookup (created above at line ~874) remains as a back-compat
+-- shim for any external tooling that historically referenced the lookup name.
+-- It is not joined by any of our SQL.
+--
+-- KNOWN GAP: this fixture has no `geom` column on abs_2021_mb. The production
+-- table populated by gnaf-loader has a PostGIS polygon. Anything that adds a
+-- spatial query on abs_2021_mb will silently break against the fixture.
+-- Tracked as ROADMAP E1.22 (alongside the fixture-extraction tooling repair).
 DROP TABLE IF EXISTS admin_bdys_202602.abs_2021_mb;
 CREATE TABLE admin_bdys_202602.abs_2021_mb AS
 SELECT

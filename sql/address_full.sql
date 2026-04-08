@@ -244,7 +244,13 @@ LEFT JOIN gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries ab
   ON ab.gnaf_pid = ap.gnaf_pid
 
 -- ABS mesh block lookup
-LEFT JOIN admin_bdys___SCHEMA_VERSION__.abs_2021_mb_lookup mb
+-- Mesh-block table — production gnaf-loader creates this in
+-- 02-02d-prep-census-2021-bdys-tables.sql. The fixture also creates an
+-- `abs_2021_mb_lookup` sibling table (no-geometry denormalized lookup) for
+-- back-compat with older fixture-authoring tooling, but this join targets
+-- the production name so the fixture and production paths reference the
+-- same table.
+LEFT JOIN admin_bdys___SCHEMA_VERSION__.abs_2021_mb mb
   ON mb.mb21_code = ap.mb_2021_code
 
 -- Aliases and secondaries
