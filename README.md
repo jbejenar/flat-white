@@ -401,6 +401,30 @@ See [ROADMAP.md](ROADMAP.md) for the full 66-ticket plan across 8 phases. [First
 
 ---
 
+## Documentation
+
+Full reference docs live in [`docs/`](docs/):
+
+**Reference:**
+
+- [DOCUMENT-SCHEMA.md](docs/DOCUMENT-SCHEMA.md) — output document schema, every field, every nested object, type + nullability + example
+- [FIELD-PROVENANCE.md](docs/FIELD-PROVENANCE.md) — maps every output field back to its source G-NAF table, column, and transformation
+- [BOUNDARIES.md](docs/BOUNDARIES.md) — how boundary enrichment works, the two-path architecture, every failure mode that's bitten us, and the layered defence
+- [PERFORMANCE.md](docs/PERFORMANCE.md) — established baseline timings on M2 Max + free runners
+
+**Operations:**
+
+- [RUNBOOK.md](docs/RUNBOOK.md) — incident response, common failures, recovery procedures
+- [RELEASING.md](docs/RELEASING.md) — quarterly release procedure, patch releases, version discovery
+- [SELF-HOSTED-RUNNER.md](docs/SELF-HOSTED-RUNNER.md) — when and how to escalate from free runners
+- [NSW-MEMORY-ANALYSIS.md](docs/NSW-MEMORY-ANALYSIS.md) — NSW-scale memory profiling and tuning notes
+
+**Decisions:**
+
+- [docs/decisions/](docs/decisions/) — architectural decision records (NDJSON over Parquet, ephemeral Postgres, submodule not fork, streaming flatten, fixture-first dev, matrix builds on free runners, GitHub Releases for distribution)
+
+---
+
 ## Attribution
 
 > G-NAF &copy; Geoscape Australia licensed by the Commonwealth of Australia under the Open G-NAF End User Licence Agreement.
