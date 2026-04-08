@@ -301,8 +301,10 @@ elif [[ -n "$RESTORE_DB" ]]; then
   }
   DUMP_SIZE=$(du -h "$RESTORE_DB" | cut -f1)
   log "Database restored from $DUMP_SIZE dump"
+  # validate-db-cache.sh prints "[cache-validate] FAIL: <reason>" to stderr
+  # on the failing check; that line is the operator-actionable detail.
   if ! /app/scripts/validate-db-cache.sh; then
-    log "ERROR: Restored database failed validation"
+    log "ERROR: Restored database failed validation (see [cache-validate] FAIL line above for reason)"
     exit 2
   fi
   stage_end
@@ -374,6 +376,16 @@ else
 
   if [[ $LOAD_EXIT -ne 0 ]]; then
     log "ERROR: gnaf-loader failed"
+    exit 2
+  fi
+  stage_end
+
+  # Stage 3a: Validate post-load DB state. Catches silent regressions
+  # (missing boundary polygon tables, empty raw tables) BEFORE we propagate
+  # them via cache dump or burn time on flatten.
+  stage_start "validate"
+  if ! /app/scripts/validate-db-cache.sh; then
+    log "ERROR: Post-load database failed validation (see [cache-validate] FAIL line above for reason)"
     exit 2
   fi
   stage_end

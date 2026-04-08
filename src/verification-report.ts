@@ -25,12 +25,27 @@ import type { EnumSets, EnumUnknownCounts } from "./verify.js";
 const DEFAULT_STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
 const VALID_STATES = new Set(DEFAULT_STATES);
 
+/** Per-field minimum boundary coverage thresholds (percent, 0-100). */
+export type BoundaryCoverageThresholds = Partial<
+  Record<
+    "lga" | "ward" | "stateElectorate" | "commonwealthElectorate" | "meshBlock" | "sa1" | "sa2",
+    number
+  >
+>;
+
+export interface CoverageBelowThreshold {
+  field: string;
+  actual: number;
+  threshold: number;
+}
+
 export interface StateVerification {
   state: string;
   rowCount: number;
   schemaValid: boolean;
   schemaErrors: number;
   boundaryCoverage: Record<string, number>;
+  coverageBelowThreshold: CoverageBelowThreshold[];
   qualityErrors: number;
   qualityWarnings: number;
   duplicatePids: number;
@@ -52,10 +67,11 @@ export interface VerificationReport {
  * Since verify() expects a file path, we decompress to a temp pipeline.
  * Instead, we directly stream and apply the same checks.
  */
-async function verifyGzippedState(
+export async function verifyGzippedState(
   gzPath: string,
   state: string,
   enumSets?: EnumSets,
+  thresholds?: BoundaryCoverageThresholds,
 ): Promise<StateVerification> {
   let rowCount = 0;
   let schemaErrors = 0;
@@ -169,18 +185,48 @@ async function verifyGzippedState(
 
   const enumErrorCount = Object.values(enumUnknownCounts).reduce((s, n) => s + n, 0);
 
+  // Threshold evaluation runs regardless of rowCount. An empty state file
+  // (rowCount === 0) is effectively 0% coverage for every field — treating it
+  // as "no thresholds to check" would let a regression that produces an empty
+  // NSW silently ship, because there are also no schema/quality/enum/dupe
+  // errors to flag on zero rows. Coerce missing values to 0 so empty states
+  // explicitly fail every configured threshold.
+  const coverageBelowThreshold: CoverageBelowThreshold[] = [];
+  if (thresholds) {
+    for (const [field, threshold] of Object.entries(thresholds) as [
+      keyof BoundaryCoverageThresholds,
+      number,
+    ][]) {
+      if (threshold === undefined) continue;
+      const actual = rowCount > 0 ? (boundaryCoverage[field] ?? 0) : 0;
+      if (actual < threshold) {
+        coverageBelowThreshold.push({ field, actual, threshold });
+      }
+    }
+  }
+
   return {
     state,
     rowCount,
     schemaValid: schemaErrors === 0,
     schemaErrors,
     boundaryCoverage,
+    coverageBelowThreshold,
     qualityErrors,
     qualityWarnings,
     duplicatePids,
     enumUnknownCounts,
+    // Independent safety: a zero-row state file is always a failure, even if
+    // no thresholds are configured. Every schema/quality/enum check is
+    // vacuously "passing" on an empty file, so without this gate the function
+    // would return passed=true for an empty artifact.
     passed:
-      schemaErrors === 0 && qualityErrors === 0 && duplicatePids === 0 && enumErrorCount === 0,
+      rowCount > 0 &&
+      schemaErrors === 0 &&
+      qualityErrors === 0 &&
+      duplicatePids === 0 &&
+      enumErrorCount === 0 &&
+      coverageBelowThreshold.length === 0,
   };
 }
 
@@ -230,6 +276,24 @@ export function formatVerificationReport(report: VerificationReport): string {
   }
 
   lines.push("");
+
+  // Coverage thresholds
+  const totalCoverageFailures = report.states.reduce(
+    (sum, s) => sum + s.coverageBelowThreshold.length,
+    0,
+  );
+  if (totalCoverageFailures > 0) {
+    lines.push("## Boundary Coverage Threshold: FAIL");
+    lines.push("");
+    lines.push("| State | Field | Actual % | Threshold % |");
+    lines.push("|-------|-------|---------:|------------:|");
+    for (const s of report.states) {
+      for (const c of s.coverageBelowThreshold) {
+        lines.push(`| ${s.state} | ${c.field} | ${c.actual} | ${c.threshold} |`);
+      }
+    }
+    lines.push("");
+  }
 
   // Enum field validation
   const totalEnumErrors = report.states.reduce(
@@ -287,6 +351,52 @@ function findStateFiles(
   return found;
 }
 
+const VALID_THRESHOLD_FIELDS = new Set<keyof BoundaryCoverageThresholds>([
+  "lga",
+  "ward",
+  "stateElectorate",
+  "commonwealthElectorate",
+  "meshBlock",
+  "sa1",
+  "sa2",
+]);
+
+/**
+ * Parse a boundary coverage threshold spec like "lga=99,ward=95,sa1=99".
+ * Returns undefined when the spec is missing/empty (no thresholds applied).
+ * Throws on unknown fields or non-numeric values so a typo fails loud.
+ */
+export function parseBoundaryThresholdsArg(
+  raw: string | undefined,
+): BoundaryCoverageThresholds | undefined {
+  if (!raw) return undefined;
+
+  const out: BoundaryCoverageThresholds = {};
+  for (const piece of raw.split(",")) {
+    const trimmed = piece.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split("=");
+    if (parts.length !== 2) {
+      throw new Error(`Invalid boundary threshold spec: '${trimmed}' (expected 'field=value')`);
+    }
+    const rawField = parts[0].trim();
+    const rawValue = parts[1].trim();
+    const field = rawField as keyof BoundaryCoverageThresholds;
+    if (!rawField || !VALID_THRESHOLD_FIELDS.has(field)) {
+      throw new Error(`Unknown boundary threshold field: '${rawField}'`);
+    }
+    if (!rawValue) {
+      throw new Error(`Missing threshold value for ${field}`);
+    }
+    const value = Number(rawValue);
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+      throw new Error(`Invalid threshold value for ${field}: '${rawValue}' (expected 0-100)`);
+    }
+    out[field] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export function parseStatesArg(raw: string | undefined): string[] {
   if (!raw) {
     return [...DEFAULT_STATES];
@@ -328,6 +438,13 @@ async function main(): Promise<void> {
       : undefined;
   const states = parseStatesArg(statesArg);
 
+  const thresholdsIdx = process.argv.indexOf("--boundary-thresholds");
+  const thresholdsArg =
+    thresholdsIdx !== -1 && thresholdsIdx + 1 < process.argv.length
+      ? process.argv[thresholdsIdx + 1]
+      : undefined;
+  const thresholds = parseBoundaryThresholdsArg(thresholdsArg);
+
   // Read metadata.json for version
   const metadataPath = join(assetDir, "metadata.json");
   let version = "unknown";
@@ -360,6 +477,7 @@ async function main(): Promise<void> {
         schemaValid: false,
         schemaErrors: 0,
         boundaryCoverage: {},
+        coverageBelowThreshold: [],
         qualityErrors: 0,
         qualityWarnings: 0,
         duplicatePids: 0,
@@ -371,7 +489,7 @@ async function main(): Promise<void> {
     }
 
     try {
-      const result = await verifyGzippedState(path, state);
+      const result = await verifyGzippedState(path, state, undefined, thresholds);
       stateResults.push(result);
       totalCount += result.rowCount;
       if (!result.passed) overallPassed = false;
@@ -384,6 +502,7 @@ async function main(): Promise<void> {
         schemaValid: false,
         schemaErrors: 1,
         boundaryCoverage: {},
+        coverageBelowThreshold: [],
         qualityErrors: 1,
         qualityWarnings: 0,
         duplicatePids: 0,
