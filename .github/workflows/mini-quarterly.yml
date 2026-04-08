@@ -1,0 +1,160 @@
+name: Mini Quarterly
+
+on:
+  # Manual-only until we have a committed reduced-data path.
+  # Running OT/ACT/NSW against live quarterly data on every PR would be too slow
+  # and too expensive to serve as a required CI check.
+  workflow_dispatch:
+    inputs:
+      gnaf_version:
+        description: "G-NAF version (e.g. 2026.05). Leave empty to auto-discover."
+        required: false
+        default: ""
+      runner:
+        description: "Runner label"
+        required: false
+        default: "ubuntu-latest"
+
+env:
+  DOCKER_IMAGE: flat-white
+  DB_CACHE_VERSION: v2
+
+jobs:
+  setup:
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        env:
+          GNAF_INPUT: ${{ inputs.gnaf_version }}
+        run: |
+          if [[ -n "$GNAF_INPUT" ]]; then
+            if [[ ! "$GNAF_INPUT" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
+              echo "ERROR: Invalid gnaf_version format: '$GNAF_INPUT' (expected YYYY.MM)"
+              exit 1
+            fi
+            VERSION="$GNAF_INPUT"
+          else
+            VERSION="$(python3 scripts/discover_latest_release.py)"
+            if [[ -z "$VERSION" ]]; then
+              echo "ERROR: Failed to determine latest quarterly G-NAF release from data.gov.au"
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        state: [OT, ACT, NSW]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.DOCKER_IMAGE }}:mini
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Restore gnaf-loader database dump
+        id: db-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          restore-keys: |
+            mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-
+
+      - name: Run pipeline for ${{ matrix.state }}
+        run: |
+          CACHE_HIT="${{ steps.db-cache.outputs.cache-hit }}" \
+          CACHE_MATCHED_KEY="${{ steps.db-cache.outputs.cache-matched-key }}" \
+          ./scripts/run-quarterly-state.sh "${{ matrix.state }}" "${{ needs.setup.outputs.version }}" "${{ env.DOCKER_IMAGE }}:mini"
+
+      - name: Decide cache save
+        if: always()
+        id: cache-save
+        run: |
+          CACHE_FILE="cache/${{ matrix.state }}.dump"
+          TELEMETRY_FILE="output/quarterly-telemetry-${{ matrix.state }}.json"
+
+          if [[ ! -f "$CACHE_FILE" ]]; then
+            echo "save=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "${{ steps.db-cache.outputs.cache-matched-key }}" ]]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -f "$TELEMETRY_FILE" ]] && python3 -c "import json, sys; print(str(json.load(open(sys.argv[1], encoding='utf-8')).get('restoreValidationFailed', False)).lower())" "$TELEMETRY_FILE" | grep -q '^true$'; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "save=false" >> "$GITHUB_OUTPUT"
+
+      - name: Save repaired or newly-built gnaf-loader dump
+        if: always() && steps.cache-save.outputs.save == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+
+      - name: Verify output
+        run: |
+          STATE_LOWER=$(echo "${{ matrix.state }}" | tr '[:upper:]' '[:lower:]')
+          VERSION="${{ needs.setup.outputs.version }}"
+          EXPECTED="output/flat-white-${VERSION}-${STATE_LOWER}.ndjson.gz"
+
+          if [[ ! -f "$EXPECTED" ]]; then
+            echo "ERROR: Expected output file not found: $EXPECTED"
+            ls -la output/
+            exit 1
+          fi
+
+          gzip -t "$EXPECTED"
+          echo "✓ gzip integrity OK"
+
+          LINE_COUNT=$(zcat "$EXPECTED" | wc -l | tr -d ' ')
+          echo "✓ ${{ matrix.state }}: $LINE_COUNT documents"
+
+          if [[ "$LINE_COUNT" -eq 0 ]]; then
+            echo "ERROR: Output file is empty"
+            exit 1
+          fi
+
+      - name: Upload mini-quarterly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-quarterly-output-${{ matrix.state }}
+          path: |
+            output/flat-white-*.ndjson.gz
+          retention-days: 7
+
+      - name: Upload mini-quarterly telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-quarterly-telemetry-${{ matrix.state }}
+          path: |
+            output/quarterly-telemetry-${{ matrix.state }}.json
+          retention-days: 7

@@ -34,6 +34,7 @@ on:
 env:
   # Default version: latest published quarterly release for the trigger date
   DOCKER_IMAGE: flat-white
+  DB_CACHE_VERSION: v2
   # Optional manual release-data overrides.
   # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery > Feb 2026 fallback for 2026.02 only
   DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || '' }}
@@ -129,107 +130,54 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Cache gnaf-loader database dump (E1.06)
+      - name: Restore gnaf-loader database dump (E1.06)
         id: db-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: cache
-          key: gnaf-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**') }}
-          # No restore-keys — gnaf-loader schema changes must trigger a full rebuild
-
-      - name: Prepare cache arguments
-        id: cache-args
-        run: |
-          mkdir -p cache
-          CACHE_FILE="cache/${{ matrix.state }}.dump"
-          if [[ "${{ steps.db-cache.outputs.cache-hit }}" == "true" && -f "$CACHE_FILE" ]]; then
-            echo "Cache hit — will restore from dump"
-            echo "flags=--restore-db /cache/${{ matrix.state }}.dump" >> "$GITHUB_OUTPUT"
-            echo "hit=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Cache miss — will dump after load"
-            echo "flags=--dump-db /cache/${{ matrix.state }}.dump" >> "$GITHUB_OUTPUT"
-            echo "hit=false" >> "$GITHUB_OUTPUT"
-          fi
+          key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          restore-keys: |
+            gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-
 
       - name: Run pipeline for ${{ matrix.state }}
         run: |
-          mkdir -p output
+          CACHE_HIT="${{ steps.db-cache.outputs.cache-hit }}" \
+          CACHE_MATCHED_KEY="${{ steps.db-cache.outputs.cache-matched-key }}" \
+          DOWNLOAD_URL_GNAF_EFFECTIVE="${{ env.DOWNLOAD_URL_GNAF_EFFECTIVE }}" \
+          DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE="${{ env.DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE }}" \
+          ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE="${{ env.ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE }}" \
+          ./scripts/run-quarterly-state.sh "${{ matrix.state }}" "${{ needs.setup.outputs.version }}" "${{ env.DOCKER_IMAGE }}:build"
 
-          MAX_RETRIES=2
-          ATTEMPT=0
-          SUCCESS=false
+      - name: Decide cache save
+        if: always()
+        id: cache-save
+        run: |
+          CACHE_FILE="cache/${{ matrix.state }}.dump"
+          TELEMETRY_FILE="output/quarterly-telemetry-${{ matrix.state }}.json"
 
-          while [[ $ATTEMPT -le $MAX_RETRIES ]]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            echo "--- Attempt $ATTEMPT of $((MAX_RETRIES + 1)) for ${{ matrix.state }} ---"
-
-            set +e
-            docker run --rm \
-              -v "$(pwd)/output:/output" \
-              -v "$(pwd)/cache:/cache" \
-              -e "GNAF_VERSION=${{ needs.setup.outputs.version }}" \
-              -e "DOWNLOAD_URL_GNAF=${{ env.DOWNLOAD_URL_GNAF_EFFECTIVE }}" \
-              -e "DOWNLOAD_URL_ADMIN_BDYS=${{ env.DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE }}" \
-              -e "ADMIN_BDYS_EXTRACTED_DIR=${{ env.ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE }}" \
-              ${{ env.DOCKER_IMAGE }}:build \
-              --states ${{ matrix.state }} \
-              --split-states \
-              --compress \
-              --output /output \
-              ${{ steps.cache-args.outputs.flags }} 2>&1 | tee /tmp/pipeline-output.log
-            EXIT_CODE=${PIPESTATUS[0]}
-            set -e
-
-            if [[ $EXIT_CODE -eq 0 ]]; then
-              SUCCESS=true
-              if [[ $ATTEMPT -gt 1 ]]; then
-                echo "::warning::${{ matrix.state }}: succeeded on attempt $ATTEMPT after $((ATTEMPT - 1)) retry(ies)"
-              fi
-              break
-            fi
-
-            # Classify failure: transient vs persistent
-            # Transient: OOM kill (137), network/download errors, container killed
-            # Persistent: schema validation, flatten logic errors, assertion failures
-            IS_TRANSIENT=false
-
-            if [[ $EXIT_CODE -eq 137 ]]; then
-              # OOM kill (SIGKILL)
-              IS_TRANSIENT=true
-              echo "::warning::${{ matrix.state }}: OOM kill detected (exit 137) on attempt $ATTEMPT"
-            elif [[ $EXIT_CODE -eq 143 ]]; then
-              # SIGTERM (container killed externally)
-              IS_TRANSIENT=true
-              echo "::warning::${{ matrix.state }}: container killed (exit 143) on attempt $ATTEMPT"
-            elif grep -qiE '(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|ENOTFOUND|download failed|fetch failed|socket hang up)' /tmp/pipeline-output.log 2>/dev/null; then
-              IS_TRANSIENT=true
-              echo "::warning::${{ matrix.state }}: network/download error detected on attempt $ATTEMPT"
-            elif grep -qiE '(could not resize shared memory|no space left on device|cannot allocate memory)' /tmp/pipeline-output.log 2>/dev/null; then
-              IS_TRANSIENT=true
-              echo "::warning::${{ matrix.state }}: resource exhaustion detected on attempt $ATTEMPT"
-            fi
-
-            if [[ "$IS_TRANSIENT" == "false" ]]; then
-              echo "::error::${{ matrix.state }}: persistent failure on attempt $ATTEMPT (exit code $EXIT_CODE) — not retrying"
-              exit $EXIT_CODE
-            fi
-
-            if [[ $ATTEMPT -le $MAX_RETRIES ]]; then
-              echo "Transient failure — retrying in 30 seconds..."
-              sleep 30
-              # Clean output directory for retry
-              rm -f output/flat-white-*.ndjson.gz output/${{ matrix.state }}.count
-            fi
-          done
-
-          if [[ "$SUCCESS" != "true" ]]; then
-            echo "::error::${{ matrix.state }}: failed after $ATTEMPT attempts (transient failures exhausted retries)"
-            # NOTE: If restore fails on every retry, the cache dump may be corrupt or
-            # incompatible. Recovery: delete the GitHub Actions cache entry for this
-            # state from the Actions > Caches UI and re-run the workflow.
-            exit 1
+          if [[ ! -f "$CACHE_FILE" ]]; then
+            echo "save=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          if [[ -z "${{ steps.db-cache.outputs.cache-matched-key }}" ]]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -f "$TELEMETRY_FILE" ]] && python3 -c "import json, sys; print(str(json.load(open(sys.argv[1], encoding='utf-8')).get('restoreValidationFailed', False)).lower())" "$TELEMETRY_FILE" | grep -q '^true$'; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "save=false" >> "$GITHUB_OUTPUT"
+
+      - name: Save repaired or newly-built gnaf-loader dump
+        if: always() && steps.cache-save.outputs.save == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
 
       - name: Report cache status
         if: always()
@@ -240,7 +188,8 @@ jobs:
           else
             echo "No cache file present"
           fi
-          echo "Cache hit: ${{ steps.db-cache.outputs.cache-hit }}"
+          echo "Cache matched key: ${{ steps.db-cache.outputs.cache-matched-key }}"
+          echo "Cache exact hit: ${{ steps.db-cache.outputs.cache-hit }}"
 
       - name: Verify output
         run: |
@@ -277,6 +226,15 @@ jobs:
           path: |
             output/flat-white-*.ndjson.gz
             output/${{ matrix.state }}.count
+          retention-days: 7
+
+      - name: Upload per-state telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarterly-telemetry-${{ matrix.state }}
+          path: |
+            output/quarterly-telemetry-${{ matrix.state }}.json
           retention-days: 7
 
   # ---------------------------------------------------------------------------

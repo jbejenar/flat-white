@@ -60,6 +60,8 @@ COPY --from=builder /app/sql/ ./sql/
 
 # Copy fixtures (for --fixture-only mode)
 COPY fixtures/seed-postgres.sql ./fixtures/seed-postgres.sql
+COPY fixtures/seed-admin-bdys.sql ./fixtures/seed-admin-bdys.sql
+COPY fixtures/prep-admin-bdys.sql ./fixtures/prep-admin-bdys.sql
 COPY fixtures/expected-output.ndjson ./fixtures/expected-output.ndjson
 
 # Copy gnaf-loader submodule
@@ -68,10 +70,12 @@ COPY gnaf-loader/ ./gnaf-loader/
 # Copy scripts
 COPY scripts/build-fixture-only.sh ./scripts/build-fixture-only.sh
 COPY scripts/build-local.sh ./scripts/build-local.sh
+COPY scripts/extract-boundary-prelude.mjs ./scripts/extract-boundary-prelude.mjs
 # detect-load-failure.sh is invoked by docker-entrypoint.sh to classify
 # gnaf-loader failures and decide whether to retry with --no-boundary-tag
 COPY scripts/detect-load-failure.sh ./scripts/detect-load-failure.sh
-RUN chmod +x ./scripts/detect-load-failure.sh
+COPY scripts/validate-db-cache.sh ./scripts/validate-db-cache.sh
+RUN chmod +x ./scripts/detect-load-failure.sh ./scripts/validate-db-cache.sh
 
 # Copy entrypoint (P2.02 will replace this with a proper orchestrator)
 COPY docker-entrypoint.sh /docker-entrypoint.sh

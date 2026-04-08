@@ -253,12 +253,32 @@ stage_end
 # ── Stage 2 & 3: Data acquisition ───────────────────────────────────────────
 
 if [[ "$MODE" == "fixture" ]]; then
-  # Fixture-only: seed from committed fixture SQL
+  # Fixture-only: mirror the supported local fixture pipeline so container smoke
+  # exercises boundary preparation and verification, not just core G-NAF rows.
   stage_start "seed"
   su postgres -c "psql -d $PGDB -q -f /app/fixtures/seed-postgres.sql" || {
     log "ERROR: Fixture seeding failed"
     exit 2
   }
+
+  su postgres -c "psql -d $PGDB -q -f /app/fixtures/seed-admin-bdys.sql" || {
+    log "ERROR: Admin boundary fixture seeding failed"
+    exit 2
+  }
+
+  SCHEMA_VERSION_FLAT="${GNAF_VERSION//.}"
+  sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" /app/fixtures/prep-admin-bdys.sql | \
+    su postgres -c "psql -d $PGDB -q" || {
+      log "ERROR: Admin boundary prep SQL failed"
+      exit 2
+    }
+
+  node /app/scripts/extract-boundary-prelude.mjs /app/sql/address_full_prep.sql | \
+    sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" | \
+    su postgres -c "psql -d $PGDB -q" || {
+      log "ERROR: Fixture spatial join prep failed"
+      exit 2
+    }
   stage_end
 elif [[ -n "$RESTORE_DB" ]]; then
   # Cache hit: restore database from dump, skip download + gnaf-loader
@@ -281,6 +301,10 @@ elif [[ -n "$RESTORE_DB" ]]; then
   }
   DUMP_SIZE=$(du -h "$RESTORE_DB" | cut -f1)
   log "Database restored from $DUMP_SIZE dump"
+  if ! /app/scripts/validate-db-cache.sh; then
+    log "ERROR: Restored database failed validation"
+    exit 2
+  fi
   stage_end
 else
   # Full pipeline: download + gnaf-loader
