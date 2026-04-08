@@ -114,8 +114,23 @@ require_min_rows "$RAW_SCHEMA" "address_site" 1
 #    fills it at flatten time).
 require_table_exists "$GNAF_SCHEMA" "address_principal_admin_boundaries"
 
-# 4. Mesh-block lookup is non-derived; required for the abs_2021_mb_lookup join.
-require_min_rows "$ADMIN_SCHEMA" "abs_2021_mb_lookup" 1
+# 4. Mesh-block table — non-derived, populated by gnaf-loader's
+#    `02-02d-prep-census-2021-bdys-tables.sql` during the load stage. The flatten
+#    SQL joins this table by `mb21_code` to expand mesh block codes into
+#    SA1/SA2/SA3/SA4/GCCSA. If it's missing or empty, the join silently produces
+#    NULL for every mesh-block-derived field.
+#
+# WARNING — fixture/prod naming gotcha (E1.22):
+#   Production gnaf-loader creates `admin_bdys.abs_2021_mb` (no `_lookup` suffix).
+#   The fixture also creates `admin_bdys.abs_2021_mb_lookup` (a denormalized
+#   no-geometry sibling) AND a mirror `abs_2021_mb` table. The validator MUST
+#   check `abs_2021_mb` (the production name), NOT `abs_2021_mb_lookup`,
+#   otherwise it works against the fixture but fails on every production state
+#   build because the lookup table doesn't exist there. The original PR #99
+#   validator referenced the wrong name and crashed all 9 quarterly states in
+#   run #24127161800. Verified against gnaf-loader/postgres-scripts/02-02d
+#   line 7 — the table name is unambiguous.
+require_min_rows "$ADMIN_SCHEMA" "abs_2021_mb" 1
 
 # 5. Boundary polygon tables — these are what the spatial-join fallback in
 #    address_full_prep.sql joins against. If any are missing or empty, the
