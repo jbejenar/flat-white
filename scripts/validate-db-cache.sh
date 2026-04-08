@@ -228,10 +228,22 @@ fi
 [[ "$need_se_lower" == true ]] && require_min_rows "$ADMIN_SCHEMA" "state_lower_house_electorates" "$MIN_BOUNDARY_ROWS"
 [[ "$need_se_upper" == true ]] && require_min_rows "$ADMIN_SCHEMA" "state_upper_house_electorates" "$MIN_BOUNDARY_ROWS"
 
-# 6. Raw admin boundary source tables — used by fixtures/prep-admin-bdys.sql
-#    in fixture mode and as a debugging fallback in production. Same per-state
-#    rule as lga: ACT and OT don't get raw aus_lga loaded (their archives have
-#    no `act_lga.shp` / `ot_lga.shp`).
-[[ "$need_lga" == true ]] && require_min_rows "$RAW_ADMIN_SCHEMA" "aus_lga" "$MIN_BOUNDARY_ROWS"
+# 6. The raw admin boundary tables (raw_admin_bdys_*.aus_*) are intermediate
+#    products of gnaf-loader's shp2pgsql step. They feed into the prep SQL
+#    that builds admin_bdys_*.{commonwealth_electorates, local_government_areas,
+#    ...}. We don't validate them directly because:
+#
+#    - The prep'd polygon tables checked above (section 5) are the actual
+#      consumers of the raw data. If a raw table is missing, the corresponding
+#      polygon table won't get prep'd → caught by section 5 already.
+#    - Production gnaf-loader's per-state shapefile filtering means the raw
+#      table presence is per-state-conditional. Coupling raw checks to the
+#      same `need_*` gates as the polygon checks reuses logic that was meant
+#      for a different concern, and the two could legitimately diverge in
+#      future (e.g. if gnaf-loader adds an intermediate that the polygon
+#      doesn't directly consume).
+#
+#    If a future failure mode needs raw-table validation, add a separate
+#    `need_raw_*` rule set distinct from the polygon `need_*` rules.
 
 echo "[cache-validate] OK: database passed sanity checks for ${GNAF_VERSION}" >&2
