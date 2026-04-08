@@ -177,7 +177,8 @@ docker run -v $(pwd)/output:/output flat-white \
 
 ### Build Defaults
 
-- `GNAF_VERSION` is required for production builds. Example: `-e GNAF_VERSION=2026.04`.
+- Direct production container runs require `GNAF_VERSION`. Example: `-e GNAF_VERSION=2026.04`.
+- The GitHub Actions quarterly workflow can omit `gnaf_version`; it auto-discovers the newest overlapping published G-NAF/Admin Boundaries release from data.gov.au.
 - If `--states` is omitted, flat-white builds all states/territories.
 - Production release data is resolved in this order:
   1. explicit workflow input
@@ -193,15 +194,14 @@ docker run -v $(pwd)/output:/output flat-white \
 
 Patch releases rebuild the original quarterly data version and publish new asset filenames such as `flat-white-2026.04.1-vic.ndjson.gz`.
 
-With the default auto-discovery path, a manual patch run normally only needs:
+With the default auto-discovery path, a manual patch run normally only needs the patch number:
 
 ```bash
 gh workflow run quarterly-build.yml \
-  -f gnaf_version=2026.04 \
   -f patch_version=1
 ```
 
-Only provide the three download override inputs if you need to force a specific resource URL or work around a data.gov.au naming issue. See [docs/RELEASING.md](docs/RELEASING.md) for the full procedure.
+Add `-f gnaf_version=2026.04` only when you want to pin a specific parent quarter instead of using the latest published one. Only provide the three download override inputs if you need to force a specific resource URL or work around a data.gov.au naming issue. See [docs/RELEASING.md](docs/RELEASING.md) for the full procedure.
 
 ### State Sizes
 
