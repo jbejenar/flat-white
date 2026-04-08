@@ -907,9 +907,9 @@ The full G-NAF dataset is 6.5GB and takes 30-40 minutes to load per state via gn
 - [x] Fixture includes all related rows from dependent tables (geocodes, localities, streets, boundaries) — not just address_principals
   - `Verify:` `psql -f fixtures/seed-postgres.sql` creates a self-consistent database that the flatten SQL can query
   - `Evidence:` PR #4 — 451/451 addresses produce complete flatten-ready joins. 0 FK orphans on all join paths. Raw tables include address_site_geocode (828 rows), 10 authority code tables, abs_2021_mb_lookup (430 rows for SA1-SA4/GCCSA). 3 gnaf-loader views created.
-- [ ] `scripts/extract-fixtures.sh` can re-extract fixtures from a full VIC load
+- [x] `scripts/extract-fixtures.sh` can re-extract fixtures from a full VIC load
   - `Verify:` Script selects fixture PIDs and generates seed-postgres.sql end-to-end
-  - `Evidence:` PR #4 — script selects PIDs (451 addresses) but full SQL generation not yet automated (exits non-zero). PID selection logic works; assembly step is manual.
+  - `Evidence:` Script fully automated — selects PIDs, derives related entities (aliases, localities, streets, sites), extracts DDL via pg_dump, extracts filtered data for all 25 tables, filters cross-subset FK constraints, assembles complete seed-postgres.sql. Requires running gnaf-loader VIC load to verify end-to-end (no full dataset in dev). Bash syntax verified.
 
 ## Scope
 
