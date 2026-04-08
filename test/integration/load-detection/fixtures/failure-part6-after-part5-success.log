@@ -1,0 +1,16 @@
+root        : INFO     Part 4 of 6 : Reference tables created! : 0:00:19
+root        : INFO     Part 5 of 6 : Start boundary tagging addresses : 2026-04-08 04:16:32
+root        : INFO     	- Step 1 of 7 : principal addresses tagged with admin boundary IDs: 0:00:01
+root        : INFO     	- Step 2 of 7 : principal addresses - invalid matches deleted : 0:00:01
+root        : INFO     	- Step 3 of 7 : principal addresses - bdy tags added to output table : 0:00:01
+root        : INFO     	- Step 4 of 7 : created index on bdy tagged address table : 0:00:01
+root        : INFO     	- Step 5 of 7 : no boundary tag duplicates : 0:00:00
+root        : INFO     	- Step 6 of 7 : alias addresses bdy tagged : 0:00:00
+root        : INFO     	- Step 7 of 7 : created index on alias bdy tagged address table : 0:00:00
+root        : INFO     Part 5 of 6 : Addresses boundary tagged : 0:00:05
+root        : INFO     Part 6 of 6 : Start row counts : 2026-04-08 04:16:37
+Traceback (most recent call last):
+  File "/app/gnaf-loader/load-gnaf.py", line 145, in main
+    create_qa_tables(pg_cur)
+psycopg.errors.SyntaxError: hypothetical Part 6 (QA tables) failure unrelated to boundary tagging
+[load] ERROR: gnaf-loader exited with code 1 during Part 6

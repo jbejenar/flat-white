@@ -209,6 +209,16 @@ if ! su postgres -c "pg_ctl -D $PGDATA -l $PG_LOG start -w -t 30" 2>>"$PG_LOG"; 
   # Default shared_buffers (128MB) works but leaves no margin for NSW (~4.6M rows).
   # These settings target ~500-700MB PostgreSQL footprint, leaving headroom for
   # gnaf-loader (Python), Node.js flatten (~65MB), and OS (~500MB).
+  #
+  # dynamic_shared_memory_type = sysv (E1.20 / "permanent build fix" PR):
+  # Postgres parallel hash joins allocate dynamic shared memory chunks in
+  # /dev/shm by default. Docker default /dev/shm is 64MB which is exhausted by
+  # a single 64MB parallel hash table — flatten then fails with
+  # "could not resize shared memory segment ... No space left on device".
+  # Switching to SysV shared memory removes the /dev/shm dependency entirely;
+  # SysV is bounded by SHMMAX/SHMALL kernel settings which Docker leaves at
+  # the host defaults (very high). This is the structural fix — no magic
+  # number tunable, no `--shm-size` insurance flag needed.
   cat >> "$PGDATA/postgresql.conf" <<PGCONF
 listen_addresses = 'localhost'
 shared_buffers = 256MB
@@ -216,6 +226,7 @@ work_mem = 64MB
 maintenance_work_mem = 256MB
 effective_cache_size = 2GB
 max_connections = 20
+dynamic_shared_memory_type = sysv
 PGCONF
 
   su postgres -c "pg_ctl -D $PGDATA -l $PG_LOG start -w -t 30"
@@ -314,15 +325,27 @@ else
   LOAD_EXIT=${PIPESTATUS[0]}
   set -e
 
-  if [[ $LOAD_EXIT -ne 0 ]]; then
-    if grep -qE 'address_alias_admin_boundaries.*(ward_pid|se_upper_pid)|(ward_pid|se_upper_pid).*address_alias_admin_boundaries' "$LOAD_LOG"; then
-      log "WARNING: gnaf-loader boundary tagging failed; retrying with --no-boundary-tag so flat-white fallback can populate boundaries"
-      rm -f "$LOAD_LOG"
-      set +e
-      GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS --no-boundary-tag 2>&1 | tee "$LOAD_LOG"
-      LOAD_EXIT=${PIPESTATUS[0]}
-      set -e
-    fi
+  # Layered defence: if gnaf-loader fails AND the failure happened during/after
+  # boundary tagging (Part 5 of 6), retry with --no-boundary-tag so flat-white's
+  # spatial-join fallback in address_full_prep.sql can populate boundaries via
+  # ST_Intersects against the admin_bdys polygon tables.
+  #
+  # Detection logic is in scripts/detect-load-failure.sh — broad-by-design
+  # (catches ANY error in Part 5, not just specific column names) so it
+  # auto-recovers from any future upstream gnaf-loader regression in Part 5.
+  # When upstream ships a fix (E1.20), the first attempt succeeds and the
+  # retry never fires.
+  #
+  # Tested by test/integration/load-detection/test.sh (8 sample fixtures
+  # covering all known failure modes plus negative cases).
+  if /app/scripts/detect-load-failure.sh "$LOAD_LOG" "$LOAD_EXIT"; then
+    log "WARNING: gnaf-loader boundary tagging failed (Part 5)"
+    log "         retrying with --no-boundary-tag — flat-white spatial-join fallback will populate boundaries"
+    rm -f "$LOAD_LOG"
+    set +e
+    GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS --no-boundary-tag 2>&1 | tee "$LOAD_LOG"
+    LOAD_EXIT=${PIPESTATUS[0]}
+    set -e
   fi
 
   if [[ $LOAD_EXIT -ne 0 ]]; then

@@ -1,0 +1,8 @@
+root        : INFO     Part 1 of 6 : Schemas created! : 0:00:00
+root        : INFO     Part 2 of 6 : Start raw GNAF load : 2026-04-08 04:14:08
+root        : INFO     Part 2 of 6 : Raw GNAF loaded! : 0:01:23
+root        : INFO     Part 3 of 6 : Start raw admin boundary load : 2026-04-08 04:15:31
+root        : INFO     Part 3 of 6 : Raw admin boundaries loaded! : 0:00:42
+root        : INFO     Part 4 of 6 : Start create reference tables : 2026-04-08 04:16:13
+psycopg.errors.SyntaxError: hypothetical syntax error in 02-02a-prep-admin-bdys-tables.sql
+[load] ERROR: gnaf-loader exited with code 1 during prep

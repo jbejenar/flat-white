@@ -121,6 +121,23 @@
 - [x] Convention documented in `docs/RELEASING.md` (two-tier: consumer-facing uses current version, operational uses `${VERSION}`)
 - Origin: PR #77 audit — README VERSION example was the highest-impact and got fixed in #77; rest filed for follow-up
 
+### E1.20 — Push gnaf-loader settings.py / 04-06 fix upstream (planned, p3-low)
+
+- [ ] Open upstream PR to `minus34/gnaf-loader` with one of two fixes (remove per-state filter OR make 04-06 dynamic)
+- [ ] PR includes failure log from a flat-white quarterly build as evidence
+- [ ] Maintainer review + merge
+- [ ] Bump flat-white's gnaf-loader submodule pin once merged
+- [ ] Verify the broad Part-5 detection in `scripts/detect-load-failure.sh` no longer fires
+- Origin: "permanent fix" PR — flat-white now has a layered defence (broad detection + spatial-join fallback) so this upstream fix is **nice-to-have, not load-bearing**.
+
+### E1.21 — Optimise spatial-join fallback for NSW scale (planned, p2-medium)
+
+- [ ] Rewrite `address_full_prep.sql` spatial join fallback to use bulk hash joins (DISTINCT ON or ST_Subdivide-style chunking) instead of per-row LATERAL+LIMIT
+- [ ] Preserve one-row-per-address guarantee (E1.15 multi-polygon safety)
+- [ ] Performance test: NSW (~4.6M rows) under 30 min on a free GitHub runner
+- [ ] Output byte-identical to current LATERAL approach
+- Origin: "permanent fix" PR — currently p2-medium because the 360-min build job timeout gives the slow fallback room to run. Promotes to p1-high if the first quarterly build with the fallback exceeds 360 min.
+
 ### E1.02 — Delta Builds (planned, p2-medium)
 
 - [ ] Depends on P4.03
