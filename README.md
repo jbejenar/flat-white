@@ -183,7 +183,7 @@ docker run -v $(pwd)/output:/output flat-white \
   1. explicit workflow input
   2. repository variable
   3. built-in Feb 2026 fallback in `src/download.ts`
-- For releases newer than the built-in Feb 2026 fallback, set these repository variables:
+- The built-in fallback is only valid for `GNAF_VERSION=2026.02`. For newer production releases, flat-white fails fast unless these are configured:
   - `DOWNLOAD_URL_GNAF`
   - `DOWNLOAD_URL_ADMIN_BDYS`
   - `ADMIN_BDYS_EXTRACTED_DIR`

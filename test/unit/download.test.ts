@@ -15,6 +15,7 @@ import {
   formatProgress,
   retryDelay,
   DEFAULT_DATA_SOURCES,
+  DEFAULT_FALLBACK_VERSION,
   DEFAULT_STALL_TIMEOUT_MS,
   isExtractionComplete,
   resolveOutputDir,
@@ -191,14 +192,16 @@ describe("resolveDataSources", () => {
   it("returns default sources when no env vars are set", () => {
     delete process.env.DOWNLOAD_URL_GNAF;
     delete process.env.DOWNLOAD_URL_ADMIN_BDYS;
-    const sources = resolveDataSources();
+    const sources = resolveDataSources(DEFAULT_FALLBACK_VERSION);
     const gnaf = sources.find((s) => s.name.includes("G-NAF"));
     expect(gnaf!.url).toContain("data.gov.au");
   });
 
   it("overrides G-NAF URL from DOWNLOAD_URL_GNAF env var", () => {
     process.env.DOWNLOAD_URL_GNAF = "https://example.com/gnaf-may26.zip";
-    const sources = resolveDataSources();
+    process.env.DOWNLOAD_URL_ADMIN_BDYS = "https://example.com/admin-may26.zip";
+    process.env.ADMIN_BDYS_EXTRACTED_DIR = "MAY26_AdminBounds_GDA_2020_SHP";
+    const sources = resolveDataSources("2026.05");
     const gnaf = sources.find((s) => s.name.includes("G-NAF"));
     expect(gnaf!.url).toBe("https://example.com/gnaf-may26.zip");
     // Sentinel paths should be relaxed to wildcard
@@ -206,9 +209,10 @@ describe("resolveDataSources", () => {
   });
 
   it("overrides Admin Boundaries URL and extractedDir from env vars", () => {
+    process.env.DOWNLOAD_URL_GNAF = "https://example.com/gnaf-may26.zip";
     process.env.DOWNLOAD_URL_ADMIN_BDYS = "https://example.com/admin-may26.zip";
     process.env.ADMIN_BDYS_EXTRACTED_DIR = "MAY26_AdminBounds_GDA_2020_SHP";
-    const sources = resolveDataSources();
+    const sources = resolveDataSources("2026.05");
     const admin = sources.find((s) => s.name.includes("Administrative"));
     expect(admin!.url).toBe("https://example.com/admin-may26.zip");
     expect(admin!.extractedDir).toBe("MAY26_AdminBounds_GDA_2020_SHP");
@@ -216,8 +220,26 @@ describe("resolveDataSources", () => {
 
   it("does not mutate DEFAULT_DATA_SOURCES", () => {
     process.env.DOWNLOAD_URL_GNAF = "https://example.com/override.zip";
-    resolveDataSources();
+    resolveDataSources(DEFAULT_FALLBACK_VERSION);
     expect(DEFAULT_DATA_SOURCES[0].url).toContain("data.gov.au");
+  });
+
+  it("fails fast for newer production versions when overrides are missing", () => {
+    delete process.env.DOWNLOAD_URL_GNAF;
+    delete process.env.DOWNLOAD_URL_ADMIN_BDYS;
+    delete process.env.ADMIN_BDYS_EXTRACTED_DIR;
+
+    expect(() => resolveDataSources("2026.05")).toThrow(
+      "requires explicit release data configuration",
+    );
+  });
+
+  it("fails when Admin Boundaries extracted dir is missing for newer versions", () => {
+    process.env.DOWNLOAD_URL_GNAF = "https://example.com/gnaf-may26.zip";
+    process.env.DOWNLOAD_URL_ADMIN_BDYS = "https://example.com/admin-may26.zip";
+    delete process.env.ADMIN_BDYS_EXTRACTED_DIR;
+
+    expect(() => resolveDataSources("2026.05")).toThrow("ADMIN_BDYS_EXTRACTED_DIR");
   });
 });
 

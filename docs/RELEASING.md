@@ -24,7 +24,7 @@ GNAF_VERSION=2026.05 ./scripts/build-local.sh --version 2026.05 --states VIC
 
 ### Download URLs for new G-NAF releases
 
-Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. The Feb 2026 URLs are built-in as a fallback. For newer releases, set these as repository variables for scheduled/manual runs, or pass them as workflow inputs to override them for a single dispatch:
+Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. The built-in download defaults only support the frozen Feb 2026 dataset. For any newer production release, set these as repository variables for scheduled/manual runs, or pass them as workflow inputs to override them for a single dispatch:
 
 ```bash
 # Repository variables (preferred), or docker run -e flags locally:
@@ -38,6 +38,8 @@ Priority order in the GitHub Actions workflow:
 1. workflow_dispatch input
 2. repository variable
 3. built-in Feb 2026 fallback in `src/download.ts`
+
+For production builds with `GNAF_VERSION` newer than `2026.02`, flat-white now fails fast if any of those three settings are missing. This prevents a release tagged as `2026.04` or `2026.05` from silently downloading the wrong Feb 2026 source data.
 
 Find the correct URLs by browsing the G-NAF dataset page on data.gov.au, or by querying the CKAN API:
 
@@ -104,7 +106,7 @@ The G-NAF data version stays at `2026.04` for all `v2026.04.N` patches — the p
 
    This builds against the same G-NAF data version (`2026.04`) and publishes as `v2026.04.1`. The build cache may be a hit (~30 min saved per state) if the cache key is still warm. Total wall time: ~25 min on free runners.
 
-   For any release newer than the built-in Feb 2026 fallback, you must also provide the matching data.gov.au URLs and the Admin Boundaries extracted directory name. Patch releases still rebuild the original quarterly data, so `v2026.04.1` needs the April 2026 dataset URLs, not the Feb 2026 fallback.
+   Patch releases still rebuild the original quarterly data, so `v2026.04.1` needs the April 2026 dataset URLs, not the Feb 2026 fallback. If the matching repository variables are already configured, you can omit the three download override inputs and pass only `gnaf_version` plus `patch_version`.
 
 4. **Wait for the build to complete and the draft release to publish.** Watch with:
 

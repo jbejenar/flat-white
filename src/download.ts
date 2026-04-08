@@ -64,6 +64,44 @@ export const DEFAULT_DATA_SOURCES: DataSource[] = [
   },
 ];
 
+export const DEFAULT_FALLBACK_VERSION = "2026.02";
+
+function readEnvOverride(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
+function requiresExplicitDataSources(version?: string): boolean {
+  return Boolean(version && version !== DEFAULT_FALLBACK_VERSION);
+}
+
+function assertExplicitDataSources(version?: string): void {
+  if (!requiresExplicitDataSources(version)) {
+    return;
+  }
+
+  const missing: string[] = [];
+  if (!readEnvOverride("DOWNLOAD_URL_GNAF")) {
+    missing.push("DOWNLOAD_URL_GNAF");
+  }
+  if (!readEnvOverride("DOWNLOAD_URL_ADMIN_BDYS")) {
+    missing.push("DOWNLOAD_URL_ADMIN_BDYS");
+  }
+  if (!readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR")) {
+    missing.push("ADMIN_BDYS_EXTRACTED_DIR");
+  }
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `G-NAF version ${version} requires explicit release data configuration. Missing: ${missing.join(", ")}.\n` +
+      `Set these as workflow inputs, repository variables, or environment variables.\n` +
+      `The built-in data source fallback only supports ${DEFAULT_FALLBACK_VERSION}.`,
+  );
+}
+
 /**
  * Resolve data sources, applying env var URL overrides if set.
  *
@@ -76,10 +114,12 @@ export const DEFAULT_DATA_SOURCES: DataSource[] = [
  * sentinelPaths for G-NAF are relaxed to a wildcard when URLs are overridden
  * (the versioned directory name inside the zip changes per release).
  */
-export function resolveDataSources(): DataSource[] {
-  const gnafUrl = process.env.DOWNLOAD_URL_GNAF;
-  const adminUrl = process.env.DOWNLOAD_URL_ADMIN_BDYS;
-  const adminExtractedDir = process.env.ADMIN_BDYS_EXTRACTED_DIR;
+export function resolveDataSources(version?: string): DataSource[] {
+  assertExplicitDataSources(version);
+
+  const gnafUrl = readEnvOverride("DOWNLOAD_URL_GNAF");
+  const adminUrl = readEnvOverride("DOWNLOAD_URL_ADMIN_BDYS");
+  const adminExtractedDir = readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR");
 
   const sources = DEFAULT_DATA_SOURCES.map((s) => ({ ...s, sentinelPaths: [...s.sentinelPaths] }));
 
@@ -341,7 +381,7 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
   mkdirSync(outputDir, { recursive: true });
 
   const results: DownloadResult[] = [];
-  const dataSources = resolveDataSources();
+  const dataSources = resolveDataSources(version);
 
   for (const source of dataSources) {
     const extractedPath = resolve(outputDir, source.extractedDir);
