@@ -785,25 +785,42 @@ async function main(): Promise<void> {
   const dbUrlIdx = process.argv.indexOf("--db-url");
   const dbUrl = dbUrlIdx !== -1 ? process.argv[dbUrlIdx + 1] : undefined;
 
-  // STATES env var (whitespace-separated, matching gnaf-loader's --states
-  // format) selects per-state empirical thresholds. The CLI builds a
-  // `boundaryCoveragePerState` map from STATES so the verify pipeline
-  // can apply each state's thresholds to that state's bucket via
-  // per-record state bucketing — the only correct approach for
-  // multi-state output where polygon coverage varies dramatically
-  // by state. See PER_STATE_BOUNDARY_THRESHOLDS doc for details.
+  // Boundary coverage threshold setup.
   //
-  // Empty STATES → fall back to global DEFAULT_BOUNDARY_THRESHOLDS
-  // (strict-all-five) applied to the aggregate. Suitable for the
-  // fixture path and any all-states caller with high coverage.
-  // Unknown token → throws → exit 4 (fail closed).
+  // The verify pipeline ALWAYS uses per-record state bucketing when
+  // boundary coverage checking is enabled. Per-state thresholds come
+  // from `PER_STATE_BOUNDARY_THRESHOLDS` (the empirical map) — every
+  // state in the data is checked against its own thresholds.
+  //
+  // STATES env var is purely an INPUT VALIDATION aid: it confirms the
+  // operator passed valid state codes (typo / wrong delimiter detection).
+  // It does NOT decide whether the verification is state-aware. That
+  // decision is made by the data itself: every observed state in the
+  // NDJSON gets bucketed and validated against its per-state thresholds,
+  // regardless of whether STATES was supplied.
+  //
+  // Why: if the CLI is invoked WITHOUT --states (the default all-9-states
+  // production path), the output contains addresses from every state
+  // and many of them legitimately have ward=0 or other zero-threshold
+  // fields. A global aggregate check against strict thresholds (the
+  // old behaviour) would false-fail. Always-on per-state bucketing
+  // handles this correctly with no operator intervention.
+  //
+  // The strict global default still serves as the fallback for unknown
+  // state buckets — a row with state="ZZZ" or null gets validated
+  // against DEFAULT_BOUNDARY_THRESHOLDS, never silently skipped.
+  // Unknown STATES token in the env → throws → exit 4 (fail closed
+  // on operator typos).
   let boundaryCoverageThresholds: Required<BoundaryCoverageThresholds> | undefined;
   let boundaryCoveragePerState: Record<string, BoundaryCoverageThresholds> | undefined;
   if (checkBoundaryCoverage) {
     const statesEnv = process.env.STATES;
-    let tokens: string[];
     try {
-      tokens = parseStatesEnv(statesEnv);
+      // Validate STATES tokens early. Throws on unknown tokens. The
+      // returned token list is used only for the input-validation
+      // error message; the actual threshold map below is the static
+      // PER_STATE_BOUNDARY_THRESHOLDS.
+      parseStatesEnv(statesEnv);
     } catch (err) {
       console.error(`[verify] ERROR: ${err instanceof Error ? err.message : String(err)}`);
       console.error(
@@ -813,28 +830,10 @@ async function main(): Promise<void> {
       process.exit(4);
     }
 
-    if (tokens.length > 0) {
-      // Build the per-state map from validated tokens. Per-record bucketing
-      // in verify() applies each entry to its state's bucket — this is the
-      // ONLY correct way to verify multi-state output where polygon coverage
-      // varies dramatically by state. A flat threshold map (e.g. taking
-      // MIN of selected states) would either false-fail legitimate
-      // combinations or silently allow regressions in one state by being
-      // pulled loose by another's missing polygon. See the verify() doc.
-      const perState: Record<string, BoundaryCoverageThresholds> = {};
-      for (const token of tokens) {
-        const t = PER_STATE_BOUNDARY_THRESHOLDS[token];
-        if (t) perState[token] = t;
-      }
-      boundaryCoveragePerState = perState;
-      // Fallback for unknown state buckets (shouldn't happen in practice
-      // — the input file should only contain addresses for the requested
-      // states). Use the strict default so anomalies fail loud.
-      boundaryCoverageThresholds = DEFAULT_BOUNDARY_THRESHOLDS;
-    } else {
-      // No STATES → strict global defaults applied to the aggregate.
-      boundaryCoverageThresholds = DEFAULT_BOUNDARY_THRESHOLDS;
-    }
+    // Always enable per-record bucketing with the full empirical map.
+    // STATES doesn't gate this — the data does.
+    boundaryCoveragePerState = PER_STATE_BOUNDARY_THRESHOLDS;
+    boundaryCoverageThresholds = DEFAULT_BOUNDARY_THRESHOLDS;
   }
 
   let enumSets: EnumSets | undefined;

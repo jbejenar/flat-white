@@ -978,6 +978,56 @@ describe("verify per-record state bucketing (multi-state correctness)", () => {
     expect(result.boundaryCoverageErrors.some((e) => e.field.startsWith("ZZZ."))).toBe(true);
   });
 
+  it("multi-state file passes WITHOUT a global threshold (per-state map only)", async () => {
+    // The default production path is `docker run flat-white ...` with no
+    // --states flag, which leaves STATES unset. The CLI passes
+    // PER_STATE_BOUNDARY_THRESHOLDS to verify() unconditionally so
+    // per-record bucketing handles all-states output without any
+    // operator-supplied state hint AND without a global threshold
+    // fallback that would false-fail on legitimate per-state variation.
+    //
+    // This test mirrors that exact CLI shape: no `boundaryCoverageThresholds`,
+    // just `boundaryCoveragePerState`. ACT (legitimate no-LGA, no-ward)
+    // and VIC (full coverage) must both validate against THEIR thresholds.
+    const docs = [
+      makeStateDoc("A1", "ACT", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: { name: "C" },
+      }),
+      makeStateDoc("A2", "ACT", {
+        lga: null,
+        ward: null,
+        stateElectorate: { name: "S" },
+        commonwealthElectorate: { name: "C" },
+      }),
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeStateDoc(`V${i}`, "VIC", {
+          lga: { name: "X", code: "L" },
+          ward: { name: "W" },
+          stateElectorate: { name: "S" },
+          commonwealthElectorate: { name: "C" },
+        }),
+      ),
+    ];
+    const path = tmpFile("bucket-no-global.ndjson");
+    writeNdjson(path, docs);
+
+    const result = await verify({
+      outputPath: path,
+      expectedCount: 7,
+      // NO global threshold parameter — only the per-state map.
+      boundaryCoveragePerState: PER_STATE_BOUNDARY_THRESHOLDS,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.boundaryCoverageByState.has("ACT")).toBe(true);
+    expect(result.boundaryCoverageByState.has("VIC")).toBe(true);
+    // Both states checked against their thresholds; no errors
+    expect(result.boundaryCoverageErrors).toEqual([]);
+  });
+
   it("populates boundaryCoverageByState even when no per-state thresholds are passed", async () => {
     // The per-state breakdown is computed unconditionally so the report
     // can show it even when only the global threshold is checked.
