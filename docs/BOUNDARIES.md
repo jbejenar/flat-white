@@ -10,24 +10,24 @@
 
 Every address in the output gets enriched with the administrative and statistical areas it sits inside. The output schema (`src/schema.ts`) defines **ten boundary fields** split between two derivation paths:
 
-| Field                    | What it is                                      | How it's derived                                                                    |
-| ------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `lga`                    | Local Government Area (council)                 | spatial join — `admin_bdys.local_government_areas`                                  |
-| `ward`                   | Sub-council voting area                         | spatial join — `admin_bdys.local_government_wards`                                  |
-| `stateElectorate`        | State lower-house electorate                    | spatial join — `admin_bdys.state_lower_house_electorates`                           |
-| `commonwealthElectorate` | Federal electorate                              | spatial join — `admin_bdys.commonwealth_electorates`                                |
-| `meshBlock`              | ABS Mesh Block (smallest stat geography)        | code lookup — `admin_bdys.abs_2021_mb_lookup` via `address_principals.mb_2021_code` |
-| `sa1`                    | ABS Statistical Area 1 (~200-800 people)        | derived from mesh-block lookup (`abs_2021_mb_lookup.sa1_21code`)                    |
-| `sa2`                    | ABS Statistical Area 2 (~3k-25k people, suburb) | derived from mesh-block lookup (`abs_2021_mb_lookup.sa2_21code` + `sa2_21name`)     |
-| `sa3`                    | ABS Statistical Area 3 (~30k-130k people)       | derived from mesh-block lookup                                                      |
-| `sa4`                    | ABS Statistical Area 4 (~100k-500k people)      | derived from mesh-block lookup                                                      |
-| `gccsa`                  | Greater Capital City Statistical Area           | derived from mesh-block lookup                                                      |
+| Field                    | What it is                                      | How it's derived                                                             |
+| ------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| `lga`                    | Local Government Area (council)                 | spatial join — `admin_bdys.local_government_areas`                           |
+| `ward`                   | Sub-council voting area                         | spatial join — `admin_bdys.local_government_wards`                           |
+| `stateElectorate`        | State lower-house electorate                    | spatial join — `admin_bdys.state_lower_house_electorates`                    |
+| `commonwealthElectorate` | Federal electorate                              | spatial join — `admin_bdys.commonwealth_electorates`                         |
+| `meshBlock`              | ABS Mesh Block (smallest stat geography)        | code lookup — `admin_bdys.abs_2021_mb` via `address_principals.mb_2021_code` |
+| `sa1`                    | ABS Statistical Area 1 (~200-800 people)        | derived from mesh-block lookup (`abs_2021_mb.sa1_21code`)                    |
+| `sa2`                    | ABS Statistical Area 2 (~3k-25k people, suburb) | derived from mesh-block lookup (`abs_2021_mb.sa2_21code` + `sa2_21name`)     |
+| `sa3`                    | ABS Statistical Area 3 (~30k-130k people)       | derived from mesh-block lookup                                               |
+| `sa4`                    | ABS Statistical Area 4 (~100k-500k people)      | derived from mesh-block lookup                                               |
+| `gccsa`                  | Greater Capital City Statistical Area           | derived from mesh-block lookup                                               |
 
 **Two derivation paths, very different characters:**
 
 The **first four fields** (`lga`, `ward`, `stateElectorate`, `commonwealthElectorate`) come from a **point-in-polygon spatial join** — for each address point, find which polygon it sits inside. This is where all the complexity lives.
 
-The **other six fields** (`meshBlock` + `sa1` through `gccsa`) come from a much simpler **non-spatial code lookup**. `address_principals.mb_2021_code` is already populated by gnaf-loader during the load stage (Parts 1-4, before Part 5 boundary tagging). Flatten just joins it against `abs_2021_mb_lookup` to expand one mesh block code into category, SA1, SA2, SA2 name, SA3, SA3 name, SA4, SA4 name, GCC, GCC name. No `ST_Intersects`, no polygon math, no performance issue.
+The **other six fields** (`meshBlock` + `sa1` through `gccsa`) come from a much simpler **non-spatial code lookup**. `address_principals.mb_2021_code` is already populated by gnaf-loader during the load stage (Parts 1-4, before Part 5 boundary tagging). Flatten just joins it against `abs_2021_mb` to expand one mesh block code into category, SA1, SA2, SA2 name, SA3, SA3 name, SA4, SA4 name, GCC, GCC name. No `ST_Intersects`, no polygon math, no performance issue.
 
 So when this doc talks about "the boundary problem", it almost always means **the spatial join for the four polygon-derived fields**. Mesh block / SA1 / SA2 / SA3 / SA4 / gccsa are mechanical and have never been a source of trouble.
 
@@ -141,10 +141,10 @@ LEFT JOIN LATERAL (... se_upper) se_up ON true;
 
 ### Mesh block / SA1 / SA2 — neither path
 
-These don't use spatial joins at all. `address_principals.mb_2021_code` is populated by gnaf-loader during the **load** stage (Part 1-4, before Part 5), so it's always present. Flatten reads it and does a non-spatial join against `admin_bdys.abs_2021_mb_lookup`:
+These don't use spatial joins at all. `address_principals.mb_2021_code` is populated by gnaf-loader during the **load** stage (Part 1-4, before Part 5), so it's always present. Flatten reads it and does a non-spatial join against `admin_bdys.abs_2021_mb`:
 
 ```sql
-LEFT JOIN admin_bdys_*.abs_2021_mb_lookup mb
+LEFT JOIN admin_bdys_*.abs_2021_mb mb
   ON mb.mb21_code = ap.mb_2021_code
 ```
 
@@ -411,7 +411,7 @@ And the joins:
 LEFT JOIN gnaf_*.address_principal_admin_boundaries ab ON ab.gnaf_pid = ap.gnaf_pid
 
 -- Mechanical code lookup
-LEFT JOIN admin_bdys_*.abs_2021_mb_lookup mb ON mb.mb21_code = ap.mb_2021_code
+LEFT JOIN admin_bdys_*.abs_2021_mb mb ON mb.mb21_code = ap.mb_2021_code
 ```
 
 The schema field names (`lga`, `ward`, `stateElectorate`, `commonwealthElectorate`, `meshBlock`, `sa1`, `sa2`) are the **camelCase output names** in the NDJSON document. The `address_full.sql` columns are the **snake_case Postgres aliases**. The TypeScript flatten code (`src/flatten.ts`) does the snake-to-camel mapping when composing the document.
