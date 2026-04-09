@@ -5006,13 +5006,15 @@ Origin: PR #67 audit (round 3). Found while tracing why v2026.04 has all-null bo
 ```yaml
 id: E1.20
 title: Push upstream PR to minus34/gnaf-loader fixing per-state admin_bdy_list filter
-status: planned
-priority: p3-low
+status: deferred
+priority: p4-defer
 epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: null
 ```
+
+> **2026-04-09 update — partially obsoleted by E1.21 / E1.23.** flat-white no longer depends on gnaf-loader's Part 5 succeeding for any state: E1.21 (PR #106) made flat-white's own spatial join fast enough to handle NSW (~7-30 min), and E1.23 (queued) will collapse Path 1 and Path 2 into a single always-fallback path. Once E1.23 lands, this upstream fix becomes purely a community contribution — useful for OTHER gnaf-loader users but not load-bearing for flat-white. **Downgrade to p4-defer; revisit only if E1.23 is cancelled OR if a maintainer has spare time for community contribution work.**
 
 ## User Story
 
@@ -5070,18 +5072,21 @@ Origin: "permanent fix" PR (this PR). The local fix uses the broad Part-5 detect
 
 ---
 
-### Ticket E1.21 — Optimise spatial-join fallback for NSW scale
+### Ticket E1.21 — Optimise spatial-join fallback for NSW scale ✅ (DONE 2026-04-09)
 
 ```yaml
 id: E1.21
 title: Optimise spatial-join fallback in address_full_prep.sql for large states
-status: planned
+status: complete
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
+shipped_in: PR #106 (perf: replace LATERAL+LIMIT spatial fallback with bulk insert-then-5-updates)
 ```
+
+> **2026-04-09 — SHIPPED.** Original ticket described two approaches (DISTINCT ON or ST_Subdivide); the actual implementation went through 6 plan revisions before settling on **insert-then-5-updates against unsubdivided polygon tables**. Empirical: NSW spatial join 67 min → 7.5 min on M5 64GB (~9× speedup). Quarterly run 24163471133 published v2026.02.1 with all 9 states green for the first time. Final shape, why-not-`_analysis`, and full empirical data in the "Final shape" section below.
 
 ## User Story
 
@@ -5130,9 +5135,59 @@ Option 1 is simpler. Option 2 matches what gnaf-loader does and would be faster.
 - Replacing the entire flatten pipeline
 - Touching gnaf-loader (E1.20 covers upstream)
 
+## Final shape (as shipped, NOT what was originally planned)
+
+Replace the LATERAL+LIMIT block with **insert-then-5-updates**:
+
+1. INSERT one shell row per address into `address_principal_admin_boundaries` with NULL boundary fields.
+2. Run **five INDEPENDENT UPDATE passes** — one per boundary table — each picking the lowest-pid intersecting polygon via `DISTINCT ON (gnaf_pid) ... ORDER BY gnaf_pid, {pid}`.
+3. Plain INNER JOIN (no LATERAL wrapper) frees the planner to pick its preferred parallel-aware spatial join shape — same plan gnaf-loader Part 5 gets.
+
+**Why FIVE independent passes instead of one joint INSERT with 5 LEFT JOINs + DISTINCT ON.** A single joint form computes the cartesian product of all five boundary tables for each address, then picks one tuple. For an address sitting on a polygon edge in multiple boundary tables, the joint tiebreak picks the lowest-cartesian-tuple, which can choose a different (lga, ward) combination than the prior LATERAL form (which picked each table's lowest pid INDEPENDENTLY). Five separate UPDATE passes preserve per-table independence exactly, so byte-for-byte regression against `fixtures/expected-output.ndjson` stays clean.
+
+**Why NOT subdivided `_analysis` tables (rev 2 of the implementation plan, rejected).** Two blockers found in audit:
+
+- (a) `local_government_areas_analysis` only carries the abbreviated `name` column, not `full_name`. Using it for LGA would silently change every output's `lga_name` field from the long form to the abbreviation, breaking byte-for-byte parity.
+- (b) The analysis template runs `ST_Buffer(geom, 0.0)` + `ST_Dump` + `ST_Subdivide` which can shift edge vertices by floating-point ulps. For points exactly on a polygon edge, ST_Intersects could match a different polygon than the unsubdivided table would. Production data could silently shift in ways the fixture wouldn't catch.
+
+The unsubdivided tables avoid both blockers.
+
+**Multi-polygon row multiplication safety (E1.15) preserved.** `DISTINCT ON (ap.gnaf_pid) ORDER BY ap.gnaf_pid, {pid}` guarantees AT MOST ONE source row per address per UPDATE. The existing UNIQUE INDEX on `gnaf_pid` makes the no-duplicates guarantee structural.
+
+## Definition of Done — all met
+
+- [x] Spatial join fallback completes NSW (~4.6M addresses) in under 30 min on a free GitHub runner — **measured: 29m20s job total with cache hit on quarterly run 24163471133**
+- [x] Output is byte-identical to the prior LATERAL approach — **verified: fixture cross-path PASS + 451/451 fixture addresses + boundary coverage matches today's output exactly (LGA 100%, Ward 99.6%, State 100%, Commonwealth 100%)**
+- [x] One-row-per-address guarantee preserved — **UNIQUE INDEX on gnaf_pid would fail loud if violated; not violated**
+- [x] Deterministic across runs — **DISTINCT ON ORDER BY pid is the same tiebreak as the prior LATERAL form**
+- [x] All 9 states green on quarterly run for the first time — **shipped as v2026.02.1 from quarterly run 24163471133**
+
+## Empirical evidence (preserved for posterity)
+
+| State | LATERAL (run 24138309484) | Bulk fresh (24159739501) | Bulk cache (24163471133)                      |
+| ----- | ------------------------- | ------------------------ | --------------------------------------------- |
+| OT    | 5m46s ✓                   | 5m9s ✓                   | 59s ✓                                         |
+| NT    | ✓                         | 8m17s ✓                  | 1m43s ✓                                       |
+| ACT   | 6m40s ✓                   | 8m50s ✓                  | 1m30s ✓                                       |
+| WA    | ✓                         | 12m43s ✓                 | 1h1m15s ✓ ← see E1.26 (cache restore anomaly) |
+| TAS   | ✗ exit 3                  | 18m44s ✓                 | 11m30s ✓                                      |
+| VIC   | 27m8s ✓                   | 23m55s ✓                 | 12m53s ✓                                      |
+| SA    | ✗ 55m15s                  | 16m47s ✓                 | 12m54s ✓                                      |
+| QLD   | 51m53s ✓                  | 28m47s ✓                 | 15m43s ✓                                      |
+| NSW   | ✗ 1h56m                   | 43m55s ✓                 | 29m20s ✓                                      |
+
+**Local M5 64GB end-to-end NSW with E1.21**: 14 min total (load 4.5 min + spatial join 7.5 min + flatten 1.7 min + verify 23s).
+
+**Local M5 64GB NSW with the OLD LATERAL code** (run NSW3, captured for baseline): spatial join completed at 67 min, then flatten crashed with `tmp_address_geocodes does not exist` (latent bug — see E1.24). The crash is not the spatial-join cliff; the spatial-join cliff is the 67 min.
+
+## Discovered side effects (filed as new tickets)
+
+- **E1.24** — pre-existing flatten-session bug (`tmp_address_geocodes does not exist`) was masked by E1.21 making the spatial join fast enough to avoid the timing window that triggered it. Latent; structural fix still wanted.
+- **E1.26** — WA cursor stream is 40-75× slower when restored from `pg_dump` cache vs fresh build. Discovered in forensic scan of run 24163471133. Hypothesis: missing planner statistics after `pg_restore`.
+
 ## Notes
 
-Origin: "permanent fix" PR (this PR). Currently p2-medium because the 360-min timeout gives the slow fallback room to run. Promotes to p1-high if the first quarterly build with the fallback exceeds 360 min (then we need this to avoid forcing self-hosted runners).
+Origin: "permanent fix" PR (PR #96). The original ticket (`p2-medium`) was conservative. Empirical data from the failing run (24138309484) showed the LATERAL form was actually crashing 3 of 9 states, not just slow — promoted to `p1-high` in practice during the implementation. Implementation plan went through 6 revisions documented in `.scratch/e121-plan.md` (deleted before PR). PR #106 commit message has the full reasoning chain.
 
 ---
 
@@ -5225,6 +5280,663 @@ After running the updated script, regenerate the committed fixture (`fixtures/se
 Origin: discovered during the PR B (`fix-fixture-prod-divergence`) audit pass. The divergence existed before PR #99's validator landed; PR #99 just exposed it more loudly. PRs A and B cleaned up the live SQL paths but explicitly deferred this script repair to keep scope tight and avoid touching the regression baseline in the same PR as the validator unblock.
 
 Risk: low. The script is manual (not CI), nobody is currently blocked. Promote priority if/when someone needs to refresh the fixture from a real production load.
+
+---
+
+### Ticket E1.23 — Collapse Path 1 and Path 2 into a single path
+
+```yaml
+id: E1.23
+title: Always use flat-white spatial-join fallback; drop gnaf-loader Part 5 retry infrastructure
+status: planned
+priority: p2-medium
+epic: E1.B
+persona: [maintainer]
+depends_on: [E1.21, E1.24]
+completed: null
+```
+
+## User Story
+
+As a maintainer, I want to remove the dual-path "Path 1 (gnaf-loader Part 5) → Path 2 (flat-white spatial-join fallback)" architecture, because E1.21 has made Path 2 as fast as Path 1, so the dual-path complexity is no longer justified.
+
+## Problem Statement
+
+flat-white currently has two boundary-tagging code paths:
+
+1. **Path 1** — `gnaf-loader/postgres-scripts/04-01b-bdy-tag-template.sql` runs as part of gnaf-loader's Part 5. Bulk INNER JOIN with ST_Within against the pre-subdivided `_analysis` polygon tables. Fast (~2 min for VIC).
+2. **Path 2** — `sql/address_full_prep.sql` runs in flatten as a fallback when Path 1 fails. Used to be a slow LATERAL+LIMIT loop; since E1.21 (PR #106) it's bulk insert-then-5-updates against unsubdivided polygon tables. Empirically as fast as Path 1 (NSW ~7-30 min depending on cache state).
+
+The dual-path infrastructure includes:
+
+- `scripts/detect-load-failure.sh` — broad Part-5 failure detection (10 test fixtures + the test script)
+- `docker-entrypoint.sh:359-376` — `--no-boundary-tag` retry branch with `LOAD_LOG`/`LOAD_EXIT` plumbing
+- The "if `address_principal_admin_boundaries` is already populated, skip" early-return at the top of the Path 2 DO block in `address_full_prep.sql`
+- The "Path 1 vs Path 2" framing in `docs/BOUNDARIES.md`
+- `test/integration/load-detection/test.sh` + 10 fixture log files
+
+This complexity exists because gnaf-loader's Part 5 was historically faster than what flat-white could do itself. **That's no longer true after E1.21.** And gnaf-loader's Part 5 has its own latent issues (the per-state shapefile filter cascade, see E1.20) that we worked around but never structurally fixed.
+
+## Approach
+
+**Always run flat-white's spatial join. Never run gnaf-loader Part 5.** Specifically:
+
+1. **gnaf-loader invocation** in `docker-entrypoint.sh` always passes `--no-boundary-tag`. No retry, no detection, no failure-mode classification.
+2. **`address_full_prep.sql`** runs unconditionally on every flatten — drop the "if already populated, skip" early-return and let it always populate the boundary table from scratch. (Or keep the early-return as a defensive idempotence check; cheap.)
+3. **Delete `scripts/detect-load-failure.sh`** and `test/integration/load-detection/`.
+4. **Delete the retry branch** in `docker-entrypoint.sh:359-376` (the `--no-boundary-tag` retry detection logic).
+5. **Update `docs/BOUNDARIES.md`** — single path narrative. Drop the "Path 1 vs Path 2" framing.
+6. **Update `docs/RELEASING.md`** if it mentions the retry flow.
+7. **Verify the fixture build still works** — fixture path uses the same `address_full_prep.sql` block via the prelude markers, so this should be a no-op there.
+8. **Verify the cache validator still works** — the dump cache only contains gnaf-loader Parts 1-4 output now, not Part 5; the validator checks shouldn't rely on Part 5 having run.
+
+## Definition of Done
+
+- [ ] `--no-boundary-tag` is always passed; no retry logic in `docker-entrypoint.sh`
+- [ ] `scripts/detect-load-failure.sh` deleted
+- [ ] `test/integration/load-detection/` deleted
+- [ ] `docs/BOUNDARIES.md` rewritten — single path
+- [ ] All existing CI tests pass (cache-validator, boundary-prelude, fixture build, npm test, lint, typecheck)
+- [ ] Quarterly run greens 9/9 states with no changes to release timing (~25-30 min per state)
+- [ ] CHANGELOG entry + roadmap updated
+
+## Scope
+
+### In
+
+- `docker-entrypoint.sh` retry branch removal
+- `scripts/detect-load-failure.sh` deletion
+- `test/integration/load-detection/` deletion
+- `docs/BOUNDARIES.md` single-path rewrite
+- `address_full_prep.sql` early-return audit (keep or drop?)
+- Roadmap/CHANGELOG updates
+
+### Out
+
+- Touching `gnaf-loader/` submodule (we're just not calling Part 5; gnaf-loader itself is unchanged)
+- Removing `--no-boundary-tag` from gnaf-loader's CLI (that's its public interface)
+- Memory tuning or other perf work
+- Anything in `src/flatten.ts` (E1.24 covers that)
+
+## Notes
+
+Origin: empirical evidence from PR #106 (E1.21) — Path 2 is now as fast as Path 1, so the dual-path infrastructure has no remaining technical justification.
+
+Obsoletes E1.20 (push gnaf-loader fix upstream): if we never call Part 5, the upstream column-mismatch bug is irrelevant to flat-white. **Recommendation: do E1.24 (flatten session bug fix) BEFORE E1.23**, since E1.23 changes the surrounding code paths and E1.24's fix probably touches `src/flatten.ts` which E1.23 will also need to coordinate with.
+
+Risk: medium. This is a real refactor that touches multiple files and removes ~100 lines of code. The fixture build is the safety net (any regression in boundary-tagging will fail the byte-for-byte fixture test). Worth doing thoughtfully, with a clear runway, with no quarterly cron in flight.
+
+---
+
+### Ticket E1.24 — Flatten temp tables disappear when prep SQL runs twice
+
+```yaml
+id: E1.24
+title: Investigate and fix flatten.ts session/connection management — temp tables disappear between prep and cursor stream
+status: planned
+priority: p2-medium
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need `src/flatten.ts` to reliably make its temp tables (created in `address_full_prep.sql`) visible to its cursor stream, so that long-running flatten invocations don't crash with `relation "tmp_address_geocodes" does not exist` after the spatial join finishes.
+
+## Problem Statement
+
+When the spatial join in `address_full_prep.sql` takes long enough (observed at ~67 minutes for NSW with the OLD LATERAL code, before E1.21), the subsequent cursor stream in `src/flatten.ts` fails with:
+
+```
+[flatten] Fatal: PostgresError: relation "tmp_address_geocodes" does not exist
+```
+
+The full sequence in the failing log:
+
+```
+13:27:02 [flatten] stage_start
+13:27:02 [flatten] Materializing aggregation tables...
+... 67 minutes of spatial join ...
+14:33:50 [flatten] stage_start (second one!)
+[flatten] Aggregation tables ready. Starting cursor stream...
+[flatten] Fatal: PostgresError: relation "tmp_address_geocodes" does not exist
+```
+
+Two `stage_start` events in the same flatten run is the smoking gun. `address_full_prep.sql` must be running TWICE: once initially (which creates the temp tables and runs the spatial join) and once again before the cursor stream (which drops the existing temp tables via `DROP TABLE IF EXISTS` and recreates them — but somehow the recreate is missing or runs in a different session).
+
+**Hypothesis (UNVERIFIED — needs reading `src/flatten.ts`):** flatten.ts uses two postgres clients/connections — one for prep SQL, another for the cursor stream. Postgres `TEMPORARY` tables are session-scoped, so temp tables created in client A don't exist in client B. When the second client runs `address_full_prep.sql`, the `DROP TABLE IF EXISTS` is a no-op (nothing to drop in this session), then the `CREATE TEMPORARY TABLE` should recreate them — but apparently doesn't, OR the cursor stream queries them in a third client.
+
+**Alternative hypotheses to investigate:**
+
+1. Single client with an idle-in-transaction timeout that expires during the long spatial join, dropping the session
+2. The cursor stream reads via a separate `PREFETCH`/`READ_ONLY` connection that doesn't have access to the session's temp tables
+3. `src/flatten.ts` calls prep SQL twice as a defensive idempotence check, in different sessions
+4. The `postgres` driver pool drops idle connections after some timeout
+
+**Currently masked by E1.21.** With the new bulk join, the spatial join takes ~7 minutes instead of 67, and the timing window that triggered the bug doesn't fire. E1.21 → quarterly run 24163471133 → flatten succeeded for all 9 states. **The bug is latent, not fixed.** It will re-emerge if any future change slows Path 2 again, or if local dev workflows hit a similar timing window.
+
+Empirical evidence: see local NSW3 run.log (no longer in the repo; was at `output/nsw-test/run.log` during this session, can be regenerated by running NSW with the OLD LATERAL code and a long-running spatial join).
+
+## Approach
+
+1. **Read `src/flatten.ts`** carefully. Identify how postgres clients/connections are created, how prep SQL is invoked, how the cursor stream is opened. Confirm or reject the "two clients" hypothesis.
+2. **If two clients:** refactor to use a single client across prep + cursor stream. Or move the prep SQL into the same transaction as the cursor query.
+3. **If single client with idle timeout:** add a keep-alive ping during the prep SQL, OR raise the idle_in_transaction_session_timeout, OR move prep into a non-transactional `BEGIN; ... COMMIT;` block.
+4. **Add a regression test:** integration test that runs prep SQL with an artificial delay (e.g., `pg_sleep(60)` injected as a no-op temp table) and confirms the cursor stream still works.
+
+## Definition of Done
+
+- [ ] Root cause confirmed by reading `src/flatten.ts`
+- [ ] Fix shipped (specific shape depends on root cause)
+- [ ] Regression test added that would have caught the original bug
+- [ ] Fixture build still passes
+- [ ] All integration tests pass
+- [ ] CHANGELOG + roadmap updated
+
+## Scope
+
+### In
+
+- `src/flatten.ts` connection/session management
+- New regression test
+- CHANGELOG / ROADMAP
+
+### Out
+
+- Anything in `address_full_prep.sql` (the prep SQL itself is fine)
+- Anything in `address_full_main.sql` (the cursor query is fine)
+- Performance work (E1.21 covered that)
+
+## Notes
+
+Origin: discovered during E1.21 implementation session (2026-04-08/09). Hit twice locally on M5 against the OLD LATERAL code (NSW2, NSW3) before the bulk-join fix landed. Also fired in the failing quarterly run 24138309484 for NSW, SA, TAS — all three exited with code 3 (flatten failed) after long spatial joins. Pattern: the bigger the state and the longer the spatial join, the more likely the bug fires. Fast spatial join → bug doesn't fire.
+
+**Should be fixed BEFORE E1.23**, since E1.23 changes the surrounding code paths and E1.24's fix probably touches `src/flatten.ts` which E1.23 will also need to coordinate with.
+
+Risk: low-medium. Small change once root cause is understood. The risk is in mis-diagnosing the root cause — hence the requirement to read flatten.ts before estimating effort.
+
+---
+
+### Ticket E1.25 — docker-entrypoint.sh `--skip-download` env-var gap
+
+```yaml
+id: E1.25
+title: GNAF_DATA_PATH and ADMIN_BDYS_PATH env vars only exported in download branch
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a developer running flat-white locally with `--skip-download --gnaf-path X --admin-path Y`, I need those flags to actually be passed to `dist/load.js`, instead of silently falling back to `/app/data` and failing with `Data directory not found`.
+
+## Problem Statement
+
+In `docker-entrypoint.sh:319-333`, the `GNAF_DATA_PATH` and `ADMIN_BDYS_PATH` env var exports are inside the `if [[ "$SKIP_DOWNLOAD" == "false" ]]; then` branch:
+
+```bash
+if [[ "$SKIP_DOWNLOAD" == "false" ]]; then
+  stage_start "download"
+  export GNAF_DATA_PATH="${GNAF_PATH:-}"
+  export ADMIN_BDYS_PATH="${ADMIN_PATH:-}"
+  ...
+  if ! node /app/dist/download.js; then
+    log "ERROR: Download failed"
+    exit 1
+  fi
+  stage_end
+else
+  log "Skipping download (--skip-download)"
+fi
+```
+
+When `--skip-download` is true, the entrypoint takes the `else` branch and **never exports the env vars**. `dist/load.js` then falls back to its default `./data` (which becomes `/app/data` in the container's WORKDIR), not the `--gnaf-path` value the user passed.
+
+Hit during the E1.21 implementation session when running NSW locally with `--skip-download --gnaf-path "/data/G-NAF/G-NAF FEBRUARY 2026" --admin-path /data/FEB26_AdminBounds_GDA_2020_SHP`. The first attempt failed with `Data directory not found: /app/data`. Workaround: mount the data at `/app/data` instead, sidestepping the flag entirely.
+
+Doesn't matter for the quarterly cron (which always downloads) or for the fixture build (different code path entirely). Only matters for local dev workflows that use `--skip-download` against pre-mounted data.
+
+## Approach
+
+Move the env var exports above the `if SKIP_DOWNLOAD == false` check, OR duplicate them into the `else` branch:
+
+```bash
+# Always export — the flags are the same shape regardless of whether
+# we're downloading or skipping. dist/download.js needs them; dist/load.js
+# needs them too when --skip-download is set.
+export GNAF_DATA_PATH="${GNAF_PATH:-}"
+export ADMIN_BDYS_PATH="${ADMIN_PATH:-}"
+
+if [[ "$SKIP_DOWNLOAD" == "false" ]]; then
+  stage_start "download"
+  ...
+fi
+```
+
+## Definition of Done
+
+- [ ] `GNAF_DATA_PATH`/`ADMIN_BDYS_PATH` are exported regardless of `SKIP_DOWNLOAD` value
+- [ ] Local docker run with `--skip-download --gnaf-path X --admin-path Y` works without mounting at `/app/data`
+- [ ] No regression in the quarterly cron or fixture build paths
+
+## Scope
+
+### In
+
+- 2-line `docker-entrypoint.sh` change
+- Manual smoke test on M5 before opening PR
+
+### Out
+
+- Refactoring the broader env-var handling in the entrypoint
+- Anything in `dist/load.js`'s default-path logic
+
+## Notes
+
+Origin: discovered during E1.21 implementation session (2026-04-08/09) when running NSW locally with `--skip-download` and the flags I passed weren't being honored. Trivial fix; bundle into any small workflow PR.
+
+Risk: zero. 2-line change. Bundle for free.
+
+---
+
+### Ticket E1.26 — WA flatten 40-75× slower when restored from cache
+
+```yaml
+id: E1.26
+title: Investigate and fix WA cursor stream performance regression after pg_dump cache restore
+status: planned
+priority: p2-medium
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer running quarterly builds with the actions/cache@v4 gnaf-loader dump cache, I need the WA cursor stream to perform comparably to the fresh-build case, so that cache hits actually save time instead of adding ~50 minutes to the WA job.
+
+## Problem Statement
+
+Forensic finding from the post-E1.21 quarterly run 24163471133:
+
+| State  | Cursor stream rate (cache restore)                        |
+| ------ | --------------------------------------------------------- |
+| OT     | 3,805 rows in <1s                                         |
+| NT     | 15,726 rows/s                                             |
+| ACT    | 18,874 rows/s                                             |
+| SA     | 18,412 rows/s                                             |
+| QLD    | ~19,500 rows/s                                            |
+| VIC    | ~17,514 rows/s                                            |
+| NSW    | **33,162 rows/s** (peak)                                  |
+| TAS    | 26,634 rows/s                                             |
+| **WA** | **442 rows/s** ← **40-75× slower than every other state** |
+
+WA wrote 1,526,407 documents in 3,448 seconds (~57 minutes). Steady at 450 rows/sec for the entire duration — no stalls, no variance, no progress noise. **Same code, same SQL, same docker image, same Path 1 (gnaf-loader Part 5 succeeds for VIC and WA).** The difference is just the data.
+
+**Comparison with previous run.** In the failed run 24159739501, WA built **fresh** (no cache) and finished in 12m43s. In run 24163471133, WA **restored from a cache prefix-match** (`Cache exact hit: false`, key matched the previous run via `restore-keys:`) and the flatten took 1h. **Same dump, different cycle, 5× slowdown.**
+
+The dump came from a fresh build at the end of run 24159739501, so should be intact. Restore took 47 seconds (cache hit worked). Then the slowness started immediately and stayed constant for the entire flatten.
+
+**Leading hypothesis:** `pg_dump` does not dump per-table statistics. After `pg_restore`, the planner runs against fresh defaults until `ANALYZE` runs. WA's flatten SQL apparently picks a pathological plan when stats are missing — likely a nested loop where it should be a hash join, in one of the temp-table aggregations. NSW's plan is robust to the missing stats; WA's is not. This is consistent with the constant-rate slowness (no spike, just steadily slow throughout — exactly what a wrong plan looks like).
+
+**Alternative hypotheses to rule out:**
+
+1. The dump itself is missing indexes or a constraint (unlikely; pg_dump rebuilds indexes after data load)
+2. The dump is missing CLUSTER physical ordering (pg_dump preserves the CLUSTER metadata but not the physical ordering — could matter for spatial range scans)
+3. WA's data has something pathological that only manifests under default planner stats (e.g. skewed cardinality)
+4. Postgres version mismatch between dump time and restore time (both use the same `imresamu/postgis:16-3.5` docker image — should be impossible but worth verifying)
+
+## Approach
+
+**Step 1 — repro on M5.**
+
+1. Run a fresh WA build locally on M5: `bash scripts/build-local.sh --states WA` (or equivalent docker run with `--states WA`)
+2. After the build, dump the database: `pg_dump --format=custom -f wa.dump`
+3. Stop the container, start fresh, restore: `pg_restore -d gnaf wa.dump`
+4. Run flatten without ANALYZE — measure cursor stream time
+5. Run `ANALYZE` on the database
+6. Run flatten again — measure cursor stream time
+
+If step 4 is ~1h and step 6 is ~12 min, the hypothesis is confirmed.
+
+**Step 2 — fix.**
+
+If ANALYZE fixes it, add to `docker-entrypoint.sh` between cache restore and flatten:
+
+```bash
+log "Running ANALYZE after cache restore (E1.26 — pg_dump doesn't dump statistics)..."
+su postgres -c "psql -d $PGDB -c 'ANALYZE;'"
+```
+
+Or add `ANALYZE;` to the existing `scripts/validate-db-cache.sh` script (which already runs after restore).
+
+If ANALYZE doesn't fix it, dig into `EXPLAIN ANALYZE` of the cursor query against fresh vs restored DB. Compare query plans. Fix whatever is different.
+
+**Step 3 — verify.**
+
+Run a quarterly `workflow_dispatch` after the fix, confirm WA drops back to ~12-15 min on cache hit.
+
+## Definition of Done
+
+- [ ] WA flatten cursor stream runs at >5,000 rows/sec when restored from cache (current: 442 rows/sec)
+- [ ] WA total job time ≤ 20 min on cache hit (current: 1h1m15s)
+- [ ] No regression for other states (NSW, VIC, etc.)
+- [ ] Fix verified by triggering a fresh quarterly `workflow_dispatch` post-merge
+- [ ] CHANGELOG + roadmap updated
+
+## Scope
+
+### In
+
+- Repro on M5
+- `docker-entrypoint.sh` (or `scripts/validate-db-cache.sh`) — add ANALYZE after restore
+- Validation via workflow_dispatch
+- CHANGELOG / ROADMAP
+
+### Out
+
+- Other state regressions (only WA shows this)
+- Restructuring the dump cache approach (E1.06 covers cache strategy)
+- Postgres tuning beyond ANALYZE
+
+## Notes
+
+Origin: forensic scan of quarterly run 24163471133 (2026-04-09). Empirical numbers from the run logs.
+
+**Should be fixed BEFORE the 2026-05-15 cron.** Otherwise the v2026.05 quarterly will hit the same WA slowdown and waste ~50 minutes per release on cache-hit runs.
+
+Risk: low if hypothesis is correct (5-line ANALYZE addition); medium if hypothesis is wrong (need deeper investigation). Mitigated by Step 1 local repro before shipping.
+
+---
+
+### Ticket E1.27 — Release CHANGELOG.md push fails on branch protection
+
+```yaml
+id: E1.27
+title: Release workflow CHANGELOG update should open a PR instead of pushing direct to main
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need the release workflow's CHANGELOG.md auto-update to actually land on main, instead of failing branch-protection rules and leaving CHANGELOG drift between releases and the repo.
+
+## Problem Statement
+
+The release job in `.github/workflows/quarterly-build.yml` runs an "Update CHANGELOG.md" step that:
+
+1. Generates a per-release entry via Python script (idempotent — moves `[Unreleased]` content into the new versioned entry)
+2. Commits the change
+3. **Pushes directly to main with `git push origin main`**
+
+Step 3 fails because `main` has branch protection requiring PR review + status checks. From release job log of run 24163471133:
+
+```
+remote: error: GH013: Repository rule violations found for refs/heads/main.
+remote: - Changes must be made through a pull request.
+remote: - Required status check "quality" is expected.
+##[warning]CHANGELOG push failed (branch protection). Release still proceeds — push CHANGELOG manually.
+```
+
+The release publishes successfully (the warning is non-fatal), but **CHANGELOG.md on main is missing the v2026.02.1 entry**. Every quarterly release leaves the same drift. Anyone reading `CHANGELOG.md` sees the most recent entry as v2026.04 (which has been deleted from releases), and has no breadcrumb to v2026.02.1 (which is the actual current release).
+
+## Approach
+
+Replace the direct push with a PR-creation flow:
+
+```yaml
+- name: Update CHANGELOG.md (via PR)
+  run: |
+    BRANCH="release-changelog/v${RELEASE_VERSION}"
+    git checkout -b "$BRANCH"
+    # ... existing python script that updates CHANGELOG.md ...
+    git add CHANGELOG.md
+    git commit -m "docs(changelog): record v${RELEASE_VERSION}"
+    git push origin "$BRANCH"
+    gh pr create --title "docs(changelog): v${RELEASE_VERSION}" \
+                 --body "Auto-generated CHANGELOG entry for v${RELEASE_VERSION}." \
+                 --base main
+    gh pr merge --auto --squash
+  env:
+    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The auto-merge will fire when CI passes (the `quality` check that the direct push couldn't satisfy). The PR is small (one file, ~20 lines added) and CI is fast (~2 min for the doc-only diff).
+
+**Risk to consider:** the PR's CI run could potentially trigger another release workflow run if there's a `push` trigger on main. Verify the workflow triggers don't include `push: branches: [main]` on `quarterly-build.yml`. If they do, the PR merge could create an infinite loop. **Confirm before shipping.**
+
+## Definition of Done
+
+- [ ] Release workflow opens a PR instead of pushing direct
+- [ ] PR auto-merges on CI pass
+- [ ] CHANGELOG.md on main has the new release entry within ~5 min of release publish
+- [ ] No infinite-loop risk verified
+- [ ] Smoke test: trigger a manual workflow_dispatch with patch_version=2 against current G-NAF; confirm CHANGELOG PR is created and merges. Then either delete the smoke release or publish it as a real follow-up.
+
+## Scope
+
+### In
+
+- `.github/workflows/quarterly-build.yml` "Update CHANGELOG.md" step rewrite
+- Smoke test via workflow_dispatch
+- CHANGELOG / ROADMAP
+
+### Out
+
+- Restructuring the broader release workflow
+- CHANGELOG format changes
+- Branch protection rule changes (don't relax protection just to make this work)
+
+## Notes
+
+Origin: forensic scan of quarterly run 24163471133 (2026-04-09). The release published v2026.02.1 successfully but the CHANGELOG push failed silently. This has likely been failing on every release (not just this one); previous releases either didn't notice or were manually patched.
+
+**Should be fixed BEFORE the 2026-05-15 cron** so v2026.05's CHANGELOG entry lands automatically.
+
+Risk: low. Workflow change only. Validate via smoke test.
+
+---
+
+### Ticket E1.28 — Catalogue workflow has never been triggered
+
+```yaml
+id: E1.28
+title: Catalogue workflow not triggered by GITHUB_TOKEN-published releases
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+```
+
+## User Story
+
+As a maintainer, I need the GitHub Pages catalogue site to update when a new flat-white release is published, so that consumers checking the catalogue see the current state of releases.
+
+## Problem Statement
+
+`.github/workflows/catalogue.yml` is configured to trigger on `release: types: [published]`. It was created on 2026-04-07 and is currently `state: active`.
+
+**Catalogue workflow run count: 0.** Never triggered.
+
+Two releases have been published since the workflow was created:
+
+- v2026.04 — published 2026-04-05 (BEFORE the catalogue workflow existed; expected zero runs)
+- v2026.02.1 — published 2026-04-09 (AFTER the catalogue workflow existed; should have triggered, didn't)
+
+**Cause:** GitHub Actions has a default behavior that prevents workflow runs from being triggered by events created by `GITHUB_TOKEN` actions, to prevent recursion. From [GitHub docs](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow):
+
+> When you use the repository's GITHUB_TOKEN to perform tasks, events triggered by the GITHUB_TOKEN, with the exception of `workflow_dispatch` and `repository_dispatch`, will not create a new workflow run.
+
+The v2026.02.1 release was created by the quarterly-build workflow's release job using the default `GITHUB_TOKEN`. So even though the release was published correctly, the `release.published` event did not fire any other workflow.
+
+## Approach
+
+Three viable fixes:
+
+**Option 1 — Switch to `workflow_run` trigger.** Listen for "Quarterly Build" completing successfully:
+
+```yaml
+on:
+  workflow_run:
+    workflows: ["Quarterly Build"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  catalogue:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    ...
+```
+
+`workflow_run` IS triggered by GITHUB_TOKEN actions (it's specifically designed for chaining workflows). Cleanest fix.
+
+**Option 2 — Inline the catalogue generation into the release job.** Add a final step in `quarterly-build.yml`'s release job that runs the catalogue generation and deploys to GitHub Pages. Removes the cross-workflow dependency entirely. Tradeoff: couples release to catalogue.
+
+**Option 3 — Use a PAT or `repository_dispatch`.** Configure a personal access token as a secret and use it instead of `GITHUB_TOKEN` when creating the release. Or have the release job emit a `repository_dispatch` event that the catalogue workflow listens for. Both work but add a secret to manage.
+
+**Recommended: Option 1.** Cleanest, no secrets, idiomatic GitHub Actions pattern.
+
+## Definition of Done
+
+- [ ] Catalogue workflow trigger fixed (Option 1 unless there's a reason to pick another)
+- [ ] Catalogue workflow runs successfully against v2026.02.1 (manually triggered post-fix)
+- [ ] GitHub Pages catalogue site shows v2026.02.1 as the current release
+- [ ] CHANGELOG + roadmap updated
+
+## Scope
+
+### In
+
+- `.github/workflows/catalogue.yml` trigger update
+- Manual catalogue run after merge to backfill v2026.02.1
+- CHANGELOG / ROADMAP
+
+### Out
+
+- Catalogue rendering changes (`src/generate-catalogue.ts`)
+- GitHub Pages configuration
+
+## Notes
+
+Origin: forensic scan of quarterly run 24163471133 (2026-04-09). Discovered that the catalogue workflow had zero runs since creation 2 days ago.
+
+Should be fixed before the 2026-05-15 cron so v2026.05 publishes correctly. Bundle with E1.26 + E1.27 in a single workflow-fixes PR.
+
+Risk: low. Workflow change only. Validate by manually triggering the catalogue workflow against v2026.02.1.
+
+---
+
+### Ticket E1.29 — Upgrade GitHub Actions to Node.js 24
+
+```yaml
+id: E1.29
+title: Upgrade GitHub Actions actions to Node.js 24 before Node 20 EOL
+status: planned
+priority: p3-low
+epic: E1.B
+persona: [maintainer]
+depends_on: []
+completed: null
+target_date: 2026-09-01
+```
+
+## User Story
+
+As a maintainer, I need flat-white's GitHub Actions workflows to use Node.js 24 (or newer) before the Node 20 EOL deadline, so that the quarterly build pipeline doesn't break in mid-September 2026.
+
+## Problem Statement
+
+Every GitHub Actions job in flat-white emits this annotation:
+
+```
+! Node.js 20 actions are deprecated. The following actions are running on Node.js 20
+  and may not work as expected: actions/cache/restore@v4, actions/cache/save@v4,
+  actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6,
+  docker/setup-buildx-action@v3.
+  Actions will be forced to run with Node.js 24 by default starting June 2nd, 2026.
+  Node.js 20 will be removed from the runner on September 16th, 2026.
+```
+
+**Two deadlines:**
+
+- **2026-06-02** — actions are forced to run on Node.js 24 by default. May break actions that aren't compatible.
+- **2026-09-16** — Node.js 20 is removed from runners entirely. Any action that hasn't been upgraded fails to start.
+
+flat-white's quarterly cron is 2026-05-15, so the next cron AFTER that (2026-08-15) lands in the dangerous window between the two deadlines. The cron after THAT (2026-11-15) is firmly past the EOL.
+
+**Affected actions** (from forensic scan of run 24163471133):
+
+- `actions/cache/restore@v4`
+- `actions/cache/save@v4`
+- `actions/checkout@v4`
+- `actions/upload-artifact@v4`
+- `actions/download-artifact@v4` (in concatenate + release jobs)
+- `docker/build-push-action@v6`
+- `docker/setup-buildx-action@v3`
+- `actions/setup-node@v4` (in release job)
+
+These are the official versions as of 2026-04-09. The vendors (GitHub, Docker) will publish Node 24-compatible versions before the deadline; the upgrade is mostly mechanical (bump tag, test).
+
+## Approach
+
+**Step 1 — wait until June 2026 and check.** Most action authors will publish Node 24-compatible major or minor versions before the 2026-06-02 forced-default date. Bump in one PR.
+
+**Step 2 — if any action hasn't been upgraded by July 2026, file a follow-up:**
+
+- For actively-maintained official actions (`actions/*`, `docker/*`), the upgrade is just tag bumping
+- For unmaintained actions (less likely in this codebase), find a fork or replacement
+- If a critical action is stuck on Node 20 with no upgrade path, consider rewriting that step inline
+
+**Step 3 — verify by triggering a quarterly workflow_dispatch** with the new versions. Confirm no deprecation warnings.
+
+## Definition of Done
+
+- [ ] All actions in `.github/workflows/*.yml` use Node 24-compatible versions
+- [ ] Zero "Node.js 20 deprecated" annotations in a fresh quarterly run
+- [ ] The 2026-08-15 quarterly cron completes successfully
+- [ ] CHANGELOG + roadmap updated
+
+## Scope
+
+### In
+
+- `.github/workflows/quarterly-build.yml` action version bumps
+- `.github/workflows/ci.yml` action version bumps
+- `.github/workflows/catalogue.yml` action version bumps
+- `.github/workflows/docker-publish.yml` action version bumps
+- `.github/workflows/sast.yml` action version bumps
+- Smoke test via workflow_dispatch
+- CHANGELOG / ROADMAP
+
+### Out
+
+- Switching to entirely different actions (this is just a version bump)
+- Self-hosted runner work (E1.09)
+- Node version inside the docker image (`Dockerfile` uses `node:22-bookworm-slim` — separate concern, has its own LTS schedule)
+
+## Notes
+
+Origin: GitHub Actions deprecation notice observed in every job of quarterly run 24163471133 (and all earlier runs). The notice has been firing for weeks but the deadline is months away.
+
+**Sequencing:** wait until June 2026 (after the 2026-06-02 forced-default date) before doing the upgrade — that way we get the post-deadline state of the action ecosystem and don't have to chase moving targets. Alternatively, do it any time before then if it's convenient (the upgrade is mostly mechanical).
+
+**Don't ship before the 2026-05-15 cron** unless there's a specific reason — a workflow change that close to a cron creates unnecessary risk for v2026.05.
+
+Risk: low. Mechanical version bumps. The catch is identifying any action that doesn't have a Node 24-compatible release; that needs the wait-and-check approach.
 
 ---
 

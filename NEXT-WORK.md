@@ -38,7 +38,7 @@
 
 ### P4.07 — NSW Memory Optimisation (in-progress)
 
-- [ ] NSW builds reliably on 7GB free runners (1/5 consecutive runs)
+- [ ] NSW builds reliably on 7GB free runners (**2/5** consecutive runs as of 2026-04-09; quarterly run 24163471133 added the second clean cycle. E1.21 made the spatial join fast enough that the pressure scenarios that motivated this ticket may no longer fire — but the literal 5/5 acceptance criterion needs 3 more clean cron cycles to count down naturally.)
 
 ## Next E1 Work
 
@@ -67,7 +67,7 @@
 - [x] Build-over-build comparison skips count check for patches (PR #67)
 - [x] Catalogue grouping for patches under parent quarterly cut
 - [x] Auto-link fixing PR(s) in patch release notes
-- [ ] Existing v2026.04 release notes updated to point at the patch (manual one-time edit)
+- [x] ~~Existing v2026.04 release notes updated to point at the patch (manual one-time edit)~~ **CLOSED-OBSOLETE 2026-04-09:** v2026.04 release was deleted entirely on 2026-04-09 (it shipped with all-null boundary fields and was superseded by v2026.02.1). There are no v2026.04 release notes to update. The git tag `v2026.04` survives for history; the release page is gone.
 - Origin: PR #67 — most of this ticket landed in PR #67 because the v2026.04 streetType fix needed it as a prerequisite
 
 ### E1.14 — Restore LGA / ward / state / commonwealth electorate fields (in-progress, **p0-critical**)
@@ -121,22 +121,68 @@
 - [x] Convention documented in `docs/RELEASING.md` (two-tier: consumer-facing uses current version, operational uses `${VERSION}`)
 - Origin: PR #77 audit — README VERSION example was the highest-impact and got fixed in #77; rest filed for follow-up
 
-### E1.20 — Push gnaf-loader settings.py / 04-06 fix upstream (planned, p3-low)
+### E1.20 — Push gnaf-loader settings.py / 04-06 fix upstream (deferred, p4-defer)
 
-- [ ] Open upstream PR to `minus34/gnaf-loader` with one of two fixes (remove per-state filter OR make 04-06 dynamic)
-- [ ] PR includes failure log from a flat-white quarterly build as evidence
-- [ ] Maintainer review + merge
-- [ ] Bump flat-white's gnaf-loader submodule pin once merged
-- [ ] Verify the broad Part-5 detection in `scripts/detect-load-failure.sh` no longer fires
-- Origin: "permanent fix" PR — flat-white now has a layered defence (broad detection + spatial-join fallback) so this upstream fix is **nice-to-have, not load-bearing**.
+- [ ] **2026-04-09: downgraded.** Obsoleted by E1.21 (PR #106 — flat-white spatial join is now fast enough) and E1.23 (queued — collapse Path 1/2 means we never call gnaf-loader Part 5). Revisit only if E1.23 is cancelled OR for community-contribution reasons.
 
-### E1.21 — Optimise spatial-join fallback for NSW scale (planned, p2-medium)
+### E1.21 — Optimise spatial-join fallback for NSW scale (DONE 2026-04-09, PR #106)
 
-- [ ] Rewrite `address_full_prep.sql` spatial join fallback to use bulk hash joins (DISTINCT ON or ST_Subdivide-style chunking) instead of per-row LATERAL+LIMIT
-- [ ] Preserve one-row-per-address guarantee (E1.15 multi-polygon safety)
-- [ ] Performance test: NSW (~4.6M rows) under 30 min on a free GitHub runner
-- [ ] Output byte-identical to current LATERAL approach
-- Origin: "permanent fix" PR — currently p2-medium because the 360-min build job timeout gives the slow fallback room to run. Promotes to p1-high if the first quarterly build with the fallback exceeds 360 min.
+- [x] Rewrite `address_full_prep.sql` spatial join fallback as **insert-then-5-updates against unsubdivided polygon tables** (NOT the DISTINCT ON or ST_Subdivide approaches in the original ticket — see ROADMAP entry for full reasoning)
+- [x] Preserve one-row-per-address guarantee (E1.15 multi-polygon safety)
+- [x] Performance: NSW spatial join 67 min → 7.5 min on M5; CI quarterly run 24163471133 NSW total job time 29m20s with cache hit
+- [x] Output byte-identical to LATERAL approach (fixture cross-path PASS, all 9 states in v2026.02.1 verify-PASS)
+- [x] Quarterly run 24163471133 publishes v2026.02.1 with all 9 states green for the first time
+- Origin: "permanent fix" PR. See ROADMAP entry E1.21 for empirical evidence table and full implementation reasoning.
+
+### E1.23 — Collapse Path 1 and Path 2 into a single path (planned, p2-medium)
+
+- [ ] Always pass `--no-boundary-tag`; never call gnaf-loader Part 5
+- [ ] Delete `scripts/detect-load-failure.sh` + `test/integration/load-detection/`
+- [ ] Remove `--no-boundary-tag` retry branch from `docker-entrypoint.sh`
+- [ ] Rewrite `docs/BOUNDARIES.md` for single path
+- Origin: now possible because E1.21 made Path 2 as fast as Path 1. Removes ~100 lines and a whole class of failure modes. Depends on E1.24 (do that first since it touches `src/flatten.ts` which E1.23 will also coordinate with).
+
+### E1.24 — Flatten temp tables disappear when prep SQL runs twice (planned, p2-medium)
+
+- [ ] Read `src/flatten.ts` to understand connection/session management
+- [ ] Confirm or reject "two postgres clients" hypothesis
+- [ ] Fix root cause (refactor to single client OR transaction wrapping OR keep-alive ping)
+- [ ] Add regression test
+- Origin: `tmp_address_geocodes does not exist` crashes hit during the E1.21 implementation session against the OLD LATERAL code (NSW2, NSW3) and in failed quarterly run 24138309484 (NSW/SA/TAS exit 3 in flatten). Currently masked by E1.21 making the spatial join fast; will re-emerge if Path 2 ever slows again. **Should fix BEFORE E1.23.**
+
+### E1.25 — docker-entrypoint.sh `--skip-download` env-var gap (planned, p3-low)
+
+- [ ] Move `GNAF_DATA_PATH` / `ADMIN_BDYS_PATH` exports outside the download branch
+- Origin: discovered during E1.21 implementation session. 2-line fix; bundle into any small workflow PR.
+
+### E1.26 — WA flatten 40-75× slower when restored from cache (planned, p2-medium)
+
+- [ ] Repro on M5 (fresh build → pg_dump → restore → measure cursor stream)
+- [ ] Validate ANALYZE-after-restore hypothesis (or dig deeper if wrong)
+- [ ] Add ANALYZE step to `docker-entrypoint.sh` cache restore path (or `validate-db-cache.sh`)
+- [ ] Verify via quarterly workflow_dispatch
+- Origin: forensic scan of quarterly run 24163471133 (2026-04-09). WA cursor stream rate 442 rows/sec vs other states' 15-33k rows/sec. Same code, same data; only difference is cache restore. **Should fix BEFORE 2026-05-15 cron.**
+
+### E1.27 — Release CHANGELOG.md push fails on branch protection (planned, p3-low)
+
+- [ ] Workflow opens a PR (`gh pr create --auto-merge`) instead of pushing direct
+- [ ] Smoke test via workflow_dispatch
+- [ ] Verify no infinite-loop risk from PR-merge → main-push → re-trigger
+- Origin: forensic scan of quarterly run 24163471133. The release publishes successfully but CHANGELOG.md drift accumulates on main. **Should fix BEFORE 2026-05-15 cron.**
+
+### E1.28 — Catalogue workflow never triggered (planned, p3-low)
+
+- [ ] Switch trigger from `release.published` to `workflow_run` listening to "Quarterly Build" completed
+- [ ] Manually trigger catalogue workflow against v2026.02.1 to backfill
+- [ ] Verify GitHub Pages catalogue updates correctly
+- Origin: forensic scan. Catalogue workflow has 0 runs since creation 2026-04-07 because GitHub Actions doesn't fire workflow events from GITHUB_TOKEN-created releases (recursion prevention). **Should fix BEFORE 2026-05-15 cron.**
+
+### E1.29 — Upgrade GitHub Actions to Node.js 24 (planned, p3-low)
+
+- [ ] Bump `actions/cache@v4`, `actions/checkout@v4`, `actions/upload-artifact@v4`, `actions/download-artifact@v4`, `actions/setup-node@v4`, `docker/build-push-action@v6`, `docker/setup-buildx-action@v3` to Node 24-compatible versions
+- [ ] Verify zero "Node.js 20 deprecated" annotations on a fresh workflow run
+- [ ] Smoke test via workflow_dispatch
+- Origin: GitHub Actions deprecation. Node 20 forced default 2026-06-02; full removal 2026-09-16. **Wait until June 2026 to do the upgrade** so the action ecosystem has stabilized. Don't ship right before 2026-05-15 cron.
 
 ### E1.02 — Delta Builds (planned, p2-medium)
 
