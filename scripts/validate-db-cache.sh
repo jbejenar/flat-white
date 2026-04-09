@@ -109,10 +109,11 @@ require_min_rows "$GNAF_SCHEMA" "streets" 1
 require_min_rows "$RAW_SCHEMA" "address_detail" "$MIN_ADDRESS_ROWS"
 require_min_rows "$RAW_SCHEMA" "address_site" 1
 
-# 3. address_principal_admin_boundaries TABLE must exist (rows may be empty
-#    if --no-boundary-tag fallback path is in play; the spatial-join fallback
-#    fills it at flatten time).
-require_table_exists "$GNAF_SCHEMA" "address_principal_admin_boundaries"
+# 3. address_principal_admin_boundaries — REMOVED (E1.23).
+#    With --no-boundary-tag always passed, gnaf-loader never creates this table.
+#    flat-white's spatial join fallback creates and populates it during flatten
+#    (address_full_prep.sql boundary prelude), which runs AFTER this validator.
+#    Checking for it here would always fail on fresh builds.
 
 # 4. Mesh-block table — non-derived, populated by gnaf-loader's
 #    `02-02d-prep-census-2021-bdys-tables.sql` during the load stage. The flatten
