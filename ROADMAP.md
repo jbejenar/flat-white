@@ -5464,12 +5464,13 @@ Risk: low-medium. Small change once root cause is understood. The risk is in mis
 ```yaml
 id: E1.25
 title: GNAF_DATA_PATH and ADMIN_BDYS_PATH env vars only exported in download branch
-status: planned
+status: complete
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
+shipped_in: workflow-fixes-bundle PR (TBD on merge)
 ```
 
 ## User Story
@@ -5669,12 +5670,13 @@ Risk: low if hypothesis is correct (5-line ANALYZE addition); medium if hypothes
 ```yaml
 id: E1.27
 title: Release workflow CHANGELOG update should open a PR instead of pushing direct to main
-status: planned
+status: complete
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
+shipped_in: workflow-fixes-bundle PR (TBD on merge)
 ```
 
 ## User Story
@@ -5762,12 +5764,13 @@ Risk: low. Workflow change only. Validate via smoke test.
 ```yaml
 id: E1.28
 title: Catalogue workflow not triggered by GITHUB_TOKEN-published releases
-status: planned
+status: complete
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
+shipped_in: workflow-fixes-bundle PR (TBD on merge)
 ```
 
 ## User Story

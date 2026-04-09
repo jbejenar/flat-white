@@ -30,6 +30,8 @@ function makeRelease(overrides: Partial<GitHubRelease> = {}): GitHubRelease {
         size: 512,
       },
     ],
+    draft: false,
+    prerelease: false,
     ...overrides,
   };
 }
@@ -110,6 +112,54 @@ describe("parseVersion", () => {
 
   it("returns tag as base for non-matching format", () => {
     expect(parseVersion("nightly-2026")).toEqual({ base: "nightly-2026", patch: null });
+  });
+});
+
+describe("processReleases — draft and prerelease filtering (E1.28)", () => {
+  it("excludes draft releases", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.02", name: "v2026.02" }),
+      makeRelease({ tag_name: "v2026.02.1", name: "v2026.02.1", draft: true }),
+      makeRelease({ tag_name: "v2026.04", name: "v2026.04" }),
+    ]);
+    const versions = releases.map((r) => r.version);
+    expect(versions).toContain("v2026.02");
+    expect(versions).toContain("v2026.04");
+    expect(versions).not.toContain("v2026.02.1");
+  });
+
+  it("excludes prereleases", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.02", name: "v2026.02" }),
+      makeRelease({ tag_name: "v2026.05-rc1", name: "v2026.05-rc1", prerelease: true }),
+    ]);
+    const versions = releases.map((r) => r.version);
+    expect(versions).toContain("v2026.02");
+    expect(versions).not.toContain("v2026.05-rc1");
+  });
+
+  it("returns empty array if all releases are draft", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.04", draft: true }),
+      makeRelease({ tag_name: "v2026.02.1", draft: true }),
+    ]);
+    expect(releases).toHaveLength(0);
+  });
+
+  it("returns empty array if all releases are prereleases", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.04-rc1", prerelease: true }),
+      makeRelease({ tag_name: "v2026.04-rc2", prerelease: true }),
+    ]);
+    expect(releases).toHaveLength(0);
+  });
+
+  it("includes release if neither draft nor prerelease", () => {
+    const releases = processReleases([
+      makeRelease({ tag_name: "v2026.04", draft: false, prerelease: false }),
+    ]);
+    expect(releases).toHaveLength(1);
+    expect(releases[0].version).toBe("v2026.04");
   });
 });
 

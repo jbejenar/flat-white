@@ -311,7 +311,16 @@ jobs:
     needs: [setup, build, concatenate]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
     permissions:
+      # contents: write — needed for the release job's git push to a feature
+      #   branch (the new CHANGELOG PR flow uses this) and for gh release
+      #   create/edit
+      # pull-requests: write — REQUIRED for the new CHANGELOG PR flow.
+      #   When a job-level permissions block is set, all unspecified scopes
+      #   become 'none' (not the workflow default). Without this, gh pr list
+      #   and gh pr create return 403 and silently fall through to the
+      #   warning fallback, leaving CHANGELOG.md drift on every release.
       contents: write
+      pull-requests: write
     outputs:
       # 'true' iff the release was actually published (draft → public).
       # 'false' iff the release was kept as draft due to build-over-build
@@ -737,15 +746,84 @@ jobs:
           open('CHANGELOG.md', 'w').write(content)
           " "$RELEASE_VERSION" "$VERSION" "$BUILD_DATE" "$SCHEMA_VERSION" "$(printf "%'d" "$TOTAL")" "$STATE_COUNTS"
 
-          # Commit the changelog update (best-effort — release proceeds even if push fails).
-          # The release assets are the critical artifacts; a missing CHANGELOG commit
-          # can be manually pushed after the fact.
+          # Open a PR with the changelog update (E1.27 fix).
+          #
+          # Previously this step ran `git push origin main` directly, which
+          # failed on branch protection (`GH013: Repository rule violations`)
+          # and left CHANGELOG.md drift on every quarterly release. The
+          # release flow proceeded with a non-fatal warning, so the issue
+          # was silent until forensic scan caught it.
+          #
+          # New flow: create a release-changelog/v{version} branch, commit
+          # the CHANGELOG.md update there, push the branch, open a PR.
+          # Maintainer reviews and merges the PR (small, doc-only, clear).
+          # The release is published regardless of whether the PR has been
+          # merged yet — the CHANGELOG update is documentation, not a
+          # release artifact.
+          #
+          # Idempotency: if a previous run left a stale branch (failed
+          # mid-flow), force-push to overwrite. If a PR already exists for
+          # the branch, skip the create step (the existing PR will be
+          # updated by the force-push).
+          BRANCH="release-changelog/v${RELEASE_VERSION}"
+
+          # Check if there are actual changes to commit (skip otherwise)
+          if git diff --quiet CHANGELOG.md; then
+            echo "::notice::CHANGELOG.md has no changes — skipping PR creation"
+            exit 0
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           export HUSKY=0
+
+          # Create or reset the branch to current main + the changelog change.
+          # Force-overwrite any stale state from a previous failed run.
+          git checkout -B "$BRANCH"
           git add CHANGELOG.md
-          git commit --no-verify -m "docs: update CHANGELOG.md for v${RELEASE_VERSION} release"
-          git push || echo "::warning::CHANGELOG push failed (branch protection). Release still proceeds — push CHANGELOG manually."
+          git commit --no-verify -m "docs(changelog): record v${RELEASE_VERSION} release"
+          git push --force-with-lease origin "$BRANCH"
+
+          # Open the PR if one doesn't already exist for this branch.
+          # gh pr list --head matches the branch name; an empty result means
+          # no PR exists.
+          #
+          # Truthful logging: only print success after gh pr create exits 0.
+          # Don't swallow errors from gh pr create — if PR creation fails
+          # (likely cause: missing pull-requests:write permission, or token
+          # scope issue), we want a loud warning, NOT a misleading "success"
+          # message followed by silent CHANGELOG drift.
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [[ -z "$EXISTING_PR" ]]; then
+            if gh pr create \
+                 --title "docs(changelog): record v${RELEASE_VERSION} release" \
+                 --body "Auto-generated CHANGELOG entry for v${RELEASE_VERSION}, published by the quarterly-build workflow. This PR exists because branch protection on \`main\` prevents the workflow from pushing directly. Review and merge to keep CHANGELOG.md in sync with the published release.
+
+              **Release:** [v${RELEASE_VERSION}](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${RELEASE_VERSION})
+
+              **Tracked by:** ROADMAP entry E1.27" \
+                 --base main \
+                 --head "$BRANCH"; then
+              echo "✓ Opened CHANGELOG PR for v${RELEASE_VERSION}"
+            else
+              echo "::warning::Failed to create CHANGELOG PR for v${RELEASE_VERSION} — CHANGELOG.md will drift on main. Check release job permissions (needs pull-requests: write)."
+              # Don't fail the release job — the GitHub Release is the
+              # critical artifact, CHANGELOG drift is a secondary concern.
+              # But we want a loud warning so the regression is visible.
+            fi
+          else
+            echo "✓ CHANGELOG PR #${EXISTING_PR} already exists for v${RELEASE_VERSION} — branch updated via force-push"
+          fi
+
+          # Switch back to main so subsequent steps in this job operate from
+          # the same git state they would have without this PR-creation flow.
+          # The remaining release-job steps (Create GitHub Release, Verify
+          # release, Notify downstream) all use the gh API and don't depend
+          # on git state, but checking out main is defensive for future
+          # changes.
+          git checkout main
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Create GitHub Release (draft)
         run: |

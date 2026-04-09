@@ -31,6 +31,10 @@ export interface GitHubRelease {
   html_url: string;
   body: string;
   assets: ReleaseAsset[];
+  /** True if this release is still a draft (not yet visible to anonymous users). */
+  draft: boolean;
+  /** True if this release is marked as a prerelease. */
+  prerelease: boolean;
 }
 
 interface StateCount {
@@ -135,6 +139,16 @@ export function parseVersion(tag: string): { base: string; patch: number | null 
 
 export function processReleases(releases: GitHubRelease[]): ReleaseData[] {
   const all = releases
+    // Exclude drafts and prereleases — the public catalogue must never
+    // expose releases that the workflow intentionally withheld for review
+    // (E1.28 defense in depth, response to bot review on PR #112).
+    //
+    // The catalogue.yml workflow ALSO has an early-exit check that skips
+    // generation entirely when the latest release is draft. This filter
+    // is the second layer for: (a) manual workflow_dispatch runs, (b) the
+    // "latest is published but earlier draft exists in the API response"
+    // case where the workflow check would still proceed.
+    .filter((r) => !r.draft && !r.prerelease)
     .filter((r) => r.tag_name.startsWith("v"))
     .map((r) => {
       const metadata = parseMetadataFromAssets(r);
