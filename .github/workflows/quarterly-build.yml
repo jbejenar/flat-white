@@ -1034,24 +1034,27 @@ jobs:
           S3_PREFIX="data/address/${VERSION_DASH}"
           TOTAL_RECORDS=0
 
+          # Stage to a temporary prefix, then promote to the published prefix
+          # after verification. This ensures reruns never leave the published
+          # data prefix in a mixed state — the old files stay untouched until
+          # the full replacement set is verified in staging. (Bot review Bug 1.)
+          STAGING_PREFIX="${S3_PREFIX}/.staging"
+
           echo "S3 data prefix: s3://${S3_BUCKET}/${S3_PREFIX}/"
+          echo "Staging prefix: s3://${S3_BUCKET}/${STAGING_PREFIX}/"
           echo "Version (dash): ${VERSION_DASH}"
           echo ""
 
-          # No destructive pre-cleanup. aws s3 cp overwrites keys in-place,
-          # so reruns are idempotent without deleting the live prefix first.
-          # This is critical because a failed rerun that deletes the prefix
-          # before replacement files are proven good would destroy the last
-          # known-good dataset. (Bot review Bug 1.)
-
-          # Process each state: upload data + collect manifest metadata
+          # Phase 1a: Upload to staging prefix
           > /tmp/manifest-files.jsonl  # truncate
 
           for STATE in vic nsw qld sa wa tas nt act ot; do
             STATE_UPPER=$(echo "$STATE" | tr '[:lower:]' '[:upper:]')
             GZ_FILE=$(find "artifacts/flat-white-${STATE_UPPER}" -name "*.ndjson.gz" | head -1)
             COUNT_FILE="artifacts/flat-white-${STATE_UPPER}/${STATE_UPPER}.count"
-            S3_KEY="${S3_PREFIX}/${STATE}.ndjson.gz"
+            # Manifest keys reference the PUBLISHED prefix (not staging)
+            PUBLISHED_KEY="${S3_PREFIX}/${STATE}.ndjson.gz"
+            STAGING_KEY="${STAGING_PREFIX}/${STATE}.ndjson.gz"
 
             if [[ -z "$GZ_FILE" ]]; then
               echo "::error::No .ndjson.gz file found for state ${STATE_UPPER}"
@@ -1069,12 +1072,13 @@ jobs:
 
             echo "  ${STATE}: ${RECORDS} records, ${BYTES} bytes, sha256=${SHA256:0:12}..."
 
-            # Upload with simplified name ({state}.ndjson.gz)
-            aws s3 cp "$GZ_FILE" "s3://${S3_BUCKET}/${S3_KEY}" --no-progress
+            # Upload to staging (not the published prefix)
+            aws s3 cp "$GZ_FILE" "s3://${S3_BUCKET}/${STAGING_KEY}" --no-progress
 
-            # Accumulate manifest file entry
+            # Manifest entry references the published key (where files will be
+            # promoted to after verification)
             jq -n \
-              --arg key "$S3_KEY" \
+              --arg key "$PUBLISHED_KEY" \
               --argjson records "$RECORDS" \
               --argjson bytes "$BYTES" \
               --arg sha256 "$SHA256" \
@@ -1085,10 +1089,10 @@ jobs:
           done
 
           echo ""
-          echo "✓ All 9 per-state data files uploaded"
+          echo "✓ All 9 per-state data files uploaded to staging"
           echo "  Total records: ${TOTAL_RECORDS}"
 
-          # Export for manifest generation step
+          # Export for subsequent steps
           echo "version_dash=${VERSION_DASH}" >> "$GITHUB_OUTPUT"
           echo "total_records=${TOTAL_RECORDS}" >> "$GITHUB_OUTPUT"
           echo "gnaf_version=${GNAF_VERSION}" >> "$GITHUB_OUTPUT"
@@ -1137,24 +1141,14 @@ jobs:
           echo "--- Manifest preview ---"
           jq . /tmp/manifest.json
 
-      # Phase 2: VERIFY data files in S3 BEFORE uploading the manifest.
-      # The manifest is the downstream trigger — it must not land until every
-      # data file is confirmed present and correct. (Bot review Bug 2.)
-      - name: Verify data files in S3 (pre-manifest gate)
+      # Phase 2: VERIFY staged data files in S3 BEFORE promoting to published.
+      - name: Verify staged data files (pre-promote gate)
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
-          S3_PREFIX="data/address/${VERSION_DASH}"
+          STAGING_PREFIX="data/address/${VERSION_DASH}/.staging"
 
-          echo "--- Verifying data files in s3://${S3_BUCKET}/${S3_PREFIX}/ ---"
+          echo "--- Verifying staged files in s3://${S3_BUCKET}/${STAGING_PREFIX}/ ---"
 
-          # Verify file count
-          FILE_COUNT=$(aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | wc -l | tr -d ' ')
-          if [[ "$FILE_COUNT" -lt 9 ]]; then
-            echo "::error::Expected 9 data files in S3, got ${FILE_COUNT} — aborting before manifest upload"
-            exit 1
-          fi
-
-          # Verify per-file sizes match what we uploaded
           MISMATCH=0
           for STATE in vic nsw qld sa wa tas nt act ot; do
             STATE_UPPER=$(echo "$STATE" | tr '[:lower:]' '[:upper:]')
@@ -1162,14 +1156,14 @@ jobs:
             LOCAL_SIZE=$(stat -c%s "$LOCAL_FILE")
             REMOTE_SIZE=$(aws s3api head-object \
               --bucket "${S3_BUCKET}" \
-              --key "${S3_PREFIX}/${STATE}.ndjson.gz" \
+              --key "${STAGING_PREFIX}/${STATE}.ndjson.gz" \
               --query 'ContentLength' \
               --output text 2>/dev/null || echo "MISSING")
             if [[ "$REMOTE_SIZE" == "MISSING" ]]; then
-              echo "::error::Missing from S3: ${STATE}.ndjson.gz — aborting before manifest upload"
+              echo "::error::Missing from staging: ${STATE}.ndjson.gz"
               MISMATCH=1
             elif [[ "$LOCAL_SIZE" != "$REMOTE_SIZE" ]]; then
-              echo "::error::Size mismatch: ${STATE}.ndjson.gz local=${LOCAL_SIZE} remote=${REMOTE_SIZE}"
+              echo "::error::Size mismatch in staging: ${STATE}.ndjson.gz local=${LOCAL_SIZE} remote=${REMOTE_SIZE}"
               MISMATCH=1
             else
               echo "✓ ${STATE}.ndjson.gz (${LOCAL_SIZE} bytes)"
@@ -1178,19 +1172,41 @@ jobs:
 
           if [[ "$MISMATCH" -ne 0 ]]; then
             echo ""
-            echo "::error::Data verification failed — manifest will NOT be uploaded"
-            echo "::error::The data prefix may be partially updated but the manifest"
-            echo "::error::still points to the previous version (if any). Re-run the"
-            echo "::error::workflow to retry."
+            echo "::error::Staging verification failed — published data is UNTOUCHED"
+            echo "::error::Cleaning up staging prefix..."
+            aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive 2>/dev/null || true
+            echo "::error::Staging cleaned. Re-run the workflow to retry."
             exit 1
           fi
 
           echo ""
-          echo "✓ All 9 data files verified in S3 (count + size match)"
-          echo "  Proceeding to manifest upload..."
+          echo "✓ All 9 staged files verified (count + size match)"
 
-      # Phase 3: Upload manifest LAST — this is the downstream trigger.
-      # Only reached if all data files passed verification above.
+      # Phase 3: Promote staging → published prefix. The published keys
+      # are overwritten atomically per-file. The old manifest remains
+      # valid until the new manifest is uploaded in Phase 4.
+      - name: Promote staging to published prefix
+        run: |
+          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
+          S3_PREFIX="data/address/${VERSION_DASH}"
+          STAGING_PREFIX="${S3_PREFIX}/.staging"
+
+          echo "Promoting staging → published..."
+          for STATE in vic nsw qld sa wa tas nt act ot; do
+            aws s3 cp \
+              "s3://${S3_BUCKET}/${STAGING_PREFIX}/${STATE}.ndjson.gz" \
+              "s3://${S3_BUCKET}/${S3_PREFIX}/${STATE}.ndjson.gz" \
+              --no-progress
+            echo "  ✓ ${STATE}.ndjson.gz"
+          done
+
+          # Clean up staging
+          aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive --no-progress
+          echo ""
+          echo "✓ All 9 files promoted, staging cleaned up"
+
+      # Phase 4: Upload manifest LAST — this is the downstream trigger.
+      # Only reached after staging is verified AND promoted.
       - name: Upload manifest (final publish step)
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
