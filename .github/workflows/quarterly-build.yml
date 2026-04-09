@@ -1277,34 +1277,43 @@ jobs:
           VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
 
           # Semantic version comparison: parse YYYY-MM[-PATCH] into comparable integers.
-          # Handles: 2026-02, 2026-05, 2026-02-3, 2026-05-10 correctly.
+          # Uses 10# prefix to force base-10 parsing (prevents Bash octal trap on
+          # months like 08/09). (Bot review Bug 4.)
           version_to_num() {
             local v="$1"
             local year month patch
             IFS='-' read -r year month patch <<< "$v"
             patch="${patch:-0}"
-            # Pack into a single integer: YYYY*10000 + MM*100 + PATCH
-            echo $(( year * 10000 + month * 100 + patch ))
+            echo $(( 10#$year * 10000 + 10#$month * 100 + 10#$patch ))
           }
 
           NEW_NUM=$(version_to_num "$VERSION_DASH")
 
-          # Read current latest pointer. Fail closed on read errors to prevent
-          # a transient S3 failure from regressing the pointer. Only treat a
-          # genuine 404 (object not found) as "first publish." (Bot review Bug 3.)
+          # Read current latest pointer. Fail closed: only treat a confirmed
+          # 404 as "first publish". All other errors (auth, network, throttle)
+          # abort the step to prevent regressing the pointer. (Bot review Bug 3.)
           LATEST_KEY="manifests/address-latest.json"
           SHOULD_UPDATE=false
 
-          if aws s3api head-object --bucket "${S3_BUCKET}" --key "${LATEST_KEY}" >/dev/null 2>&1; then
-            # Object exists — download and parse
+          HEAD_OUTPUT=$(aws s3api head-object --bucket "${S3_BUCKET}" --key "${LATEST_KEY}" 2>&1) || {
+            HEAD_EXIT=$?
+            if echo "$HEAD_OUTPUT" | grep -q "Not Found\|404\|NoSuchKey"; then
+              # Genuine 404 — first publish, no existing pointer
+              CURRENT_LATEST=""
+            else
+              echo "::error::Failed to read address-latest.json (non-404 error) — refusing to update pointer (fail closed)"
+              echo "::error::AWS response: $HEAD_OUTPUT"
+              exit 1
+            fi
+          }
+
+          # If head-object succeeded, download and parse
+          if [[ -z "${CURRENT_LATEST+x}" ]]; then
             CURRENT_LATEST=$(aws s3 cp "s3://${S3_BUCKET}/${LATEST_KEY}" - 2>&1 | jq -r '.version' 2>/dev/null)
             if [[ -z "$CURRENT_LATEST" || "$CURRENT_LATEST" == "null" ]]; then
               echo "::error::address-latest.json exists but could not parse .version — refusing to update (fail closed)"
               exit 1
             fi
-          else
-            # Object genuinely does not exist (404) — first publish
-            CURRENT_LATEST=""
           fi
 
           if [[ -z "$CURRENT_LATEST" ]]; then
