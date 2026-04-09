@@ -1289,9 +1289,23 @@ jobs:
 
           NEW_NUM=$(version_to_num "$VERSION_DASH")
 
-          # Read current latest (may not exist on first publish)
-          CURRENT_LATEST=$(aws s3 cp "s3://${S3_BUCKET}/manifests/address-latest.json" - 2>/dev/null \
-            | jq -r '.version // empty' 2>/dev/null || echo "")
+          # Read current latest pointer. Fail closed on read errors to prevent
+          # a transient S3 failure from regressing the pointer. Only treat a
+          # genuine 404 (object not found) as "first publish." (Bot review Bug 3.)
+          LATEST_KEY="manifests/address-latest.json"
+          SHOULD_UPDATE=false
+
+          if aws s3api head-object --bucket "${S3_BUCKET}" --key "${LATEST_KEY}" >/dev/null 2>&1; then
+            # Object exists — download and parse
+            CURRENT_LATEST=$(aws s3 cp "s3://${S3_BUCKET}/${LATEST_KEY}" - 2>&1 | jq -r '.version' 2>/dev/null)
+            if [[ -z "$CURRENT_LATEST" || "$CURRENT_LATEST" == "null" ]]; then
+              echo "::error::address-latest.json exists but could not parse .version — refusing to update (fail closed)"
+              exit 1
+            fi
+          else
+            # Object genuinely does not exist (404) — first publish
+            CURRENT_LATEST=""
+          fi
 
           if [[ -z "$CURRENT_LATEST" ]]; then
             echo "No existing latest pointer — setting to ${VERSION_DASH}"
