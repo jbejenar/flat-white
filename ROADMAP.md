@@ -5368,18 +5368,36 @@ Risk: medium. This is a real refactor that touches multiple files and removes ~1
 
 ---
 
-### Ticket E1.24 — Flatten temp tables disappear when prep SQL runs twice
+### Ticket E1.24 — Flatten temp tables disappear when prep SQL runs twice ✅ (DONE 2026-04-09)
 
 ```yaml
 id: E1.24
 title: Investigate and fix flatten.ts session/connection management — temp tables disappear between prep and cursor stream
-status: planned
+status: in-progress
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: null
 ```
+
+> **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
+>
+> **Investigation findings:** the postgres@3 library does not guarantee that two consecutive `sql.unsafe()` calls on the same `sql` instance use the same physical Postgres connection. With `max: 1`, the pool has at most one connection, but cursor queries (which need a long-lived connection) may acquire a fresh connection independently of the previous query. Each Postgres connection is its own session, so `CREATE TEMPORARY TABLE` statements on connection A are NOT visible to queries on connection B. This is verified by reading `node_modules/postgres/src/index.js` reserve/unsafe/cursor implementations.
+>
+> **Root cause confirmed (high confidence):** the original code in `src/flatten.ts:241-320` had:
+>
+> ```typescript
+> const sql = postgres(connectionString, { max: 1, ... });
+> await sql.unsafe(prepSql);                           // session A
+> const cursor = sql.unsafe(flattenSql).cursor(500);   // may be session B
+> ```
+>
+> Empirically observed in the local NSW3 run with the OLD LATERAL spatial join (~67 min prepSql). The cursor stream failed immediately with `relation "tmp_address_geocodes" does not exist` even though the prepSql had successfully created and populated those temp tables. Hidden by E1.21 making the spatial join fast enough that the timing window doesn't trigger, but the bug is structural and would re-emerge if Path 2 ever slowed again.
+>
+> **The fix:** wrap the entire flatten run in `sql.reserve()` so all queries (prepSql + cursor) use a single dedicated connection. From `postgres@3` source: `reserve()` returns a `Sql` instance bound to a single connection `c`; every query routed through it uses `c.execute()` directly, bypassing the pool's connection-acquisition logic. Temp tables persist across `reserved.unsafe(...)` calls because they share a session.
+>
+> **Validation:** ran `./scripts/build-fixture-only.sh` which exercises both the legacy CTE path and the `--materialize` path with cross-path byte-for-byte verification. All 451/451 fixture addresses pass, no duplicates, boundary coverage matches today's output exactly. Plus all integration tests (cache-validator/load-detection/boundary-prelude) pass. End-to-end NSW validation will happen via the next quarterly `workflow_dispatch` after merge.
 
 ## User Story
 
