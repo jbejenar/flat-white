@@ -1,11 +1,24 @@
-# Deploy GitHub Pages catalogue after each release.
-# Also supports manual dispatch for re-generation.
+# Deploy GitHub Pages catalogue after each successful Quarterly Build.
+#
+# E1.28 (2026-04-09): switched trigger from `release: types: [published]` to
+# `workflow_run: workflows: [Quarterly Build]`. Reason: GitHub Actions does
+# NOT fire workflow events from releases created by GITHUB_TOKEN actions
+# (recursion prevention). Quarterly Build creates releases via the workflow's
+# bot token, so the previous `release.published` trigger never fired and the
+# catalogue had zero runs since creation. The `workflow_run` trigger IS fired
+# by GITHUB_TOKEN actions and is the documented escape hatch for chaining
+# workflows. See ROADMAP entry E1.28 for the full context.
+#
+# Also supports manual dispatch for re-generation against the current state
+# of releases (useful for backfilling, recovery, or after manual edits).
 
 name: Catalogue
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Quarterly Build"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -19,6 +32,11 @@ concurrency:
 
 jobs:
   build:
+    # Only run if the upstream Quarterly Build succeeded.
+    # workflow_run fires on every completion (success/failure/cancelled);
+    # this guard limits us to the success path. workflow_dispatch always
+    # passes (no upstream workflow_run context).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -315,12 +315,18 @@ elif [[ -n "$RESTORE_DB" ]]; then
 else
   # Full pipeline: download + gnaf-loader
 
+  # Export GNAF_DATA_PATH and ADMIN_BDYS_PATH for both download.js (Stage 2)
+  # AND load.js (Stage 3). The vars are exported here unconditionally so the
+  # --skip-download path also honors the --gnaf-path / --admin-path flags.
+  # Without this, --skip-download silently falls back to dist/load.js's
+  # default ./data lookup (E1.25 fix).
+  export GNAF_DATA_PATH="${GNAF_PATH:-}"
+  export ADMIN_BDYS_PATH="${ADMIN_PATH:-}"
+
   # Stage 2: Download
   if [[ "$SKIP_DOWNLOAD" == "false" ]]; then
     stage_start "download"
 
-    export GNAF_DATA_PATH="${GNAF_PATH:-}"
-    export ADMIN_BDYS_PATH="${ADMIN_PATH:-}"
     # GNAF_VERSION is already validated/set above
 
     if ! node /app/dist/download.js; then
