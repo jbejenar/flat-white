@@ -1182,14 +1182,37 @@ jobs:
           echo ""
           echo "✓ All 9 staged files verified (count + size match)"
 
-      # Phase 3: Promote staging → published prefix. The published keys
-      # are overwritten atomically per-file. The old manifest remains
-      # valid until the new manifest is uploaded in Phase 4.
+      # Phase 3: Remove old manifest, then promote staging → published.
+      #
+      # The old manifest is deleted BEFORE any published keys are touched.
+      # This is the key to atomicity from the downstream consumer's
+      # perspective: EventBridge watches the manifests/ prefix, so with
+      # no manifest present, no ingestion can be triggered during the
+      # promotion window. The data prefix may be briefly inconsistent
+      # but nobody is reading it.
+      #
+      # After promotion completes, Phase 4 uploads the new manifest —
+      # at which point data + manifest are fully consistent.
+      #
+      # Failure modes:
+      #   - Fail before manifest deletion: old release still intact
+      #   - Fail after manifest deletion but during promotion: no manifest
+      #     exists → downstream can't trigger → data is in limbo but safe.
+      #     Re-run re-stages and re-promotes.
+      #   - Fail after promotion but before new manifest: data is correct
+      #     but no manifest. Re-run uploads the manifest.
       - name: Promote staging to published prefix
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           S3_PREFIX="data/address/${VERSION_DASH}"
           STAGING_PREFIX="${S3_PREFIX}/.staging"
+          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
+
+          # Delete old manifest FIRST so downstream can't see partially-
+          # updated data during promotion. This makes the promotion window
+          # invisible to EventBridge consumers.
+          echo "Removing old manifest (if exists) to prevent reads during promotion..."
+          aws s3 rm "s3://${S3_BUCKET}/${MANIFEST_KEY}" 2>/dev/null || true
 
           echo "Promoting staging → published..."
           for STATE in vic nsw qld sa wa tas nt act ot; do
