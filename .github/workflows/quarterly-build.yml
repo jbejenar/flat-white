@@ -1038,9 +1038,11 @@ jobs:
           echo "Version (dash): ${VERSION_DASH}"
           echo ""
 
-          # Clean the data prefix first (ensures no stale files from prior runs)
-          echo "Cleaning s3://${S3_BUCKET}/${S3_PREFIX}/ ..."
-          aws s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/" --recursive 2>/dev/null || true
+          # No destructive pre-cleanup. aws s3 cp overwrites keys in-place,
+          # so reruns are idempotent without deleting the live prefix first.
+          # This is critical because a failed rerun that deletes the prefix
+          # before replacement files are proven good would destroy the last
+          # known-good dataset. (Bot review Bug 1.)
 
           # Process each state: upload data + collect manifest metadata
           > /tmp/manifest-files.jsonl  # truncate
@@ -1091,7 +1093,7 @@ jobs:
           echo "total_records=${TOTAL_RECORDS}" >> "$GITHUB_OUTPUT"
           echo "gnaf_version=${GNAF_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate and upload manifest
+      - name: Generate manifest (local only — not uploaded yet)
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           TOTAL_RECORDS="${{ steps.upload_data.outputs.total_records }}"
@@ -1134,36 +1136,23 @@ jobs:
 
           echo "--- Manifest preview ---"
           jq . /tmp/manifest.json
-          echo ""
 
-          # Upload manifest LAST — this is the trigger for downstream processing.
-          # All data files must already be in S3 before this lands.
-          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
-          echo "Uploading manifest to s3://${S3_BUCKET}/${MANIFEST_KEY} ..."
-          aws s3 cp /tmp/manifest.json "s3://${S3_BUCKET}/${MANIFEST_KEY}" --no-progress
-          echo "✓ Manifest uploaded"
-
-      - name: Verify S3 state
+      # Phase 2: VERIFY data files in S3 BEFORE uploading the manifest.
+      # The manifest is the downstream trigger — it must not land until every
+      # data file is confirmed present and correct. (Bot review Bug 2.)
+      - name: Verify data files in S3 (pre-manifest gate)
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           S3_PREFIX="data/address/${VERSION_DASH}"
-          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
 
-          echo "--- Data files ---"
-          aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" --human-readable
-
-          echo ""
-          echo "--- Manifest ---"
-          aws s3 ls "s3://${S3_BUCKET}/${MANIFEST_KEY}" --human-readable
+          echo "--- Verifying data files in s3://${S3_BUCKET}/${S3_PREFIX}/ ---"
 
           # Verify file count
           FILE_COUNT=$(aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | wc -l | tr -d ' ')
-          if [[ "$FILE_COUNT" -ne 9 ]]; then
-            echo "::error::Expected 9 data files, got ${FILE_COUNT}"
+          if [[ "$FILE_COUNT" -lt 9 ]]; then
+            echo "::error::Expected 9 data files in S3, got ${FILE_COUNT} — aborting before manifest upload"
             exit 1
           fi
-          echo ""
-          echo "✓ ${FILE_COUNT} data files + manifest verified in S3"
 
           # Verify per-file sizes match what we uploaded
           MISMATCH=0
@@ -1175,9 +1164,9 @@ jobs:
               --bucket "${S3_BUCKET}" \
               --key "${S3_PREFIX}/${STATE}.ndjson.gz" \
               --query 'ContentLength' \
-              --output text 2>/dev/null || echo "ERROR")
-            if [[ "$REMOTE_SIZE" == "ERROR" ]]; then
-              echo "::error::head-object failed for ${STATE}.ndjson.gz"
+              --output text 2>/dev/null || echo "MISSING")
+            if [[ "$REMOTE_SIZE" == "MISSING" ]]; then
+              echo "::error::Missing from S3: ${STATE}.ndjson.gz — aborting before manifest upload"
               MISMATCH=1
             elif [[ "$LOCAL_SIZE" != "$REMOTE_SIZE" ]]; then
               echo "::error::Size mismatch: ${STATE}.ndjson.gz local=${LOCAL_SIZE} remote=${REMOTE_SIZE}"
@@ -1188,9 +1177,33 @@ jobs:
           done
 
           if [[ "$MISMATCH" -ne 0 ]]; then
-            echo "::error::Upload integrity check failed"
+            echo ""
+            echo "::error::Data verification failed — manifest will NOT be uploaded"
+            echo "::error::The data prefix may be partially updated but the manifest"
+            echo "::error::still points to the previous version (if any). Re-run the"
+            echo "::error::workflow to retry."
             exit 1
           fi
 
           echo ""
-          echo "✓ All data files + manifest verified in S3 (size match + count match)"
+          echo "✓ All 9 data files verified in S3 (count + size match)"
+          echo "  Proceeding to manifest upload..."
+
+      # Phase 3: Upload manifest LAST — this is the downstream trigger.
+      # Only reached if all data files passed verification above.
+      - name: Upload manifest (final publish step)
+        run: |
+          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
+          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
+
+          echo "Uploading manifest to s3://${S3_BUCKET}/${MANIFEST_KEY} ..."
+          aws s3 cp /tmp/manifest.json "s3://${S3_BUCKET}/${MANIFEST_KEY}" --no-progress
+          echo "✓ Manifest uploaded — version ${VERSION_DASH} is now published"
+
+          echo ""
+          echo "--- Final S3 state ---"
+          echo "Data:"
+          aws s3 ls "s3://${S3_BUCKET}/data/address/${VERSION_DASH}/" --human-readable
+          echo ""
+          echo "Manifest:"
+          aws s3 ls "s3://${S3_BUCKET}/${MANIFEST_KEY}" --human-readable
