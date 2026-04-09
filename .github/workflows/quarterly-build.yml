@@ -1276,18 +1276,18 @@ jobs:
           RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
 
-          # Semantic version comparison: parse YYYY-MM[-PATCH] into comparable integers.
-          # Uses 10# prefix to force base-10 parsing (prevents Bash octal trap on
-          # months like 08/09). (Bot review Bug 4.)
-          version_to_num() {
-            local v="$1"
-            local year month patch
-            IFS='-' read -r year month patch <<< "$v"
-            patch="${patch:-0}"
-            echo $(( 10#$year * 10000 + 10#$month * 100 + 10#$patch ))
+          # Component-wise version comparison: parse YYYY-MM[-PATCH] and compare
+          # each segment as a decimal integer. Handles arbitrary patch numbers
+          # (including >= 100). Uses 10# to prevent bash octal trap on 08/09.
+          # Returns 0 if $1 >= $2, 1 otherwise.
+          version_ge() {
+            local y1 m1 p1 y2 m2 p2
+            IFS='-' read -r y1 m1 p1 <<< "$1"; p1="${p1:-0}"
+            IFS='-' read -r y2 m2 p2 <<< "$2"; p2="${p2:-0}"
+            if (( 10#$y1 != 10#$y2 )); then (( 10#$y1 > 10#$y2 )); return; fi
+            if (( 10#$m1 != 10#$m2 )); then (( 10#$m1 > 10#$m2 )); return; fi
+            (( 10#$p1 >= 10#$p2 )); return
           }
-
-          NEW_NUM=$(version_to_num "$VERSION_DASH")
 
           # Read current latest pointer. Fail closed: only treat a confirmed
           # 404 as "first publish". All other errors (auth, network, throttle)
@@ -1319,15 +1319,12 @@ jobs:
           if [[ -z "$CURRENT_LATEST" ]]; then
             echo "No existing latest pointer — setting to ${VERSION_DASH}"
             SHOULD_UPDATE=true
+          elif version_ge "$VERSION_DASH" "$CURRENT_LATEST"; then
+            echo "Advancing latest pointer: ${CURRENT_LATEST} → ${VERSION_DASH}"
+            SHOULD_UPDATE=true
           else
-            CURRENT_NUM=$(version_to_num "$CURRENT_LATEST")
-            if [[ "$NEW_NUM" -ge "$CURRENT_NUM" ]]; then
-              echo "Advancing latest pointer: ${CURRENT_LATEST} → ${VERSION_DASH}"
-              SHOULD_UPDATE=true
-            else
-              echo "::notice::Not updating latest pointer: current ${CURRENT_LATEST} is newer than ${VERSION_DASH}"
-              SHOULD_UPDATE=false
-            fi
+            echo "::notice::Not updating latest pointer: current ${CURRENT_LATEST} is newer than ${VERSION_DASH}"
+            SHOULD_UPDATE=false
           fi
 
           if [[ "$SHOULD_UPDATE" == "true" ]]; then
@@ -1337,15 +1334,25 @@ jobs:
             echo "✓ Latest pointer updated (manifests/address-latest.json → ${VERSION_DASH})"
           fi
 
-      # P5.04: Notify downstream via SNS (non-fatal — data + manifest already published)
-      - name: Send SNS release notification
-        if: steps.check_existing.outputs.skip != 'true'
+      # P5.04: Notify downstream via SNS (non-fatal — data + manifest already published).
+      # Always runs (not gated on check_existing) so reruns can retry a failed
+      # notification even if the versioned manifest already exists. (Bot review Bug 5.)
+      - name: Send SNS release notification (always runs)
+        if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.published == 'true' }}
         run: |
-          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
-          aws sns publish \
-            --topic-arn "${SNS_TOPIC_ARN}" \
-            --subject "flat-white ${VERSION_DASH} released" \
-            --message "$(cat /tmp/manifest.json)" \
-            --no-cli-pager \
-            || echo "::warning::SNS notification failed (non-fatal — data + manifest already published)"
-          echo "✓ SNS notification sent (or warned)"
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
+          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
+
+          # Download the published manifest from S3 (works on first run AND reruns)
+          if aws s3 cp "s3://${S3_BUCKET}/${MANIFEST_KEY}" /tmp/sns-manifest.json --no-progress 2>/dev/null; then
+            aws sns publish \
+              --topic-arn "${SNS_TOPIC_ARN}" \
+              --subject "flat-white ${VERSION_DASH} released" \
+              --message "$(cat /tmp/sns-manifest.json)" \
+              --no-cli-pager \
+              || echo "::warning::SNS notification failed (non-fatal — data + manifest already published)"
+            echo "✓ SNS notification sent (or warned)"
+          else
+            echo "::warning::Could not download manifest for SNS notification — skipping"
+          fi
