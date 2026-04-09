@@ -3,7 +3,7 @@
 # Validates that the OIDC-based AWS credential flow works end-to-end:
 #   - GitHub Actions can request an OIDC token
 #   - AWS STS can exchange that token for temporary credentials
-#     (assumes role: arn:aws:iam::493712557159:role/flat-white-github-actions)
+#     (assumes role: arn:aws:iam::493712557159:role/flat-white-role)
 #   - Those credentials can list the destination bucket
 #
 # This is a SMOKE TEST ONLY. It does not upload anything. The intent is to
@@ -27,7 +27,7 @@ permissions:
 
 env:
   AWS_REGION: ap-southeast-2
-  AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-github-actions
+  AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-role
   S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
 
 jobs:
