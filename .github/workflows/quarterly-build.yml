@@ -1251,17 +1251,7 @@ jobs:
           aws s3 cp /tmp/manifest.json "s3://${S3_BUCKET}/${MANIFEST_KEY}" --no-progress
           echo "✓ Manifest uploaded — version ${VERSION_DASH} is now published"
 
-          # P5.02: update the latest pointer ONLY if this version is newer than
-          # the current latest. Prevents a backport build (e.g., 2026.02 re-triggered
-          # after 2026.05 is live) from regressing the global latest pointer.
-          CURRENT_LATEST_VERSION=$(aws s3 cp "s3://${S3_BUCKET}/manifests/address-latest.json" - 2>/dev/null | jq -r '.version // empty' 2>/dev/null || echo "")
-          if [[ -z "$CURRENT_LATEST_VERSION" ]] || [[ "$VERSION_DASH" > "$CURRENT_LATEST_VERSION" ]]; then
-            aws s3 cp "s3://${S3_BUCKET}/${MANIFEST_KEY}" \
-                      "s3://${S3_BUCKET}/manifests/address-latest.json" --no-progress
-            echo "✓ Latest pointer updated (manifests/address-latest.json → ${VERSION_DASH})"
-          else
-            echo "::notice::Not updating latest pointer: current latest is ${CURRENT_LATEST_VERSION}, this build is ${VERSION_DASH}"
-          fi
+          echo "✓ Manifest uploaded — latest pointer update handled in a separate step"
 
           echo ""
           echo "--- Final S3 state ---"
@@ -1271,8 +1261,58 @@ jobs:
           echo "Manifest:"
           aws s3 ls "s3://${S3_BUCKET}/${MANIFEST_KEY}" --human-readable
           echo ""
-          echo "Latest pointer:"
-          aws s3 ls "s3://${S3_BUCKET}/manifests/address-latest.json" --human-readable
+          echo "(Latest pointer updated in a separate step below)"
+
+      # P5.02: Update the latest pointer. This step ALWAYS runs (not gated
+      # on check_existing) so that a rerun can repair a failed pointer update
+      # even if the versioned manifest already exists. (Bot review Bug 2.)
+      #
+      # Uses semantic version comparison, not lexicographic, to handle
+      # non-zero-padded patch versions correctly (e.g., 2026-05-10 > 2026-05-2).
+      # (Bot review Bug 1.)
+      - name: Update latest pointer (always runs)
+        if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.published == 'true' }}
+        run: |
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
+
+          # Semantic version comparison: parse YYYY-MM[-PATCH] into comparable integers.
+          # Handles: 2026-02, 2026-05, 2026-02-3, 2026-05-10 correctly.
+          version_to_num() {
+            local v="$1"
+            local year month patch
+            IFS='-' read -r year month patch <<< "$v"
+            patch="${patch:-0}"
+            # Pack into a single integer: YYYY*10000 + MM*100 + PATCH
+            echo $(( year * 10000 + month * 100 + patch ))
+          }
+
+          NEW_NUM=$(version_to_num "$VERSION_DASH")
+
+          # Read current latest (may not exist on first publish)
+          CURRENT_LATEST=$(aws s3 cp "s3://${S3_BUCKET}/manifests/address-latest.json" - 2>/dev/null \
+            | jq -r '.version // empty' 2>/dev/null || echo "")
+
+          if [[ -z "$CURRENT_LATEST" ]]; then
+            echo "No existing latest pointer — setting to ${VERSION_DASH}"
+            SHOULD_UPDATE=true
+          else
+            CURRENT_NUM=$(version_to_num "$CURRENT_LATEST")
+            if [[ "$NEW_NUM" -ge "$CURRENT_NUM" ]]; then
+              echo "Advancing latest pointer: ${CURRENT_LATEST} → ${VERSION_DASH}"
+              SHOULD_UPDATE=true
+            else
+              echo "::notice::Not updating latest pointer: current ${CURRENT_LATEST} is newer than ${VERSION_DASH}"
+              SHOULD_UPDATE=false
+            fi
+          fi
+
+          if [[ "$SHOULD_UPDATE" == "true" ]]; then
+            # Download the versioned manifest and copy as latest
+            aws s3 cp "s3://${S3_BUCKET}/manifests/address-${VERSION_DASH}.json" \
+                      "s3://${S3_BUCKET}/manifests/address-latest.json" --no-progress
+            echo "✓ Latest pointer updated (manifests/address-latest.json → ${VERSION_DASH})"
+          fi
 
       # P5.04: Notify downstream via SNS (non-fatal — data + manifest already published)
       - name: Send SNS release notification
