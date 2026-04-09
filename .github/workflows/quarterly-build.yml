@@ -1043,6 +1043,11 @@ jobs:
 
           # Build remote file list via list-objects-v2 (more robust than
           # parsing aws s3 ls output). Strip the prefix to get basenames.
+          #
+          # Edge case: when the prefix has zero objects (first upload, or
+          # concurrent delete), --query 'Contents[].Key' returns the literal
+          # string "None" via --output text. Filter it out so /tmp/remote-files.txt
+          # is genuinely empty in that case.
           aws s3api list-objects-v2 \
             --bucket "${S3_BUCKET}" \
             --prefix "builds/${TAG}/" \
@@ -1050,6 +1055,7 @@ jobs:
             --output text 2>/dev/null \
             | tr '\t' '\n' \
             | grep -v '^$' \
+            | grep -v '^None$' \
             | sed "s|^builds/${TAG}/||" \
             | sort > /tmp/remote-files.txt
 
