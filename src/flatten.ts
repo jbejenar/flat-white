@@ -238,16 +238,43 @@ export function composeBoundaries(row: Record<string, unknown>) {
 /**
  * Run the flatten pipeline: read from Postgres, compose documents, write NDJSON.
  */
+/**
+ * Postgres client config used by the flatten() function.
+ *
+ * Exported as a const so a unit test can assert E1.24's max_lifetime: null
+ * fix doesn't regress. The defaults in postgres@3 use a randomized
+ * max_lifetime between 30-60 minutes, which can recycle a connection
+ * mid-flatten and silently invalidate temp tables created by prepSql.
+ *
+ * Why each option:
+ *   - max: 1 — flatten is single-threaded; pool size of 1 minimizes
+ *     server-side connection overhead.
+ *   - max_lifetime: null — disables postgres@3's default connection
+ *     recycling. Without this, a long-running prepSql (E1.21 made this
+ *     fast, but the OLD LATERAL code took ~67 min for NSW) can outlive
+ *     the connection's randomized lifetime, causing the cursor query to
+ *     run against a fresh session with no temp tables. See E1.24.
+ *   - transform.undefined: null — leave SQL column names snake_case for
+ *     composeDocument() to handle.
+ *
+ * idle_timeout is left at the postgres@3 default (null = no idle timeout)
+ * since the flatten pipeline keeps the connection busy throughout. Setting
+ * it explicitly here would require a type cast because postgres@3's types
+ * don't accept null for idle_timeout (only number | undefined), even
+ * though the runtime treats null as "no timeout."
+ */
+export const FLATTEN_POSTGRES_CONFIG = {
+  max: 1,
+  max_lifetime: null,
+  transform: {
+    undefined: null,
+  },
+} as const;
+
 export async function flatten(options: FlattenOptions): Promise<{ count: number; errors: number }> {
   const { connectionString, outputPath, version, materialize, logger } = options;
 
-  const sql = postgres(connectionString, {
-    max: 1,
-    transform: {
-      // Column names from SQL are already snake_case; keep them as-is
-      undefined: null,
-    },
-  });
+  const sql = postgres(connectionString, FLATTEN_POSTGRES_CONFIG);
 
   const schemaVersion = deriveSchemaVersion(version);
   let count = 0;

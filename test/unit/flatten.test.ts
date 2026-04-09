@@ -12,6 +12,7 @@ import {
   composeSearchLabel,
   composeBoundaries,
   deriveSchemaVersion,
+  FLATTEN_POSTGRES_CONFIG,
 } from "../../src/flatten.js";
 
 // --- Mock data ---
@@ -285,5 +286,36 @@ describe("composeBoundaries", () => {
     expect(boundaries.sa3).toBeNull();
     expect(boundaries.sa4).toBeNull();
     expect(boundaries.gccsa).toBeNull();
+  });
+});
+
+describe("FLATTEN_POSTGRES_CONFIG (E1.24 regression guard)", () => {
+  it("disables max_lifetime to prevent connection recycling mid-flatten", () => {
+    // E1.24: postgres@3 ships with a randomized max_lifetime of 30-60
+    // minutes. A long-running prepSql (NSW with the OLD LATERAL spatial
+    // join took ~67 min) can outlive the connection and recycle it,
+    // dropping all temp tables. Even sql.reserve() doesn't help because
+    // the reserved connection itself is still subject to lifetime
+    // recycling.
+    //
+    // The fix: explicitly set max_lifetime: null. The postgres@3
+    // connection.js timer() function treats null as "no timeout"
+    // (cancel/start become no-ops). Verified at
+    // node_modules/postgres/src/connection.js:74-78.
+    //
+    // This test asserts the config explicitly so a future refactor
+    // can't silently re-introduce the bug.
+    expect(FLATTEN_POSTGRES_CONFIG.max_lifetime).toBeNull();
+  });
+
+  it("uses a single-connection pool", () => {
+    // Flatten is single-threaded; no benefit to a larger pool. The
+    // single-connection setup pairs with sql.reserve() to ensure
+    // prepSql + cursor share a session.
+    expect(FLATTEN_POSTGRES_CONFIG.max).toBe(1);
+  });
+
+  it("preserves snake_case column names", () => {
+    expect(FLATTEN_POSTGRES_CONFIG.transform.undefined).toBeNull();
   });
 });
