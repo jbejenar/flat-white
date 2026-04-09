@@ -312,6 +312,13 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
     permissions:
       contents: write
+    outputs:
+      # 'true' iff the release was actually published (draft → public).
+      # 'false' iff the release was kept as draft due to build-over-build
+      # anomalies (the workflow's manual-review path). Used by the s3-upload
+      # job downstream to skip mirroring draft releases — those are private
+      # by design and shouldn't leak to the public S3 mirror.
+      published: ${{ steps.verify_release.outputs.published }}
 
     steps:
       - uses: actions/checkout@v4
@@ -762,6 +769,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Verify release
+        id: verify_release
         run: |
           RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           TAG="v${RELEASE_VERSION}"
@@ -799,6 +807,32 @@ jobs:
             echo "✓ Release published"
           fi
           echo "✓ Programmatic download works"
+
+          # Set the 'published' output based on the ACTUAL state of the
+          # GitHub Release at this point, NOT on has_anomalies. This is
+          # important for the recovery path: if a maintainer reviewed the
+          # anomalies on a previous run, decided the release was fine, and
+          # manually published the draft via 'gh release edit --draft=false',
+          # then re-triggers the workflow_dispatch:
+          #
+          #   1. The release job sees the same has_anomalies value
+          #      (presumably still true — the data hasn't changed)
+          #   2. The if/else above sees has_anomalies==true and SKIPS the
+          #      gh release edit call (because the release is already
+          #      published — the call would be a no-op anyway)
+          #   3. We need to detect that the release IS public despite the
+          #      anomaly flag still being true
+          #
+          # gh release view --json isDraft tells us the literal current
+          # state. published=true iff isDraft==false.
+          ACTUAL_IS_DRAFT=$(gh release view "$TAG" --json isDraft --jq '.isDraft')
+          if [[ "$ACTUAL_IS_DRAFT" == "false" ]]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "✓ Release state: PUBLIC — s3-upload will run"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Release state: DRAFT — s3-upload will be skipped"
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -846,3 +880,292 @@ jobs:
           done
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Job 4: S3 mirror upload (P5.01)
+  # ---------------------------------------------------------------------------
+  # Uploads all release artifacts (per-state ndjson.gz files, metadata.json,
+  # DOCUMENT-SCHEMA.md, verification-report.md) PLUS the all-states concatenated
+  # file to s3://flat-white-address-493712557159-ap-southeast-2-an/builds/v{version}/
+  #
+  # The all-states file (~1.5-2GB) is the unique value-add of the S3 mirror —
+  # it exceeds GitHub's 2GB per-asset release limit and is excluded from the
+  # GitHub Release. S3 has no such limit (5GB single PUT, 5TB max object).
+  #
+  # Authentication: OIDC via aws-actions/configure-aws-credentials@v4 against
+  # arn:aws:iam::493712557159:role/flat-white-role. The role's trust policy
+  # restricts to repo:jbejenar/flat-white:* via the GitHub OIDC provider.
+  # Validated end-to-end by .github/workflows/s3-smoke.yml.
+  #
+  # Failure semantics: this job is NON-BLOCKING for the release. If S3 upload
+  # fails, the GitHub Release is still published correctly (it's already done
+  # by the time s3-upload runs). The S3 mirror is redundancy, not the primary
+  # distribution. A failure here is loud (job marked failed in the workflow
+  # summary) but doesn't undo anything upstream.
+  s3-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [setup, release, concatenate]
+    # Gate on actual publication, NOT just the release job succeeding.
+    # The release job succeeds in TWO cases:
+    #   1. Release published (no anomalies, draft → public via gh release edit)
+    #   2. Release kept as DRAFT due to build-over-build anomalies
+    #      (anomalies path — manual review required before publish)
+    # In case 2, the GitHub Release is intentionally private. The S3 mirror
+    # is a public distribution channel and must NOT mirror draft releases.
+    # Otherwise s3-upload becomes a side channel that leaks artifacts the
+    # release workflow deliberately withheld.
+    #
+    # The release job's `published` output (true|false) is set inside the
+    # 'Verify release' step at the same point where it does/doesn't run
+    # `gh release edit --draft=false`.
+    #
+    # Recovery path: if a maintainer later manually publishes the release
+    # (`gh release edit vX.Y.Z --draft=false`), they can mirror to S3 by
+    # triggering the workflow_dispatch with the same inputs — the build/
+    # release jobs will be cache hits, the release job will see the
+    # already-published release and emit `published=true`, and s3-upload
+    # will run normally.
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.concatenate.result == 'success' && needs.release.outputs.published == 'true' }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ap-southeast-2
+      AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-role
+      S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
+    steps:
+      # No actions/checkout needed — this job doesn't read any repo files.
+      # gh release download uses the GitHub API + GH_TOKEN, not a local clone.
+
+      - name: Download all-states artifact (concatenate output) to staging
+        uses: actions/download-artifact@v4
+        with:
+          name: flat-white-all
+          path: s3-upload-staging/
+
+      - name: Normalise staging into s3-upload/ (flatten any subdirectories)
+        run: |
+          mkdir -p s3-upload/
+          # Robust against both actions/download-artifact@v4 single-artifact
+          # extraction modes (some versions extract directly to path/, others
+          # nest under path/{artifact-name}/). Move every regular file under
+          # s3-upload-staging/ into s3-upload/ at the top level.
+          find s3-upload-staging/ -type f -exec mv -v {} s3-upload/ \;
+          rm -rf s3-upload-staging/
+          echo ""
+          echo "--- s3-upload/ after normalisation ---"
+          ls -lh s3-upload/
+
+      - name: Download published GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ needs.setup.outputs.release_version }}"
+          echo "Downloading all assets from release ${TAG}..."
+          cd s3-upload/
+          gh release download "$TAG" --repo "${{ github.repository }}"
+          echo ""
+          echo "--- s3-upload/ contents (all-states + GitHub Release assets) ---"
+          ls -lh
+          echo ""
+          echo "--- Total size ---"
+          du -sh .
+
+      - name: Verify s3-upload/ has no unexpected subdirectories
+        run: |
+          # All files should be at the top level of s3-upload/. If anything
+          # ended up in a subdirectory (unexpected upload-artifact behavior,
+          # gh release download quirk), fail loud BEFORE syncing to S3 with
+          # a misshapen layout.
+          UNEXPECTED=$(find s3-upload/ -mindepth 2 -type f)
+          if [[ -n "$UNEXPECTED" ]]; then
+            echo "::error::Files found in unexpected subdirectories:"
+            echo "$UNEXPECTED"
+            exit 1
+          fi
+          echo "✓ All files at top level of s3-upload/"
+
+      - name: Verify local file set is complete
+        run: |
+          # Defensive check BEFORE we sync with --delete: confirm we actually
+          # have the canonical set of files we expect to mirror. If a prior
+          # step silently produced an incomplete s3-upload/ directory, we'd
+          # otherwise nuke remote files we wanted to keep.
+          #
+          # Required files (must all be present):
+          #   - 9 × flat-white-{version}-{state}.ndjson.gz
+          #   - 1 × flat-white-{version}-all.ndjson.gz
+          #   - metadata.json
+          #   - DOCUMENT-SCHEMA.md
+          #   - verification-report.md
+          #
+          # Optional files (may or may not be present, do not fail if missing):
+          #   - verification-report.json
+          #   - comparison-*.md (P4.03 build-over-build comparison)
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+
+          MISSING=0
+          for state in act nsw nt ot qld sa tas vic wa all; do
+            f="s3-upload/flat-white-${RELEASE_VERSION}-${state}.ndjson.gz"
+            if [[ ! -f "$f" ]]; then
+              echo "::error::Missing required file: $(basename "$f")"
+              MISSING=1
+            fi
+          done
+
+          for required in metadata.json DOCUMENT-SCHEMA.md verification-report.md; do
+            if [[ ! -f "s3-upload/${required}" ]]; then
+              echo "::error::Missing required file: ${required}"
+              MISSING=1
+            fi
+          done
+
+          if [[ "$MISSING" -ne 0 ]]; then
+            echo ""
+            echo "::error::Local file set is incomplete — refusing to sync with --delete"
+            exit 1
+          fi
+
+          TOTAL=$(find s3-upload/ -type f | wc -l | tr -d ' ')
+          echo "✓ Local file set complete (${TOTAL} files including optional)"
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify caller identity
+        run: |
+          aws sts get-caller-identity
+          echo "✓ AWS role assumed"
+
+      - name: Upload to S3 (sync with --delete for set equality)
+        run: |
+          TAG="v${{ needs.setup.outputs.release_version }}"
+          DEST="s3://${S3_BUCKET}/builds/${TAG}/"
+
+          echo "Syncing s3-upload/ to ${DEST}"
+          # --delete: enforce set equality between local and remote.
+          # Removes any remote object under the destination prefix that is
+          # NOT present in the local source. Required because:
+          #   1. Re-runs of the workflow against an existing release tag
+          #      may differ in optional asset set (comparison report
+          #      sometimes generated, sometimes not)
+          #   2. A previous partial upload may have left orphan objects
+          #   3. The S3 prefix should be an EXACT mirror of the canonical
+          #      release asset set, not an accumulation of past attempts
+          # The "Verify local file set is complete" step above protects
+          # against accidentally nuking the prefix from an incomplete
+          # local state.
+          #
+          # --no-progress: cleaner CI logs, no per-byte updates
+          # --only-show-errors: don't print every successful upload
+          aws s3 sync s3-upload/ "${DEST}" \
+            --delete \
+            --no-progress \
+            --only-show-errors
+          echo "✓ S3 sync complete (with --delete enforcing set equality)"
+
+          echo ""
+          echo "--- Remote ${DEST} contents ---"
+          aws s3 ls "${DEST}" --human-readable
+
+          echo ""
+          echo "--- Total objects ---"
+          aws s3 ls "${DEST}" --recursive | wc -l | xargs echo "objects:"
+
+      - name: Verify upload integrity (two-way set equality)
+        run: |
+          TAG="v${{ needs.setup.outputs.release_version }}"
+
+          # Two-way integrity check: enforce that the local set and the
+          # remote set are EXACTLY equal (set equality, not subset).
+          #
+          # This is the post-hoc verification of what aws s3 sync --delete
+          # SHOULD have produced. Any discrepancy here means either the
+          # sync silently failed for some files, or something else is
+          # writing to the prefix concurrently — both are bugs we want to
+          # fail loud on.
+          #
+          # GitHub-hosted ubuntu-latest runners are Linux, so stat -c%s
+          # is the correct invocation.
+
+          # Build local file list (basenames only, sorted)
+          find s3-upload/ -type f -exec basename {} \; | sort > /tmp/local-files.txt
+
+          # Build remote file list via list-objects-v2 (more robust than
+          # parsing aws s3 ls output). Strip the prefix to get basenames.
+          #
+          # Edge case: when the prefix has zero objects (first upload, or
+          # concurrent delete), --query 'Contents[].Key' returns the literal
+          # string "None" via --output text. Filter it out so /tmp/remote-files.txt
+          # is genuinely empty in that case.
+          aws s3api list-objects-v2 \
+            --bucket "${S3_BUCKET}" \
+            --prefix "builds/${TAG}/" \
+            --query 'Contents[].Key' \
+            --output text 2>/dev/null \
+            | tr '\t' '\n' \
+            | grep -v '^$' \
+            | grep -v '^None$' \
+            | sed "s|^builds/${TAG}/||" \
+            | sort > /tmp/remote-files.txt
+
+          echo "--- Local files (s3-upload/) ---"
+          cat /tmp/local-files.txt
+          echo ""
+          echo "--- Remote files (s3://...${TAG}/) ---"
+          cat /tmp/remote-files.txt
+          echo ""
+
+          # Set difference both ways
+          LOCAL_ONLY=$(comm -23 /tmp/local-files.txt /tmp/remote-files.txt)
+          REMOTE_ONLY=$(comm -13 /tmp/local-files.txt /tmp/remote-files.txt)
+
+          FAIL=0
+          if [[ -n "$LOCAL_ONLY" ]]; then
+            echo "::error::Files in local but missing from S3 (sync did not upload):"
+            echo "$LOCAL_ONLY"
+            FAIL=1
+          fi
+          if [[ -n "$REMOTE_ONLY" ]]; then
+            echo "::error::Files in S3 but not in local (sync --delete did not remove, or concurrent write):"
+            echo "$REMOTE_ONLY"
+            FAIL=1
+          fi
+
+          if [[ "$FAIL" -ne 0 ]]; then
+            exit 1
+          fi
+          echo "✓ Set equality verified — local and remote contain exactly the same filenames"
+
+          # Now that the sets match, verify ContentLength for each file
+          MISMATCH=0
+          while IFS= read -r base; do
+            local_size=$(stat -c%s "s3-upload/${base}")
+            remote_size=$(aws s3api head-object \
+              --bucket "${S3_BUCKET}" \
+              --key "builds/${TAG}/${base}" \
+              --query 'ContentLength' \
+              --output text 2>/dev/null || echo "ERROR")
+            if [[ "$remote_size" == "ERROR" ]]; then
+              echo "::error::head-object failed for ${base} (transient AWS error?)"
+              MISMATCH=1
+            elif [[ "$local_size" != "$remote_size" ]]; then
+              echo "::error::Size mismatch: ${base} local=${local_size} remote=${remote_size}"
+              MISMATCH=1
+            else
+              echo "✓ ${base} (${local_size} bytes)"
+            fi
+          done < /tmp/local-files.txt
+
+          if [[ "$MISMATCH" -ne 0 ]]; then
+            echo ""
+            echo "::error::Upload integrity check failed (size mismatch)"
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ All files verified in S3 (set equality + size match)"

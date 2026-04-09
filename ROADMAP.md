@@ -5951,7 +5951,7 @@ Risk: low. Mechanical version bumps. The catch is identifying any action that do
 ```yaml
 id: P5.01
 title: S3 Upload
-status: planned
+status: in-progress
 priority: p1-high
 epic: P5.1
 persona: [ops/maintainer]
@@ -5964,9 +5964,18 @@ tech_stack:
   container: Docker (Debian Bookworm)
   ci: GitHub Actions (free tier)
   output: NDJSON
-  distribution: GitHub Releases
+  distribution: GitHub Releases + S3
 completed: null
 ```
+
+> **2026-04-09 update — implementation in flight.**
+>
+> - **AWS plumbing validated** by `.github/workflows/s3-smoke.yml` (PR #109 + #110, smoke test run 24168765976 passed in 14s). OIDC provider exists in account 493712557159; role `flat-white-role` (NOT `flat-white-github-actions` as initially assumed) has correct trust policy + inline `falt-white-s3-permission` granting `s3:ListBucket`/`GetObject`/`PutObject`/`DeleteObject` on the destination bucket.
+> - **`s3-upload` job added to `quarterly-build.yml`** in this PR. Runs after `release` and `concatenate`. Downloads the published GitHub Release assets (per-state ndjson.gz, metadata.json, DOCUMENT-SCHEMA.md, verification-report.md, comparison report) PLUS the all-states artifact from the concatenate job (which is too large for GitHub Releases at ~1.5-2GB). Syncs to `s3://flat-white-address-493712557159-ap-southeast-2-an/builds/v{release_version}/`.
+> - **Non-blocking for the release** — the GitHub Release is the primary distribution and is already published by the time `s3-upload` runs. A failure here doesn't undo anything; it just means the S3 mirror isn't up to date for that version.
+> - **Gated on actual publication, not just job success.** The release job emits a `published: true|false` output. `s3-upload` only runs when `published == true`. If the release job kept the GitHub Release as DRAFT due to build-over-build anomalies (the manual-review path), `s3-upload` is skipped — preventing the public S3 mirror from leaking artifacts the workflow deliberately withheld for review.
+> - **Failure surface is clean** — the smoke test workflow stays in place permanently as the isolation diagnostic. If a future quarterly s3-upload fails, run `gh workflow run s3-smoke.yml` first to determine whether the AWS plumbing is broken or whether it's a workflow-specific issue.
+> - **Validation pending:** the actual end-to-end test happens on the next quarterly run (workflow_dispatch or 2026-05-15 cron). On the s3-upload first run, expect ~5-7 min to upload ~3-4GB total to S3.
 
 ## User Story
 
@@ -5980,12 +5989,12 @@ GitHub Releases is the primary distribution, but a single distribution point is 
 
 ### Functional
 
-- [ ] Workflow uploads per-state and all-states artifacts to `s3://flat-white/builds/v{YYYY.MM}/`
-  - `Verify:` `aws s3 ls s3://flat-white/builds/v2026.02/` shows all expected files
-  - `Evidence:`
-- [ ] S3 content matches GitHub Release assets exactly
-  - `Verify:` Checksum comparison between S3 and GitHub Release files
-  - `Evidence:`
+- [~] Workflow uploads per-state and all-states artifacts to `s3://flat-white-address-493712557159-ap-southeast-2-an/builds/v{YYYY.MM[.N]}/`
+  - `Verify:` `aws s3 ls s3://flat-white-address-493712557159-ap-southeast-2-an/builds/v2026.02.1/` shows all expected files (12 GitHub Release assets + the all-states ndjson.gz)
+  - `Evidence:` Code in `.github/workflows/quarterly-build.yml` `s3-upload` job. Smoke test (`s3-smoke.yml`) passed run 24168765976. Awaiting first end-to-end validation on next quarterly run.
+- [~] S3 content matches GitHub Release assets exactly (plus the all-states file which GitHub can't host)
+  - `Verify:` Post-upload integrity check in `s3-upload` job uses `aws s3api head-object` to compare local `Content-Length` against remote per file
+  - `Evidence:` Code in the "Verify upload integrity" step of `s3-upload` job
 
 ## Scope
 
