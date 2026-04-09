@@ -135,9 +135,25 @@ LEFT JOIN LATERAL (... se_upper) se_up ON true;
 
 **Why `LATERAL ... LIMIT 1`?** This is the [PR #66 / E1.15](../ROADMAP.md) fix for **multi-polygon row multiplication**. `ST_Intersects` returns true for points on a polygon edge, so a single point on the shared boundary between two adjacent LGAs would match BOTH polygons. With four `LEFT JOIN ... ON ST_Intersects(...)` joins cartesian-multiplied, that produced up to 16 duplicate rows per address (one per combination of matching CE × LGA × ward × SE polygons). The `LATERAL` form guarantees **at most one row per (address, boundary table)**, and the `ORDER BY pid` ensures the choice is deterministic across runs (same point always picks the same polygon).
 
-**Why it's slow.** The `LATERAL ... LIMIT 1` pattern doesn't bulk-optimise like a hash join — PostgreSQL conceptually re-runs the inner query for each outer row. 4.6M re-executions for NSW. And we're hitting the **un-subdivided** raw polygons (`admin_bdys.local_government_areas`, not `..._analysis`) so the GiST index is much less selective. Five LATERAL joins serially per row.
+**Why it WAS slow (historical, pre-E1.21).** The original `LATERAL ... LIMIT 1` form did not bulk-optimise like a hash join — PostgreSQL conceptually re-ran the inner query for each outer row. 4.6M re-executions for NSW. We were hitting the **un-subdivided** raw polygons so the GiST index was much less selective. Five LATERAL joins serially per row.
 
-**Result:** NSW spatial-join fallback in **30 minutes to 3 hours**, depending on runner luck. This is the elephant in the room and the single biggest source of "the quarterly run takes forever". Tracked as ROADMAP entry **E1.21**.
+**Empirical impact (historical):** NSW spatial-join fallback took **30 minutes to 3 hours**, depending on runner luck. The local M5 64GB measurement of the OLD code was ~67 minutes for the spatial join alone. This was the elephant in the room and the single biggest source of "the quarterly run takes forever".
+
+**FIXED in PR #106 / E1.21 (2026-04-09).** The fallback was rewritten as **insert-then-5-updates against unsubdivided polygon tables** — bulk INSERT shell rows, then five INDEPENDENT UPDATE passes (one per boundary table) using `DISTINCT ON (gnaf_pid) ORDER BY gnaf_pid, {pid}`. Plain INNER JOIN (no LATERAL wrapper) frees the planner to pick its preferred parallel-aware spatial join shape — the same plan gnaf-loader Part 5 gets.
+
+**Empirical impact (post-E1.21):**
+
+- NSW spatial join: 67 min → **7.5 min on M5 64GB** (~9× speedup)
+- NSW total job time on CI: 1h56m (failed) → **29m20s with cache hit** (run 24163471133), **43m55s fresh build** (run 24159739501)
+- Quarterly run 24163471133 (2026-04-09): all 9 states green for the first time, v2026.02.1 published
+
+**Why FIVE independent UPDATE passes** instead of one joint INSERT with 5 LEFT JOINs: a single joint form computes the cartesian product of all five boundary tables, then DISTINCT ON picks the lowest-cartesian-tuple. For an address sitting on a polygon edge in multiple boundary tables, the joint tiebreak can choose a different (lga, ward) combination than the prior LATERAL form (which picked each table's lowest pid INDEPENDENTLY). Five separate UPDATE passes preserve per-table independence exactly, so byte-for-byte regression against `fixtures/expected-output.ndjson` stays clean.
+
+**Why NOT subdivided `_analysis` tables** (rev 2 of the implementation plan, rejected): two blockers found in audit. (a) `local_government_areas_analysis` only carries the abbreviated `name` column, not `full_name` — would silently change every output's `lga_name` from long form to abbreviation. (b) The analysis template runs `ST_Buffer(geom, 0.0)` + `ST_Dump` + `ST_Subdivide` which can shift edge vertices by floating-point ulps; production data could silently shift in ways the fixture wouldn't catch.
+
+The full implementation reasoning is in PR #106 and ROADMAP entry E1.21.
+
+**Edge case worth knowing:** a polygon from one state intersecting an address in another (data error in source) tags the address with the wrong-state polygon. Both LATERAL and the new bulk-join shape have this property; not introduced by E1.21.
 
 ### Mesh block / SA1 / SA2 — neither path
 
@@ -550,77 +566,51 @@ A non-exhaustive list of "things that have happened or could plausibly happen", 
 
 ## Future work
 
-### E1.20 — push gnaf-loader column-mismatch fix upstream
+### E1.21 — replace Path 2 LATERAL with bulk hash joins ✅ DONE 2026-04-09 (PR #106)
 
-**Status:** roadmap, not started.
+The original `LEFT JOIN LATERAL ... ORDER BY pid LIMIT 1` form was rewritten as **insert-then-5-updates against unsubdivided polygon tables**. Empirical NSW spatial join: 67 min → 7.5 min on M5 64GB. Quarterly run 24163471133 published v2026.02.1 with all 9 states green for the first time.
 
-Send a PR to `minus34/gnaf-loader` that fixes the per-state column mismatch in `04-06-bdy-tags-for-alias-addresses.sql`. Either make the SQL dynamic-column-aware or apply the same per-state filtering that `settings.py` uses to choose which columns to insert.
+The actual final shape is described in the "Why it WAS slow" section above and in ROADMAP entry E1.21. Notably, the implementation rejected both the `DISTINCT ON` joint-INSERT approach AND the `_analysis`-tables-with-ST_Subdivide approach that the original ticket suggested — see ROADMAP for the audit findings that drove the rejection.
 
-**Impact when landed:**
+### E1.20 — push gnaf-loader column-mismatch fix upstream (deferred, p4-defer)
 
-- The scary `SQL FAILED` block stops appearing in quarterly logs.
-- ~5 min saved per state (no retry needed).
-- Path 1 starts running for all 9 states instead of just VIC and WA.
-- Path 2 stops being the primary path and becomes a true fallback again.
+**Status:** deferred 2026-04-09. Was originally a "nice-to-have community contribution"; now obsoleted by E1.21 + E1.23. Once E1.23 lands, flat-white never calls gnaf-loader Part 5, so the upstream bug is irrelevant. **Revisit only if E1.23 is cancelled** OR for community-contribution reasons. See ROADMAP entry E1.20.
 
-**Why low priority:** the broad Part-5 detection in `detect-load-failure.sh` handles the bug transparently. Path 2 produces correct output. Nice to have, not load-bearing.
+### E1.23 — collapse Path 1 and Path 2 into a single path (planned, p2-medium)
 
-### E1.21 — replace Path 2 LATERAL with bulk hash joins
+Now actually viable. E1.21 made Path 2 as fast as Path 1, so the dual-path infrastructure has no remaining technical justification.
 
-**Status:** roadmap, designed, not started.
+**The plan:**
 
-The current Path 2 fallback in `sql/address_full_prep.sql` uses `LEFT JOIN LATERAL ... ORDER BY pid LIMIT 1` per address per boundary table. For NSW with 4.6M addresses × 5 boundary tables, that's ~23M individual ST_Intersects executions. Each uses a GiST index against the un-subdivided polygons (~0.5–2 ms), totalling **30 minutes to 3 hours** depending on runner luck.
+- Always pass `--no-boundary-tag` to gnaf-loader. Never call Part 5.
+- `address_full_prep.sql` always populates the boundary table from scratch (drop the "if already populated, skip" early-return, or keep it as a defensive idempotence check).
+- Delete `scripts/detect-load-failure.sh` and `test/integration/load-detection/`.
+- Delete the `--no-boundary-tag` retry branch in `docker-entrypoint.sh:359-376`.
+- Rewrite the "Path 1 vs Path 2" framing in this doc as a single-path narrative.
 
-**The fix.** Replicate gnaf-loader's technique: subdivided polygons + bulk hash join + `DISTINCT ON` for the multi-polygon dedup (instead of LATERAL+LIMIT for the same purpose):
+**Removes:** ~100 lines of code, the entire retry-from-dump cache validation flow, the per-state shapefile filter cascade story, the dependency on upstream gnaf-loader Part 5 behavior.
 
-```sql
--- Build the analysis tables (one-time, fast)
-CREATE TABLE admin_bdys_*.local_government_areas_analysis AS
-SELECT lga_pid, full_name, state,
-       ST_Subdivide((ST_Dump(ST_Buffer(geom, 0.0))).geom, 512) AS geom
-  FROM admin_bdys_*.local_government_areas;
-CREATE INDEX ON admin_bdys_*.local_government_areas_analysis USING gist(geom);
+**Sequencing:** depends on E1.24 (flatten-session bug fix) — do that first since E1.23 changes the surrounding code paths and E1.24's fix probably touches `src/flatten.ts` which E1.23 will also coordinate with.
 
--- Bulk-tag every address with its LGA in one query
-INSERT INTO gnaf_*.address_principal_admin_boundaries (gnaf_pid, lga_pid, lga_name, ...)
-SELECT DISTINCT ON (ap.gnaf_pid)
-       ap.gnaf_pid, bdys.lga_pid, bdys.full_name, ...
-  FROM gnaf_*.address_principals ap
-  INNER JOIN admin_bdys_*.local_government_areas_analysis bdys
-    ON ST_Intersects(ap.geom, bdys.geom)
-  ORDER BY ap.gnaf_pid, bdys.lga_pid;  -- deterministic tiebreaker
-```
+**Trade-off:** removes the ability to opportunistically use gnaf-loader Part 5 when it works. But since E1.21 makes Path 2 as fast as Part 5, that's no longer a meaningful loss.
 
-**Why `DISTINCT ON` + `ORDER BY pid` instead of `LATERAL ... LIMIT 1`:** same correctness guarantee (one row per address, deterministic polygon choice on ties), but expressible as a bulk hash join instead of per-row execution. PostgreSQL can plan it as a hash join with the GiST index doing the heavy filtering, processing all 4.6M NSW addresses in one shot.
+See ROADMAP entry E1.23.
 
-**Expected impact:**
+### E1.24 — flatten temp tables disappear when prep SQL runs twice (planned, p2-medium)
 
-- NSW from 30–180 min → ~10–15 min (estimated; needs measurement).
-- The whole quarterly run drops from "1–6 hours best case" to "~20–30 min reliably".
-- Eliminates most of the OOM/shm risk (smaller working set, no parallel hash explosion).
-- The retry-from-dump optimisation in #99 becomes belt-and-braces (rarely needed).
-- Removes the need for the 360-min job timeout.
-- Removes the "is this run going to finish today" anxiety.
+Pre-existing latent bug discovered during the E1.21 implementation session. When the spatial join takes long enough (~67 min in the OLD LATERAL code on NSW), the cursor stream fails with `relation "tmp_address_geocodes" does not exist`. Hypothesis (unverified): `flatten.ts` uses two postgres clients and temp tables in client A aren't visible to client B; OR there's an idle-session timeout that drops the connection during the long prep SQL.
 
-**Trade-offs:**
+**Currently masked by E1.21** making the spatial join fast enough to avoid the timing window. Will re-emerge if Path 2 ever slows again. Worth fixing structurally before E1.23 (which restructures the surrounding code paths).
 
-- ~200–400 lines of new SQL + prelude wiring + tests. Half-day to a day of work.
-- Need to validate boundary coverage matches Path 1 byte-for-byte against a Path 1 reference (probably an integration test against a tiny multi-state real data sample).
-- Fixture path needs the same treatment.
+See ROADMAP entry E1.24.
 
-This is the **actual root-cause fix** for "the quarterly takes forever". Everything in #96 + #99 is hardening / safety-net work; this is the perf fix.
+### E1.26 — WA flatten 40-75× slower when restored from cache (planned, p2-medium)
 
-### E1.22 (not yet ticketed) — collapse Path 1 and Path 2 into a single path
+Forensic finding from quarterly run 24163471133. WA cursor stream rate dropped from ~17,500 rows/sec (fresh build) to **442 rows/sec** (cache restore) on identical data. Steady throughout — no stalls. Hypothesis: `pg_dump` doesn't dump per-table statistics, the planner picks a pathological plan against the restored DB until `ANALYZE` runs. Other states don't trip this; only WA's data shape exposes it.
 
-Once E1.21 lands, Path 1 and Path 2 are doing exactly the same thing with exactly the same technique. The split exists only because Path 1 is upstream-controlled. We could:
+**Should be fixed before the 2026-05-15 cron** to prevent the next quarterly from wasting ~50 min on every WA cache-hit run.
 
-- Always run with `--no-boundary-tag` (skip Path 1 entirely).
-- Always populate `address_principal_admin_boundaries` from our own SQL (Path 2-as-primary).
-- Drop the `detect-load-failure.sh` retry path entirely.
-
-This makes the system simpler, more predictable, and removes the dependency on upstream behaviour. It also removes the ability to opportunistically use Path 1 when it works — but if E1.21 makes Path 2 as fast as Path 1, that's no longer a meaningful loss.
-
-Defer until E1.21 is landed and measured. May not be worth doing if E1.20 also lands and Path 1 starts working everywhere again.
+See ROADMAP entry E1.26.
 
 ---
 
