@@ -53,7 +53,7 @@ jobs:
       release_version: ${{ steps.version.outputs.release_version }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Determine version
         id: version
@@ -115,14 +115,14 @@ jobs:
         state: [VIC, NSW, QLD, SA, WA, TAS, NT, ACT, OT]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -132,7 +132,7 @@ jobs:
 
       - name: Restore gnaf-loader database dump (E1.06)
         id: db-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: cache
           key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
@@ -174,7 +174,7 @@ jobs:
 
       - name: Save repaired or newly-built gnaf-loader dump
         if: always() && steps.cache-save.outputs.save == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: cache
           key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
@@ -220,7 +220,7 @@ jobs:
           echo "$LINE_COUNT" > "output/${{ matrix.state }}.count"
 
       - name: Upload per-state artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flat-white-${{ matrix.state }}
           path: |
@@ -230,7 +230,7 @@ jobs:
 
       - name: Upload per-state telemetry
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: quarterly-telemetry-${{ matrix.state }}
           path: |
@@ -248,7 +248,7 @@ jobs:
 
     steps:
       - name: Download all per-state artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: flat-white-*
@@ -296,7 +296,7 @@ jobs:
           echo "✓ Line count verified: $TOTAL documents"
 
       - name: Upload all-states artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flat-white-all
           path: flat-white-*-all.ndjson.gz
@@ -330,10 +330,10 @@ jobs:
       published: ${{ steps.verify_release.outputs.published }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all per-state artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: flat-white-*
@@ -440,7 +440,7 @@ jobs:
           fi
           echo "✓ Upstream asset count verified: $ASSET_COUNT (minimum $MIN_ASSETS)"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -970,7 +970,7 @@ jobs:
   # it exceeds GitHub's 2GB per-asset release limit and is excluded from the
   # GitHub Release. S3 has no such limit (5GB single PUT, 5TB max object).
   #
-  # Authentication: OIDC via aws-actions/configure-aws-credentials@v4 against
+  # Authentication: OIDC via aws-actions/configure-aws-credentials@v6 against
   # arn:aws:iam::493712557159:role/flat-white-role. The role's trust policy
   # restricts to repo:jbejenar/flat-white:* via the GitHub OIDC provider.
   # Validated end-to-end by .github/workflows/s3-smoke.yml.
@@ -1017,7 +1017,7 @@ jobs:
       # gh release download uses the GitHub API + GH_TOKEN, not a local clone.
 
       - name: Download all-states artifact (concatenate output) to staging
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: flat-white-all
           path: s3-upload-staging/
@@ -1025,7 +1025,7 @@ jobs:
       - name: Normalise staging into s3-upload/ (flatten any subdirectories)
         run: |
           mkdir -p s3-upload/
-          # Robust against both actions/download-artifact@v4 single-artifact
+          # Robust against both actions/download-artifact@v8 single-artifact
           # extraction modes (some versions extract directly to path/, others
           # nest under path/{artifact-name}/). Move every regular file under
           # s3-upload-staging/ into s3-upload/ at the top level.
@@ -1109,7 +1109,7 @@ jobs:
           echo "✓ Local file set complete (${TOTAL} files including optional)"
 
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.AWS_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
