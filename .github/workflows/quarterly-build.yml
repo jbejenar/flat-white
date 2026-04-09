@@ -312,6 +312,13 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
     permissions:
       contents: write
+    outputs:
+      # 'true' iff the release was actually published (draft → public).
+      # 'false' iff the release was kept as draft due to build-over-build
+      # anomalies (the workflow's manual-review path). Used by the s3-upload
+      # job downstream to skip mirroring draft releases — those are private
+      # by design and shouldn't leak to the public S3 mirror.
+      published: ${{ steps.verify_release.outputs.published }}
 
     steps:
       - uses: actions/checkout@v4
@@ -762,6 +769,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Verify release
+        id: verify_release
         run: |
           RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           TAG="v${RELEASE_VERSION}"
@@ -793,10 +801,16 @@ jobs:
             echo "--- Release kept as DRAFT due to build-over-build anomalies ---"
             echo "::warning::Release $TAG kept as draft — review anomalies in verification-report.md and comparison report before publishing"
             echo "To publish manually: gh release edit $TAG --draft=false"
+            # Signal to downstream s3-upload job that the release is draft.
+            # The S3 mirror is a public distribution channel and must not
+            # leak draft assets that the workflow intentionally withheld
+            # for manual review.
+            echo "published=false" >> "$GITHUB_OUTPUT"
           else
             echo "--- Publishing release (draft → public) ---"
             gh release edit "$TAG" --draft=false
             echo "✓ Release published"
+            echo "published=true" >> "$GITHUB_OUTPUT"
           fi
           echo "✓ Programmatic download works"
         env:
@@ -872,7 +886,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [setup, release, concatenate]
-    if: ${{ !cancelled() && needs.release.result == 'success' && needs.concatenate.result == 'success' }}
+    # Gate on actual publication, NOT just the release job succeeding.
+    # The release job succeeds in TWO cases:
+    #   1. Release published (no anomalies, draft → public via gh release edit)
+    #   2. Release kept as DRAFT due to build-over-build anomalies
+    #      (anomalies path — manual review required before publish)
+    # In case 2, the GitHub Release is intentionally private. The S3 mirror
+    # is a public distribution channel and must NOT mirror draft releases.
+    # Otherwise s3-upload becomes a side channel that leaks artifacts the
+    # release workflow deliberately withheld.
+    #
+    # The release job's `published` output (true|false) is set inside the
+    # 'Verify release' step at the same point where it does/doesn't run
+    # `gh release edit --draft=false`.
+    #
+    # Recovery path: if a maintainer later manually publishes the release
+    # (`gh release edit vX.Y.Z --draft=false`), they can mirror to S3 by
+    # triggering the workflow_dispatch with the same inputs — the build/
+    # release jobs will be cache hits, the release job will see the
+    # already-published release and emit `published=true`, and s3-upload
+    # will run normally.
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.concatenate.result == 'success' && needs.release.outputs.published == 'true' }}
     permissions:
       id-token: write
       contents: read
