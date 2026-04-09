@@ -5373,12 +5373,12 @@ Risk: medium. This is a real refactor that touches multiple files and removes ~1
 ```yaml
 id: E1.24
 title: Investigate and fix flatten.ts session/connection management — temp tables disappear between prep and cursor stream
-status: in-progress
+status: complete
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
 ```
 
 > **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
@@ -5488,7 +5488,7 @@ epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: 2026-04-09
-shipped_in: workflow-fixes-bundle PR (TBD on merge)
+shipped_in: PR #112
 ```
 
 ## User Story
@@ -5569,12 +5569,12 @@ Risk: zero. 2-line change. Bundle for free.
 ```yaml
 id: E1.26
 title: Investigate and fix WA cursor stream performance regression after pg_dump cache restore
-status: in-progress
+status: complete
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
 ```
 
 > **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
@@ -5694,7 +5694,7 @@ epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: 2026-04-09
-shipped_in: workflow-fixes-bundle PR (TBD on merge)
+shipped_in: PR #112
 ```
 
 ## User Story
@@ -5788,7 +5788,7 @@ epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: 2026-04-09
-shipped_in: workflow-fixes-bundle PR (TBD on merge)
+shipped_in: PR #112
 ```
 
 ## User Story
@@ -5874,12 +5874,13 @@ Risk: low. Workflow change only. Validate by manually triggering the catalogue w
 ```yaml
 id: E1.29
 title: Upgrade GitHub Actions actions to Node.js 24 before Node 20 EOL
-status: planned
+status: complete
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
+shipped_in: PR #117
 target_date: 2026-09-01
 ```
 

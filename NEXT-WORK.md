@@ -177,12 +177,13 @@
 - [ ] Verify GitHub Pages catalogue updates correctly
 - Origin: forensic scan. Catalogue workflow has 0 runs since creation 2026-04-07 because GitHub Actions doesn't fire workflow events from GITHUB_TOKEN-created releases (recursion prevention). **Should fix BEFORE 2026-05-15 cron.**
 
-### E1.29 — Upgrade GitHub Actions to Node.js 24 (planned, p3-low)
+### E1.29 — Upgrade GitHub Actions to Node.js 24 (DONE 2026-04-09, PR #117)
 
-- [ ] Bump `actions/cache@v4`, `actions/checkout@v4`, `actions/upload-artifact@v4`, `actions/download-artifact@v4`, `actions/setup-node@v4`, `docker/build-push-action@v6`, `docker/setup-buildx-action@v3` to Node 24-compatible versions
-- [ ] Verify zero "Node.js 20 deprecated" annotations on a fresh workflow run
-- [ ] Smoke test via workflow_dispatch
-- Origin: GitHub Actions deprecation. Node 20 forced default 2026-06-02; full removal 2026-09-16. **Wait until June 2026 to do the upgrade** so the action ecosystem has stabilized. Don't ship right before 2026-05-15 cron.
+- [x] Bump `actions/cache@v4`, `actions/checkout@v4`, `actions/upload-artifact@v4`, `actions/download-artifact@v4`, `actions/setup-node@v4`, `docker/build-push-action@v6`, `docker/setup-buildx-action@v3` to Node 24-compatible versions
+- [x] Verify zero "Node.js 20 deprecated" annotations on a fresh workflow run
+- [x] Smoke test via workflow_dispatch
+- All 12 JavaScript actions bumped to node24-native versions. No env var workaround — proper version bumps. Verified by CI on PR #117 (all checks pass on Node 24) + post-merge s3-smoke run (zero deprecation warnings).
+- Origin: GitHub Actions deprecation. Node 20 forced default 2026-06-02; full removal 2026-09-16.
 
 ### E1.02 — Delta Builds (planned, p2-medium)
 
