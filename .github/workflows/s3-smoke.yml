@@ -1,0 +1,82 @@
+# S3 access smoke test for the AWS mirror.
+#
+# Validates that the OIDC-based AWS credential flow works end-to-end:
+#   - GitHub Actions can request an OIDC token
+#   - AWS STS can exchange that token for temporary credentials
+#     (assumes role: arn:aws:iam::493712557159:role/flat-white-github-actions)
+#   - Those credentials can list the destination bucket
+#
+# This is a SMOKE TEST ONLY. It does not upload anything. The intent is to
+# validate the AWS plumbing in isolation before adding S3 upload steps to
+# the actual quarterly-build release job (P5.01).
+#
+# Trigger: workflow_dispatch only. Doesn't fire on any other event.
+#
+# When this passes, the next step is P5.01: add an `s3-upload` job to
+# quarterly-build.yml that downloads release artifacts + the concatenated
+# all-states file and uploads them to s3://${BUCKET}/v{release_version}/
+
+name: S3 Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-2
+  AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-github-actions
+  S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
+
+jobs:
+  s3-access-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify caller identity
+        run: |
+          aws sts get-caller-identity
+          echo ""
+          echo "✓ OIDC role assumed successfully"
+
+      - name: List S3 bucket root
+        run: |
+          echo "Listing s3://${S3_BUCKET}/ ..."
+          aws s3 ls "s3://${S3_BUCKET}/"
+          echo ""
+          echo "✓ s3 ls succeeded — bucket exists and is accessible"
+
+      - name: Test write/delete permissions
+        run: |
+          # Write a tiny test file with a unique key, verify it's there, delete it.
+          # Confirms PUT and DELETE permissions on the bucket — needed for the
+          # eventual P5.01 upload integration.
+          KEY="smoke-test/$(date -u +%Y%m%dT%H%M%SZ)-${{ github.run_id }}.txt"
+          PAYLOAD="smoke test from quarterly run $GITHUB_RUN_ID at $(date -u)"
+
+          echo "$PAYLOAD" > /tmp/smoke.txt
+          echo "Uploading to s3://${S3_BUCKET}/${KEY} ..."
+          aws s3 cp /tmp/smoke.txt "s3://${S3_BUCKET}/${KEY}"
+          echo "✓ Upload succeeded"
+
+          echo ""
+          echo "Verifying object exists ..."
+          aws s3 ls "s3://${S3_BUCKET}/${KEY}"
+          echo "✓ Object listed"
+
+          echo ""
+          echo "Deleting test object ..."
+          aws s3 rm "s3://${S3_BUCKET}/${KEY}"
+          echo "✓ Delete succeeded"
+
+          rm -f /tmp/smoke.txt
+          echo ""
+          echo "✓ All S3 access checks passed"
