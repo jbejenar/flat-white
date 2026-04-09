@@ -881,11 +881,27 @@ jobs:
       AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-role
       S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
     steps:
-      - name: Download all-states artifact (concatenate output)
+      # No actions/checkout needed — this job doesn't read any repo files.
+      # gh release download uses the GitHub API + GH_TOKEN, not a local clone.
+
+      - name: Download all-states artifact (concatenate output) to staging
         uses: actions/download-artifact@v4
         with:
           name: flat-white-all
-          path: s3-upload/
+          path: s3-upload-staging/
+
+      - name: Normalise staging into s3-upload/ (flatten any subdirectories)
+        run: |
+          mkdir -p s3-upload/
+          # Robust against both actions/download-artifact@v4 single-artifact
+          # extraction modes (some versions extract directly to path/, others
+          # nest under path/{artifact-name}/). Move every regular file under
+          # s3-upload-staging/ into s3-upload/ at the top level.
+          find s3-upload-staging/ -type f -exec mv -v {} s3-upload/ \;
+          rm -rf s3-upload-staging/
+          echo ""
+          echo "--- s3-upload/ after normalisation ---"
+          ls -lh s3-upload/
 
       - name: Download published GitHub Release assets
         env:
@@ -896,11 +912,25 @@ jobs:
           cd s3-upload/
           gh release download "$TAG" --repo "${{ github.repository }}"
           echo ""
-          echo "--- Local s3-upload/ contents ---"
+          echo "--- s3-upload/ contents (all-states + GitHub Release assets) ---"
           ls -lh
           echo ""
           echo "--- Total size ---"
           du -sh .
+
+      - name: Verify s3-upload/ has no unexpected subdirectories
+        run: |
+          # All files should be at the top level of s3-upload/. If anything
+          # ended up in a subdirectory (unexpected upload-artifact behavior,
+          # gh release download quirk), fail loud BEFORE syncing to S3 with
+          # a misshapen layout.
+          UNEXPECTED=$(find s3-upload/ -mindepth 2 -type f)
+          if [[ -n "$UNEXPECTED" ]]; then
+            echo "::error::Files found in unexpected subdirectories:"
+            echo "$UNEXPECTED"
+            exit 1
+          fi
+          echo "✓ All files at top level of s3-upload/"
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -935,14 +965,21 @@ jobs:
       - name: Verify upload integrity
         run: |
           TAG="v${{ needs.setup.outputs.release_version }}"
-          DEST="s3://${S3_BUCKET}/builds/${TAG}/"
 
-          # Compare local and remote: every file in s3-upload/ should exist
-          # in S3 with matching size. aws s3 sync already did the upload; this
-          # is a defensive post-check.
+          # Compare local and remote: every file in s3-upload/ must exist in
+          # S3 with matching ContentLength. aws s3 sync already did the upload
+          # and aws's internal retries; this is a defensive post-check that
+          # catches silent corruption or any layout drift.
+          #
+          # GitHub runners are Linux, so stat -c%s is the correct invocation
+          # (no BSD fallback needed).
+          #
+          # No -maxdepth filter on find: the prior step already enforced that
+          # all files are at the top level of s3-upload/, so this loop sees
+          # exactly the set of files we intend to verify.
           MISMATCH=0
           while IFS= read -r local_file; do
-            local_size=$(stat -c%s "$local_file" 2>/dev/null || stat -f%z "$local_file")
+            local_size=$(stat -c%s "$local_file")
             base=$(basename "$local_file")
             remote_size=$(aws s3api head-object \
               --bucket "${S3_BUCKET}" \
@@ -958,7 +995,7 @@ jobs:
             else
               echo "✓ ${base} (${local_size} bytes)"
             fi
-          done < <(find s3-upload/ -maxdepth 1 -type f)
+          done < <(find s3-upload/ -type f)
 
           if [[ "$MISMATCH" -ne 0 ]]; then
             echo ""
