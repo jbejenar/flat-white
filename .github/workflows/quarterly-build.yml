@@ -35,6 +35,7 @@ env:
   # Default version: latest published quarterly release for the trigger date
   DOCKER_IMAGE: flat-white
   DB_CACHE_VERSION: v2
+  SNS_TOPIC_ARN: arn:aws:sns:ap-southeast-2:493712557159:flat-white-release
   # Optional manual release-data overrides.
   # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery > Feb 2026 fallback for 2026.02 only
   DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || '' }}
@@ -1250,6 +1251,11 @@ jobs:
           aws s3 cp /tmp/manifest.json "s3://${S3_BUCKET}/${MANIFEST_KEY}" --no-progress
           echo "✓ Manifest uploaded — version ${VERSION_DASH} is now published"
 
+          # P5.02: update the latest pointer so consumers don't need to know the version
+          aws s3 cp "s3://${S3_BUCKET}/${MANIFEST_KEY}" \
+                    "s3://${S3_BUCKET}/manifests/address-latest.json" --no-progress
+          echo "✓ Latest pointer updated (manifests/address-latest.json)"
+
           echo ""
           echo "--- Final S3 state ---"
           echo "Data:"
@@ -1257,3 +1263,19 @@ jobs:
           echo ""
           echo "Manifest:"
           aws s3 ls "s3://${S3_BUCKET}/${MANIFEST_KEY}" --human-readable
+          echo ""
+          echo "Latest pointer:"
+          aws s3 ls "s3://${S3_BUCKET}/manifests/address-latest.json" --human-readable
+
+      # P5.04: Notify downstream via SNS (non-fatal — data + manifest already published)
+      - name: Send SNS release notification
+        if: steps.check_existing.outputs.skip != 'true'
+        run: |
+          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
+          aws sns publish \
+            --topic-arn "${SNS_TOPIC_ARN}" \
+            --subject "flat-white ${VERSION_DASH} released" \
+            --message "$(cat /tmp/manifest.json)" \
+            --no-cli-pager \
+            || echo "::warning::SNS notification failed (non-fatal — data + manifest already published)"
+          echo "✓ SNS notification sent (or warned)"

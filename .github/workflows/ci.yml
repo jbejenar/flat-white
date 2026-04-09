@@ -25,8 +25,6 @@ jobs:
       - run: npm run build
       - name: Schema compatibility check
         run: node dist/check-schema-compat-cli.js
-      - name: Detect-load-failure script integration test
-        run: bash test/integration/load-detection/test.sh
       - name: Boundary prelude integration test
         run: bash test/integration/boundary-prelude/test.sh
       - name: Cache validator integration test

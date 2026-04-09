@@ -1,5 +1,7 @@
 # Boundaries — How They're Calculated, Where They Come From, What Goes Wrong
 
+> **2026-04-09 (E1.23): Path 1 and Path 2 have been collapsed into a single path.** flat-white now always passes `--no-boundary-tag` to gnaf-loader and uses its own spatial join fallback (`address_full_prep.sql`). The retry infrastructure (`scripts/detect-load-failure.sh`, the `--no-boundary-tag` retry branch in `docker-entrypoint.sh`) has been deleted. The sections below that describe the dual-path architecture are preserved as historical documentation.
+
 > **Audience:** anyone reading the quarterly build logs and trying to figure out why "LGA" appears in scary red text. Also: future contributors who need to change anything in the boundary path.
 >
 > **TL;DR:** boundary enrichment is layered. There's an upstream gnaf-loader path that's currently broken for 7 of 9 states, and our own spatial-join fallback that picks up the slack. The scary `lga_pid SQL FAILED` lines you see in the logs are the **upstream bug being caught and rerouted**, not a flat-white failure.
@@ -169,6 +171,8 @@ That join expands the mesh block code into category, SA1, SA2, SA2 name, SA3, SA
 ---
 
 ## How a build chooses which path to run
+
+> **Historical (pre-E1.23).** The decision logic below was removed in E1.23. Builds now always use the spatial-join fallback path.
 
 The decision lives in `docker-entrypoint.sh` and `scripts/detect-load-failure.sh`:
 
@@ -576,7 +580,7 @@ The actual final shape is described in the "Why it WAS slow" section above and i
 
 **Status:** deferred 2026-04-09. Was originally a "nice-to-have community contribution"; now obsoleted by E1.21 + E1.23. Once E1.23 lands, flat-white never calls gnaf-loader Part 5, so the upstream bug is irrelevant. **Revisit only if E1.23 is cancelled** OR for community-contribution reasons. See ROADMAP entry E1.20.
 
-### E1.23 — collapse Path 1 and Path 2 into a single path (planned, p2-medium)
+### E1.23 — collapse Path 1 and Path 2 into a single path ✅ DONE 2026-04-09
 
 Now actually viable. E1.21 made Path 2 as fast as Path 1, so the dual-path infrastructure has no remaining technical justification.
 
@@ -616,25 +620,25 @@ See ROADMAP entry E1.26.
 
 ## Appendix: code locations
 
-| Concern                       | File                                                                                                  |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Path 1 (upstream)             | `gnaf-loader/load-gnaf.py` `boundary_tag_gnaf` + `04-01b-bdy-tag-template.sql`                        |
-| Path 1 polygon prep (subdiv)  | `gnaf-loader/postgres-scripts/02-03-create-admin-bdy-analysis-tables_template.sql`                    |
-| Path 1 column-mismatch bug    | `gnaf-loader/postgres-scripts/04-06-bdy-tags-for-alias-addresses.sql`                                 |
-| Path 2 (our fallback)         | `sql/address_full_prep.sql` (header comment + DO block + unique index, lines 94-219)                  |
-| Detection / retry routing     | `scripts/detect-load-failure.sh` + `docker-entrypoint.sh` Stage 3                                     |
-| Cache validator               | `scripts/validate-db-cache.sh`                                                                        |
-| Per-state retry orchestration | `scripts/run-quarterly-state.sh`                                                                      |
-| Flatten reads boundaries      | `sql/address_full.sql` lines 178–197 + 243–248                                                        |
-| Flatten code (snake → camel)  | `src/flatten.ts`                                                                                      |
-| Output schema                 | `src/schema.ts` `boundaries` field                                                                    |
-| Production verify gate        | `src/verify.ts` `DEFAULT_BOUNDARY_THRESHOLDS`                                                         |
-| Release/PR verify gate        | `src/verification-report.ts` `parseBoundaryThresholdsArg`                                             |
-| Shape smoke (PR-time)         | `scripts/run-quarterly-fixture-smoke.mjs` + `quarterly-shape-smoke` job in `.github/workflows/ci.yml` |
-| Detection test fixtures       | `test/integration/load-detection/fixtures/`                                                           |
-| Fixture seed data             | `fixtures/seed-postgres.sql`, `fixtures/seed-admin-bdys.sql`                                          |
-| Fixture prep (boundaries)     | `fixtures/prep-admin-bdys.sql`                                                                        |
-| Boundary prelude extractor    | `scripts/extract-boundary-prelude.mjs`                                                                |
+| Concern                       | File                                                                                                        |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Path 1 (upstream)             | `gnaf-loader/load-gnaf.py` `boundary_tag_gnaf` + `04-01b-bdy-tag-template.sql`                              |
+| Path 1 polygon prep (subdiv)  | `gnaf-loader/postgres-scripts/02-03-create-admin-bdy-analysis-tables_template.sql`                          |
+| Path 1 column-mismatch bug    | `gnaf-loader/postgres-scripts/04-06-bdy-tags-for-alias-addresses.sql`                                       |
+| Path 2 (our fallback)         | `sql/address_full_prep.sql` (header comment + DO block + unique index, lines 94-219)                        |
+| Detection / retry routing     | Removed in E1.23 — `scripts/detect-load-failure.sh` deleted, retry branch in `docker-entrypoint.sh` removed |
+| Cache validator               | `scripts/validate-db-cache.sh`                                                                              |
+| Per-state retry orchestration | `scripts/run-quarterly-state.sh`                                                                            |
+| Flatten reads boundaries      | `sql/address_full.sql` lines 178–197 + 243–248                                                              |
+| Flatten code (snake → camel)  | `src/flatten.ts`                                                                                            |
+| Output schema                 | `src/schema.ts` `boundaries` field                                                                          |
+| Production verify gate        | `src/verify.ts` `DEFAULT_BOUNDARY_THRESHOLDS`                                                               |
+| Release/PR verify gate        | `src/verification-report.ts` `parseBoundaryThresholdsArg`                                                   |
+| Shape smoke (PR-time)         | `scripts/run-quarterly-fixture-smoke.mjs` + `quarterly-shape-smoke` job in `.github/workflows/ci.yml`       |
+| Detection test fixtures       | Removed in E1.23                                                                                            |
+| Fixture seed data             | `fixtures/seed-postgres.sql`, `fixtures/seed-admin-bdys.sql`                                                |
+| Fixture prep (boundaries)     | `fixtures/prep-admin-bdys.sql`                                                                              |
+| Boundary prelude extractor    | `scripts/extract-boundary-prelude.mjs`                                                                      |
 
 ## Appendix: relevant PRs and roadmap entries
 

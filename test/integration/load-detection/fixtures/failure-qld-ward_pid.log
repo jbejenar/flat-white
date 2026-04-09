@@ -1,5 +1,0 @@
-root        : INFO     Part 4 of 6 : Reference tables created! : 0:00:19
-root        : INFO     Part 5 of 6 : Start boundary tagging addresses : 2026-04-08 04:46:00
-psycopg.errors.UndefinedColumn: column "ward_pid" of relation "address_alias_admin_boundaries" does not exist
-LINE 1: ... locality_name, postcode, state, ce_pid, ce_name, lga_pid, l...
-[load] ERROR: gnaf-loader exited with code 1 after 5.2 minutes

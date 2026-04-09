@@ -160,11 +160,11 @@ timeout 600 docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
   --no-owner --no-privileges --no-tablespaces \
   > "$WORK_DIR/raw-pre-data.sql"
 
-# PART 1C: admin_bdys schema DDL (abs_2021_mb_lookup only — we just need the schema)
+# PART 1C: admin_bdys schema DDL (abs_2021_mb only — we just need the schema)
 timeout 600 docker compose exec -T db pg_dump -U "$DB_USER" -d "$DB_NAME" \
   --schema="$ADMIN_SCHEMA" --schema-only --section=pre-data \
   --no-owner --no-privileges --no-tablespaces \
-  -t "${ADMIN_SCHEMA}.abs_2021_mb_lookup" \
+  -t "${ADMIN_SCHEMA}.abs_2021_mb" \
   > "$WORK_DIR/admin-pre-data.sql"
 
 echo "Extracting fixture data..."
@@ -259,7 +259,7 @@ echo "Extracting fixture data..."
 
 # ABS mesh block lookup data
 {
-  extract_copy_data "${ADMIN_SCHEMA}.abs_2021_mb_lookup" "*" \
+  extract_copy_data "${ADMIN_SCHEMA}.abs_2021_mb" "*" \
     "WHERE mb21_code IN (SELECT DISTINCT mb_2021_code FROM ${SCHEMA}.address_principals WHERE gnaf_pid IN (SELECT gnaf_pid FROM ${SCHEMA}.fixture_pids) AND mb_2021_code IS NOT NULL)"
 } > "$WORK_DIR/data-abs.sql"
 
@@ -371,32 +371,9 @@ PART1C_HEADER
 
   cat "$WORK_DIR/data-abs.sql"
 
-  echo ""
-  echo ""
-
-  cat <<'ABS_MIRROR'
--- Mirror abs_2021_mb_lookup as abs_2021_mb so the materialize/production SQL path
--- (sql/address_full_main.sql, which reads admin_bdys_202602.abs_2021_mb) produces
--- byte-identical output to the legacy path against the fixture. In production
--- gnaf-loader creates abs_2021_mb directly from shapefiles.
---
--- KNOWN GAP: this mirror has no `geom` column. The production table populated by
--- gnaf-loader has a PostGIS polygon. Anything that adds a spatial query on
--- abs_2021_mb will silently break against the fixture. E1.10 (shapefile fixtures)
--- will replace this stub with real per-LGA shapefile loading.
-ABS_MIRROR
-
-  # Use the actual admin schema name in the SQL
-  cat <<MIRROR_SQL
-DROP TABLE IF EXISTS ${ADMIN_SCHEMA}.abs_2021_mb;
-CREATE TABLE ${ADMIN_SCHEMA}.abs_2021_mb AS
-SELECT
-  (ROW_NUMBER() OVER (ORDER BY mb21_code))::int AS gid,
-  mb21_code, mb_cat, sa1_21code, sa2_21code, sa2_21name,
-  sa3_21code, sa3_21name, sa4_21code, sa4_21name,
-  gcc_21code, gcc_21name, state
-FROM ${ADMIN_SCHEMA}.abs_2021_mb_lookup;
-MIRROR_SQL
+  # E1.22: mirror block removed — abs_2021_mb is now the canonical name
+  # everywhere (fixture seed, production gnaf-loader, extract-fixtures).
+  # The old abs_2021_mb_lookup → abs_2021_mb mirror is no longer needed.
 
   echo ""
   echo ""
