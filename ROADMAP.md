@@ -5164,17 +5164,17 @@ The unsubdivided tables avoid both blockers.
 
 ## Empirical evidence (preserved for posterity)
 
-| State | LATERAL (run 24138309484) | Bulk fresh (24159739501) | Bulk cache (24163471133)                      |
-| ----- | ------------------------- | ------------------------ | --------------------------------------------- |
-| OT    | 5m46s ✓                   | 5m9s ✓                   | 59s ✓                                         |
-| NT    | ✓                         | 8m17s ✓                  | 1m43s ✓                                       |
-| ACT   | 6m40s ✓                   | 8m50s ✓                  | 1m30s ✓                                       |
-| WA    | ✓                         | 12m43s ✓                 | 1h1m15s ✓ ← see E1.26 (cache restore anomaly) |
-| TAS   | ✗ exit 3                  | 18m44s ✓                 | 11m30s ✓                                      |
-| VIC   | 27m8s ✓                   | 23m55s ✓                 | 12m53s ✓                                      |
-| SA    | ✗ 55m15s                  | 16m47s ✓                 | 12m54s ✓                                      |
-| QLD   | 51m53s ✓                  | 28m47s ✓                 | 15m43s ✓                                      |
-| NSW   | ✗ 1h56m                   | 43m55s ✓                 | 29m20s ✓                                      |
+| State | LATERAL (run 24138309484) | Bulk fresh (run 24159739501) | Bulk cache (run 24163471133)                  |
+| ----- | ------------------------- | ---------------------------- | --------------------------------------------- |
+| OT    | 5m46s ✓                   | 5m9s ✓                       | 59s ✓                                         |
+| NT    | 9m33s ✓                   | 8m17s ✓                      | 1m43s ✓                                       |
+| ACT   | 6m40s ✓                   | 8m50s ✓                      | 1m30s ✓                                       |
+| WA    | 12m29s ✓                  | 12m43s ✓                     | 1h1m15s ✓ ← see E1.26 (cache restore anomaly) |
+| TAS   | 1h19m45s ✗ exit 3         | 18m44s ✓                     | 11m30s ✓                                      |
+| VIC   | 27m8s ✓                   | 23m55s ✓                     | 12m53s ✓                                      |
+| SA    | 55m15s ✗ exit 3           | 16m47s ✓                     | 12m54s ✓                                      |
+| QLD   | 51m53s ✓                  | 28m47s ✓                     | 15m43s ✓                                      |
+| NSW   | 1h56m ✗ exit 3            | 43m55s ✓                     | 29m20s ✓                                      |
 
 **Local M5 64GB end-to-end NSW with E1.21**: 14 min total (load 4.5 min + spatial join 7.5 min + flatten 1.7 min + verify 23s).
 
@@ -5309,8 +5309,8 @@ flat-white currently has two boundary-tagging code paths:
 
 The dual-path infrastructure includes:
 
-- `scripts/detect-load-failure.sh` — broad Part-5 failure detection (10 test fixtures + the test script)
-- `docker-entrypoint.sh:359-376` — `--no-boundary-tag` retry branch with `LOAD_LOG`/`LOAD_EXIT` plumbing
+- `scripts/detect-load-failure.sh` — broad Part-5 failure detection (9 fixtures × 10 test cases via `test/integration/load-detection/test.sh`; `success.log` is tested twice with different exit codes)
+- `docker-entrypoint.sh:358-379` — `--no-boundary-tag` retry branch with `LOAD_LOG`/`LOAD_EXIT` plumbing
 - The "if `address_principal_admin_boundaries` is already populated, skip" early-return at the top of the Path 2 DO block in `address_full_prep.sql`
 - The "Path 1 vs Path 2" framing in `docs/BOUNDARIES.md`
 - `test/integration/load-detection/test.sh` + 10 fixture log files
@@ -5324,7 +5324,7 @@ This complexity exists because gnaf-loader's Part 5 was historically faster than
 1. **gnaf-loader invocation** in `docker-entrypoint.sh` always passes `--no-boundary-tag`. No retry, no detection, no failure-mode classification.
 2. **`address_full_prep.sql`** runs unconditionally on every flatten — drop the "if already populated, skip" early-return and let it always populate the boundary table from scratch. (Or keep the early-return as a defensive idempotence check; cheap.)
 3. **Delete `scripts/detect-load-failure.sh`** and `test/integration/load-detection/`.
-4. **Delete the retry branch** in `docker-entrypoint.sh:359-376` (the `--no-boundary-tag` retry detection logic).
+4. **Delete the retry branch** in `docker-entrypoint.sh:358-379` (the `--no-boundary-tag` retry detection logic).
 5. **Update `docs/BOUNDARIES.md`** — single path narrative. Drop the "Path 1 vs Path 2" framing.
 6. **Update `docs/RELEASING.md`** if it mentions the retry flow.
 7. **Verify the fixture build still works** — fixture path uses the same `address_full_prep.sql` block via the prelude markers, so this should be a no-op there.
