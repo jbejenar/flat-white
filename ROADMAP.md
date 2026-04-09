@@ -4418,12 +4418,12 @@ Origin: PR #67 retrospective. The fixture cross-path check catches drift between
 ```yaml
 id: E1.13
 title: Patch release tooling (e.g. v2026.04.1)
-status: in-progress
+status: complete
 priority: p1-high
 epic: E1.B
 persona: [ops/maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
 ```
 
 ## User Story
@@ -5981,7 +5981,7 @@ Risk: low. Mechanical version bumps. The catch is identifying any action that do
 ```yaml
 id: P5.01
 title: S3 Upload
-status: in-progress
+status: complete
 priority: p1-high
 epic: P5.1
 persona: [ops/maintainer]
@@ -5995,7 +5995,8 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases + S3
-completed: null
+completed: 2026-04-09
+shipped_in: PR #111 + PR #119
 ```
 
 > **2026-04-09 update — implementation in flight.**
@@ -6099,7 +6100,7 @@ Consumers that want "always latest" shouldn't need to discover the current versi
 ```yaml
 id: P5.03
 title: OIDC Auth
-status: planned
+status: complete
 priority: p1-high
 epic: P5.1
 persona: [ops/maintainer]
@@ -6113,7 +6114,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-09
 ```
 
 ## User Story
