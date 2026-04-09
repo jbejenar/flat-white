@@ -311,7 +311,16 @@ jobs:
     needs: [setup, build, concatenate]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
     permissions:
+      # contents: write — needed for the release job's git push to a feature
+      #   branch (the new CHANGELOG PR flow uses this) and for gh release
+      #   create/edit
+      # pull-requests: write — REQUIRED for the new CHANGELOG PR flow.
+      #   When a job-level permissions block is set, all unspecified scopes
+      #   become 'none' (not the workflow default). Without this, gh pr list
+      #   and gh pr create return 403 and silently fall through to the
+      #   warning fallback, leaving CHANGELOG.md drift on every release.
       contents: write
+      pull-requests: write
     outputs:
       # 'true' iff the release was actually published (draft → public).
       # 'false' iff the release was kept as draft due to build-over-build
@@ -778,19 +787,30 @@ jobs:
           # Open the PR if one doesn't already exist for this branch.
           # gh pr list --head matches the branch name; an empty result means
           # no PR exists.
+          #
+          # Truthful logging: only print success after gh pr create exits 0.
+          # Don't swallow errors from gh pr create — if PR creation fails
+          # (likely cause: missing pull-requests:write permission, or token
+          # scope issue), we want a loud warning, NOT a misleading "success"
+          # message followed by silent CHANGELOG drift.
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [[ -z "$EXISTING_PR" ]]; then
-            gh pr create \
-              --title "docs(changelog): record v${RELEASE_VERSION} release" \
-              --body "Auto-generated CHANGELOG entry for v${RELEASE_VERSION}, published by the quarterly-build workflow. This PR exists because branch protection on \`main\` prevents the workflow from pushing directly. Review and merge to keep CHANGELOG.md in sync with the published release.
+            if gh pr create \
+                 --title "docs(changelog): record v${RELEASE_VERSION} release" \
+                 --body "Auto-generated CHANGELOG entry for v${RELEASE_VERSION}, published by the quarterly-build workflow. This PR exists because branch protection on \`main\` prevents the workflow from pushing directly. Review and merge to keep CHANGELOG.md in sync with the published release.
 
               **Release:** [v${RELEASE_VERSION}](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${RELEASE_VERSION})
 
               **Tracked by:** ROADMAP entry E1.27" \
-              --base main \
-              --head "$BRANCH" \
-              || echo "::warning::Failed to create CHANGELOG PR — push the changelog manually if needed"
-            echo "✓ Opened CHANGELOG PR for v${RELEASE_VERSION}"
+                 --base main \
+                 --head "$BRANCH"; then
+              echo "✓ Opened CHANGELOG PR for v${RELEASE_VERSION}"
+            else
+              echo "::warning::Failed to create CHANGELOG PR for v${RELEASE_VERSION} — CHANGELOG.md will drift on main. Check release job permissions (needs pull-requests: write)."
+              # Don't fail the release job — the GitHub Release is the
+              # critical artifact, CHANGELOG drift is a secondary concern.
+              # But we want a loud warning so the regression is visible.
+            fi
           else
             echo "✓ CHANGELOG PR #${EXISTING_PR} already exists for v${RELEASE_VERSION} — branch updated via force-push"
           fi

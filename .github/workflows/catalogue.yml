@@ -9,6 +9,23 @@
 # by GITHUB_TOKEN actions and is the documented escape hatch for chaining
 # workflows. See ROADMAP entry E1.28 for the full context.
 #
+# Defense in depth (added 2026-04-09 in response to bot review on PR #112):
+# Quarterly Build's release job succeeds whether the GitHub Release is
+# published OR kept as a draft due to anomalies (the manual-review path).
+# Without an additional gate here, the catalogue would re-run and fetch
+# draft releases via GITHUB_TOKEN, leaking metadata + draft asset links to
+# the public GitHub Pages output.
+#
+# Two layers of defense:
+#   1. The 'Verify a published release exists' step below queries the
+#      latest release state via gh api and exits early (success, no-op)
+#      if the latest release is a draft. This prevents the workflow from
+#      generating against incomplete state.
+#   2. src/generate-catalogue.ts also filters out draft AND prerelease
+#      entries from the API response. Belt-and-braces — the workflow
+#      check covers manual workflow_dispatch runs that bypass the
+#      workflow_run trigger.
+#
 # Also supports manual dispatch for re-generation against the current state
 # of releases (useful for backfilling, recovery, or after manual edits).
 
@@ -40,6 +57,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify a published release exists (skip if latest is draft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Quarterly Build's release job succeeds whether the release is
+          # published or kept as a draft. We must NOT regenerate the
+          # catalogue from a draft state — the public GitHub Pages output
+          # would leak draft asset links and metadata.
+          #
+          # gh release view (no args) returns the latest non-draft release.
+          # If there are no published releases at all (first-ever build, or
+          # all releases deleted), this returns an error and we exit early.
+          if ! gh release view \
+                 --repo "${{ github.repository }}" \
+                 --json tagName,isDraft,isPrerelease \
+                 > /tmp/latest-release.json 2>/dev/null; then
+            echo "::warning::No published releases found — skipping catalogue generation"
+            exit 0
+          fi
+          LATEST_TAG=$(jq -r '.tagName' /tmp/latest-release.json)
+          IS_DRAFT=$(jq -r '.isDraft' /tmp/latest-release.json)
+          IS_PRERELEASE=$(jq -r '.isPrerelease' /tmp/latest-release.json)
+          echo "Latest non-draft release: ${LATEST_TAG}"
+          echo "  isDraft: ${IS_DRAFT}"
+          echo "  isPrerelease: ${IS_PRERELEASE}"
+          # Belt-and-braces: gh release view excludes drafts by default,
+          # so isDraft should always be false here. But check anyway in case
+          # the gh CLI behavior changes.
+          if [[ "$IS_DRAFT" == "true" ]]; then
+            echo "::warning::Latest release is draft — skipping catalogue generation"
+            exit 0
+          fi
+          echo "✓ Latest release is published — proceeding with catalogue generation"
 
       - uses: actions/setup-node@v4
         with:
