@@ -15,18 +15,23 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
-## [v2026.02.1] - 2026-04-09
+## [v2026.02.3] - 2026-04-09
 
-> **Patch release** — supersedes the deleted v2026.04 release. The underlying G-NAF data is unchanged (still G-NAF 2026.02). v2026.04 was published 2026-04-05 with all-null boundary fields (lga, ward, stateElectorate, commonwealthElectorate) due to a chain of upstream and downstream issues (E1.14 gnaf-loader `shp2pgsql` silently failing; E1.17 hardcoded download URL labeling 2026.02 data as 2026.04). v2026.02.1 ships the same address data with correct, populated boundary fields via the new bulk-join spatial fallback (E1.21 / PR #106), the state-aware verify thresholds (PR #105), and the cache validator (PR #104). v2026.04 was deleted from GitHub Releases on 2026-04-09; its git tag survives for history.
+> **Patch release** — supersedes the deleted v2026.04, v2026.02.1, and v2026.02.2 releases. The underlying G-NAF data is unchanged (still G-NAF 2026.02). v2026.04 was published 2026-04-05 with all-null boundary fields (lga, ward, stateElectorate, commonwealthElectorate) due to a chain of upstream and downstream issues (E1.14 gnaf-loader `shp2pgsql` silently failing; E1.17 hardcoded download URL labeling 2026.02 data as 2026.04). v2026.02.1 was the first attempt at a corrected patch but predated several latent fixes (E1.24 flatten session, E1.26 WA cache restore, E1.27 CHANGELOG PR, E1.28 catalogue trigger). v2026.02.2 was a smoke test for P5.01 (S3 mirror) before all the fixes landed. **v2026.02.3 is the canonical first quarterly release built and validated end-to-end with the full set of post-arc fixes.**
+>
+> **Validated end-to-end** by quarterly run [24171680780](https://github.com/jbejenar/flat-white/actions/runs/24171680780) — first quarterly run with E1.21 + E1.24 + E1.26 + E1.27 + E1.28 + P5.01 all working together. WA dropped from 1h2m48s (pre-E1.26) to 11m44s (5.4× faster), proving the ANALYZE-after-pg_restore hypothesis. All side effects fired automatically: CHANGELOG PR auto-opened (PR #115), Catalogue auto-deployed to GitHub Pages (run 24173355664), S3 mirror auto-uploaded (14 objects including the 1.6 GB all-states file).
 
 ### Release
 
-- **Release version:** 2026.02.1
+- **Release version:** 2026.02.3
 - **G-NAF data version:** 2026.02
 - **Schema version:** 0.2.0
 - **Total addresses:** 15,015,573
 - **Per-state counts:** ACT 245,362 · NSW 4,619,401 · NT 110,079 · OT 3,805 · QLD 3,100,481 · SA 1,123,131 · TAS 346,248 · VIC 3,940,659 · WA 1,526,407
-- **Quarterly run:** [24163471133](https://github.com/jbejenar/flat-white/actions/runs/24163471133)
+- **Quarterly run:** [24171680780](https://github.com/jbejenar/flat-white/actions/runs/24171680780)
+- **GitHub Release:** https://github.com/jbejenar/flat-white/releases/tag/v2026.02.3
+- **S3 mirror:** `s3://flat-white-address-493712557159-ap-southeast-2-an/builds/v2026.02.3/` (includes the 1.6 GB all-states ndjson.gz that GitHub Releases can't host)
+- **Catalogue:** https://jbejenar.github.io/flat-white/
 
 ### Added
 
