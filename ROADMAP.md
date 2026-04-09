@@ -2,7 +2,7 @@
 
 ### Australian addresses. Flattened and served.
 
-> Last updated: 2026-04-03 · Roadmap version: 1.3.0
+> Last updated: 2026-04-09 · Roadmap version: 1.3.0
 
 ---
 
@@ -5381,7 +5381,7 @@ depends_on: []
 completed: 2026-04-09
 ```
 
-> **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
+> **2026-04-09 — COMPLETE. Validated end-to-end by quarterly run [24171680780](https://github.com/jbejenar/flat-white/actions/runs/24171680780) (patch_version=3, all 9 states green).**
 >
 > **Investigation findings:** the postgres@3 library does not guarantee that two consecutive `sql.unsafe()` calls on the same `sql` instance use the same physical Postgres connection. With `max: 1`, the pool has at most one connection, but cursor queries (which need a long-lived connection) may acquire a fresh connection independently of the previous query. Each Postgres connection is its own session, so `CREATE TEMPORARY TABLE` statements on connection A are NOT visible to queries on connection B. This is verified by reading `node_modules/postgres/src/index.js` reserve/unsafe/cursor implementations.
 >
@@ -5577,7 +5577,7 @@ depends_on: []
 completed: 2026-04-09
 ```
 
-> **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
+> **2026-04-09 — COMPLETE. Validated end-to-end by quarterly run [24171680780](https://github.com/jbejenar/flat-white/actions/runs/24171680780) (patch_version=3, all 9 states green).**
 >
 > The fix is the simplest plausible answer: run `ANALYZE` after `pg_restore` in `docker-entrypoint.sh`'s cache-restore branch. `pg_dump` does not capture per-table statistics (they live in `pg_statistic` which is excluded), so a freshly-restored database has only the planner's defaults — which work for most data shapes but pick pathological plans for some.
 >
