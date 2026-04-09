@@ -1251,10 +1251,17 @@ jobs:
           aws s3 cp /tmp/manifest.json "s3://${S3_BUCKET}/${MANIFEST_KEY}" --no-progress
           echo "✓ Manifest uploaded — version ${VERSION_DASH} is now published"
 
-          # P5.02: update the latest pointer so consumers don't need to know the version
-          aws s3 cp "s3://${S3_BUCKET}/${MANIFEST_KEY}" \
-                    "s3://${S3_BUCKET}/manifests/address-latest.json" --no-progress
-          echo "✓ Latest pointer updated (manifests/address-latest.json)"
+          # P5.02: update the latest pointer ONLY if this version is newer than
+          # the current latest. Prevents a backport build (e.g., 2026.02 re-triggered
+          # after 2026.05 is live) from regressing the global latest pointer.
+          CURRENT_LATEST_VERSION=$(aws s3 cp "s3://${S3_BUCKET}/manifests/address-latest.json" - 2>/dev/null | jq -r '.version // empty' 2>/dev/null || echo "")
+          if [[ -z "$CURRENT_LATEST_VERSION" ]] || [[ "$VERSION_DASH" > "$CURRENT_LATEST_VERSION" ]]; then
+            aws s3 cp "s3://${S3_BUCKET}/${MANIFEST_KEY}" \
+                      "s3://${S3_BUCKET}/manifests/address-latest.json" --no-progress
+            echo "✓ Latest pointer updated (manifests/address-latest.json → ${VERSION_DASH})"
+          else
+            echo "::notice::Not updating latest pointer: current latest is ${CURRENT_LATEST_VERSION}, this build is ${VERSION_DASH}"
+          fi
 
           echo ""
           echo "--- Final S3 state ---"
