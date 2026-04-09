@@ -846,3 +846,125 @@ jobs:
           done
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Job 4: S3 mirror upload (P5.01)
+  # ---------------------------------------------------------------------------
+  # Uploads all release artifacts (per-state ndjson.gz files, metadata.json,
+  # DOCUMENT-SCHEMA.md, verification-report.md) PLUS the all-states concatenated
+  # file to s3://flat-white-address-493712557159-ap-southeast-2-an/builds/v{version}/
+  #
+  # The all-states file (~1.5-2GB) is the unique value-add of the S3 mirror —
+  # it exceeds GitHub's 2GB per-asset release limit and is excluded from the
+  # GitHub Release. S3 has no such limit (5GB single PUT, 5TB max object).
+  #
+  # Authentication: OIDC via aws-actions/configure-aws-credentials@v4 against
+  # arn:aws:iam::493712557159:role/flat-white-role. The role's trust policy
+  # restricts to repo:jbejenar/flat-white:* via the GitHub OIDC provider.
+  # Validated end-to-end by .github/workflows/s3-smoke.yml.
+  #
+  # Failure semantics: this job is NON-BLOCKING for the release. If S3 upload
+  # fails, the GitHub Release is still published correctly (it's already done
+  # by the time s3-upload runs). The S3 mirror is redundancy, not the primary
+  # distribution. A failure here is loud (job marked failed in the workflow
+  # summary) but doesn't undo anything upstream.
+  s3-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [setup, release, concatenate]
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.concatenate.result == 'success' }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ap-southeast-2
+      AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-role
+      S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
+    steps:
+      - name: Download all-states artifact (concatenate output)
+        uses: actions/download-artifact@v4
+        with:
+          name: flat-white-all
+          path: s3-upload/
+
+      - name: Download published GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ needs.setup.outputs.release_version }}"
+          echo "Downloading all assets from release ${TAG}..."
+          cd s3-upload/
+          gh release download "$TAG" --repo "${{ github.repository }}"
+          echo ""
+          echo "--- Local s3-upload/ contents ---"
+          ls -lh
+          echo ""
+          echo "--- Total size ---"
+          du -sh .
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify caller identity
+        run: |
+          aws sts get-caller-identity
+          echo "✓ AWS role assumed"
+
+      - name: Upload to S3
+        run: |
+          TAG="v${{ needs.setup.outputs.release_version }}"
+          DEST="s3://${S3_BUCKET}/builds/${TAG}/"
+
+          echo "Syncing s3-upload/ to ${DEST}"
+          # --no-progress: cleaner CI logs, no per-byte updates
+          # --only-show-errors: don't print every successful upload
+          aws s3 sync s3-upload/ "${DEST}" --no-progress --only-show-errors
+          echo "✓ S3 sync complete"
+
+          echo ""
+          echo "--- Remote ${DEST} contents ---"
+          aws s3 ls "${DEST}" --human-readable
+
+          echo ""
+          echo "--- Total objects ---"
+          aws s3 ls "${DEST}" --recursive | wc -l | xargs echo "objects:"
+
+      - name: Verify upload integrity
+        run: |
+          TAG="v${{ needs.setup.outputs.release_version }}"
+          DEST="s3://${S3_BUCKET}/builds/${TAG}/"
+
+          # Compare local and remote: every file in s3-upload/ should exist
+          # in S3 with matching size. aws s3 sync already did the upload; this
+          # is a defensive post-check.
+          MISMATCH=0
+          while IFS= read -r local_file; do
+            local_size=$(stat -c%s "$local_file" 2>/dev/null || stat -f%z "$local_file")
+            base=$(basename "$local_file")
+            remote_size=$(aws s3api head-object \
+              --bucket "${S3_BUCKET}" \
+              --key "builds/${TAG}/${base}" \
+              --query 'ContentLength' \
+              --output text 2>/dev/null || echo "MISSING")
+            if [[ "$remote_size" == "MISSING" ]]; then
+              echo "::error::Missing in S3: ${base}"
+              MISMATCH=1
+            elif [[ "$local_size" != "$remote_size" ]]; then
+              echo "::error::Size mismatch: ${base} local=${local_size} remote=${remote_size}"
+              MISMATCH=1
+            else
+              echo "✓ ${base} (${local_size} bytes)"
+            fi
+          done < <(find s3-upload/ -maxdepth 1 -type f)
+
+          if [[ "$MISMATCH" -ne 0 ]]; then
+            echo ""
+            echo "::error::Upload integrity check failed"
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ All files verified in S3"
