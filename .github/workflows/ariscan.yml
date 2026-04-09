@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: true
           ref: main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: ".nvmrc"
           cache: npm
@@ -71,7 +71,7 @@ jobs:
 
       - name: Create PR if changed
         if: steps.scan.outputs.score != ''
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore: update ARI score badge to ${{ steps.scan.outputs.score }}/100"
           title: "chore: update ARI score to ${{ steps.scan.outputs.score }}/100"
