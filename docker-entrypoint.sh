@@ -311,6 +311,31 @@ elif [[ -n "$RESTORE_DB" ]]; then
     log "ERROR: Restored database failed validation (see [cache-validate] FAIL line above for reason)"
     exit 2
   fi
+
+  # E1.26: Refresh planner statistics after pg_restore.
+  #
+  # Problem: pg_restore does NOT restore per-table statistics (pg_dump never
+  # captures them — they live in pg_statistic which is excluded from dumps).
+  # Without stats, the Postgres planner uses defaults that work for some
+  # data shapes but pick pathological plans for others.
+  #
+  # Empirical evidence (forensic scan of quarterly run 24163471133):
+  # WA cursor stream rate dropped from ~17,500 rows/sec (fresh build) to
+  # 442 rows/sec (cache restore) on identical data — 40-75x slower.
+  # Steady throughout, no stalls. Pattern matches "wrong query plan" not
+  # "intermittent contention." Fresh ANALYZE on the restored DB should
+  # restore performance to fresh-build levels.
+  #
+  # ANALYZE (no table list) refreshes stats for ALL tables in the current
+  # database. Typically takes 30s-2min on a fully-loaded gnaf-loader DB.
+  # Acceptable cost given the failure mode it prevents (~50min waste per
+  # WA quarterly run).
+  log "Running ANALYZE after cache restore (E1.26 — pg_restore doesn't preserve planner statistics)"
+  ANALYZE_START=$(date +%s)
+  PGPASSWORD="$PGPASSWORD" psql -h localhost -U "$PGUSER" -d "$PGDB" -c "ANALYZE;" -q
+  ANALYZE_ELAPSED=$(( $(date +%s) - ANALYZE_START ))
+  log "✓ ANALYZE completed in ${ANALYZE_ELAPSED}s"
+
   stage_end
 else
   # Full pipeline: download + gnaf-loader

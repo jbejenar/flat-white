@@ -5551,13 +5551,21 @@ Risk: zero. 2-line change. Bundle for free.
 ```yaml
 id: E1.26
 title: Investigate and fix WA cursor stream performance regression after pg_dump cache restore
-status: planned
+status: in-progress
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: null
 ```
+
+> **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
+>
+> The fix is the simplest plausible answer: run `ANALYZE` after `pg_restore` in `docker-entrypoint.sh`'s cache-restore branch. `pg_dump` does not capture per-table statistics (they live in `pg_statistic` which is excluded), so a freshly-restored database has only the planner's defaults — which work for most data shapes but pick pathological plans for some.
+>
+> The fix is in the cache-restore branch of `docker-entrypoint.sh` between the validate-db-cache.sh check and `stage_end`. Adds ~30s-2min to the cache-hit code path on each per-state job, well within budget.
+>
+> **Validation:** the next quarterly `workflow_dispatch` after this PR merges should show WA returning to ~12 min total job time on cache hit (vs 1h1m15s on the broken run). If WA is still slow, the hypothesis is wrong and we need to dig into `EXPLAIN ANALYZE` of the cursor query against fresh vs restored DB.
 
 ## User Story
 
