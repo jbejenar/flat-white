@@ -1023,7 +1023,35 @@ jobs:
           aws sts get-caller-identity
           echo "✓ AWS role assumed"
 
+      - name: Check for existing manifest (reject same-version republish)
+        id: check_existing
+        run: |
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+          VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
+          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
+
+          # If a manifest already exists for this version, the version is
+          # already published. Refuse to re-publish in place — that would
+          # require mutating live S3 keys that the existing manifest
+          # references, which cannot be done atomically.
+          #
+          # To re-publish: bump the patch version (e.g., patch_version=5)
+          # and trigger a new workflow_dispatch. The new version gets its
+          # own prefix and manifest with no collision.
+          if aws s3api head-object \
+               --bucket "${S3_BUCKET}" \
+               --key "${MANIFEST_KEY}" >/dev/null 2>&1; then
+            echo "::warning::Manifest already exists at s3://${S3_BUCKET}/${MANIFEST_KEY}"
+            echo "::warning::Skipping S3 upload — this version is already published."
+            echo "::warning::To republish, use a new patch_version and re-trigger."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No existing manifest for ${VERSION_DASH} — proceeding with upload"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload data files + collect manifest metadata
+        if: steps.check_existing.outputs.skip != 'true'
         id: upload_data
         run: |
           RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
@@ -1098,6 +1126,7 @@ jobs:
           echo "gnaf_version=${GNAF_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Generate manifest (local only — not uploaded yet)
+        if: steps.check_existing.outputs.skip != 'true'
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           TOTAL_RECORDS="${{ steps.upload_data.outputs.total_records }}"
@@ -1143,6 +1172,7 @@ jobs:
 
       # Phase 2: VERIFY staged data files in S3 BEFORE promoting to published.
       - name: Verify staged data files (pre-promote gate)
+        if: steps.check_existing.outputs.skip != 'true'
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           STAGING_PREFIX="data/address/${VERSION_DASH}/.staging"
@@ -1182,37 +1212,17 @@ jobs:
           echo ""
           echo "✓ All 9 staged files verified (count + size match)"
 
-      # Phase 3: Remove old manifest, then promote staging → published.
-      #
-      # The old manifest is deleted BEFORE any published keys are touched.
-      # This is the key to atomicity from the downstream consumer's
-      # perspective: EventBridge watches the manifests/ prefix, so with
-      # no manifest present, no ingestion can be triggered during the
-      # promotion window. The data prefix may be briefly inconsistent
-      # but nobody is reading it.
-      #
-      # After promotion completes, Phase 4 uploads the new manifest —
-      # at which point data + manifest are fully consistent.
-      #
-      # Failure modes:
-      #   - Fail before manifest deletion: old release still intact
-      #   - Fail after manifest deletion but during promotion: no manifest
-      #     exists → downstream can't trigger → data is in limbo but safe.
-      #     Re-run re-stages and re-promotes.
-      #   - Fail after promotion but before new manifest: data is correct
-      #     but no manifest. Re-run uploads the manifest.
+      # Phase 3: Promote staging → published prefix.
+      # This step only runs for FIRST-TIME publishes (check_existing
+      # rejects same-version reruns). No manifest exists yet for this
+      # version, so downstream has no trigger to read the data prefix
+      # during the copy window. Promotion is safe.
       - name: Promote staging to published prefix
+        if: steps.check_existing.outputs.skip != 'true'
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           S3_PREFIX="data/address/${VERSION_DASH}"
           STAGING_PREFIX="${S3_PREFIX}/.staging"
-          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
-
-          # Delete old manifest FIRST so downstream can't see partially-
-          # updated data during promotion. This makes the promotion window
-          # invisible to EventBridge consumers.
-          echo "Removing old manifest (if exists) to prevent reads during promotion..."
-          aws s3 rm "s3://${S3_BUCKET}/${MANIFEST_KEY}" 2>/dev/null || true
 
           echo "Promoting staging → published..."
           for STATE in vic nsw qld sa wa tas nt act ot; do
@@ -1231,6 +1241,7 @@ jobs:
       # Phase 4: Upload manifest LAST — this is the downstream trigger.
       # Only reached after staging is verified AND promoted.
       - name: Upload manifest (final publish step)
+        if: steps.check_existing.outputs.skip != 'true'
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
