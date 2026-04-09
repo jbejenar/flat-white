@@ -2,7 +2,7 @@
 
 ### Australian addresses. Flattened and served.
 
-> Last updated: 2026-04-03 · Roadmap version: 1.3.0
+> Last updated: 2026-04-09 · Roadmap version: 1.3.0
 
 ---
 
@@ -5373,15 +5373,15 @@ Risk: medium. This is a real refactor that touches multiple files and removes ~1
 ```yaml
 id: E1.24
 title: Investigate and fix flatten.ts session/connection management — temp tables disappear between prep and cursor stream
-status: in-progress
+status: complete
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
 ```
 
-> **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
+> **2026-04-09 — COMPLETE. Validated end-to-end by quarterly run [24171680780](https://github.com/jbejenar/flat-white/actions/runs/24171680780) (patch_version=3, all 9 states green).**
 >
 > **Investigation findings:** the postgres@3 library does not guarantee that two consecutive `sql.unsafe()` calls on the same `sql` instance use the same physical Postgres connection. With `max: 1`, the pool has at most one connection, but cursor queries (which need a long-lived connection) may acquire a fresh connection independently of the previous query. Each Postgres connection is its own session, so `CREATE TEMPORARY TABLE` statements on connection A are NOT visible to queries on connection B. This is verified by reading `node_modules/postgres/src/index.js` reserve/unsafe/cursor implementations.
 >
@@ -5488,7 +5488,7 @@ epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: 2026-04-09
-shipped_in: workflow-fixes-bundle PR (TBD on merge)
+shipped_in: PR #112
 ```
 
 ## User Story
@@ -5569,15 +5569,15 @@ Risk: zero. 2-line change. Bundle for free.
 ```yaml
 id: E1.26
 title: Investigate and fix WA cursor stream performance regression after pg_dump cache restore
-status: in-progress
+status: complete
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
 ```
 
-> **2026-04-09 update — fix shipped, awaiting end-to-end validation.**
+> **2026-04-09 — COMPLETE. Validated end-to-end by quarterly run [24171680780](https://github.com/jbejenar/flat-white/actions/runs/24171680780) (patch_version=3, all 9 states green).**
 >
 > The fix is the simplest plausible answer: run `ANALYZE` after `pg_restore` in `docker-entrypoint.sh`'s cache-restore branch. `pg_dump` does not capture per-table statistics (they live in `pg_statistic` which is excluded), so a freshly-restored database has only the planner's defaults — which work for most data shapes but pick pathological plans for some.
 >
@@ -5694,7 +5694,7 @@ epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: 2026-04-09
-shipped_in: workflow-fixes-bundle PR (TBD on merge)
+shipped_in: PR #112
 ```
 
 ## User Story
@@ -5788,7 +5788,7 @@ epic: E1.B
 persona: [maintainer]
 depends_on: []
 completed: 2026-04-09
-shipped_in: workflow-fixes-bundle PR (TBD on merge)
+shipped_in: PR #112
 ```
 
 ## User Story
@@ -5874,12 +5874,13 @@ Risk: low. Workflow change only. Validate by manually triggering the catalogue w
 ```yaml
 id: E1.29
 title: Upgrade GitHub Actions actions to Node.js 24 before Node 20 EOL
-status: planned
+status: complete
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
+shipped_in: PR #117
 target_date: 2026-09-01
 ```
 
