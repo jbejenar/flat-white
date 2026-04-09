@@ -250,68 +250,100 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
   });
 
   const schemaVersion = deriveSchemaVersion(version);
-  let flattenSql: string;
-
-  if (materialize) {
-    // Production mode: pre-materialize aggregations as temp tables, then stream the simple join
-    const prepSql = applySchemaVersion(readFileSync(PREP_SQL_PATH, "utf-8"), schemaVersion);
-    console.log("[flatten] Materializing aggregation tables...");
-    await sql.unsafe(prepSql); // DDL: creates temp tables, no cursor needed
-    console.log("[flatten] Aggregation tables ready. Starting cursor stream...");
-    flattenSql = applySchemaVersion(readFileSync(MAIN_SQL_PATH, "utf-8"), schemaVersion);
-  } else {
-    // Fixture mode: use the CTE-based query (fine for small datasets)
-    flattenSql = applySchemaVersion(readFileSync(SQL_PATH, "utf-8"), schemaVersion);
-  }
-
   let count = 0;
   let errors = 0;
 
   logger?.stageStart("flatten");
 
   try {
-    const cursor = sql.unsafe(flattenSql).cursor(500);
+    // E1.24 fix: reserve a single connection for the entire flatten run.
+    //
+    // Without sql.reserve, the postgres@3 library does not guarantee that
+    // two consecutive raw-string queries use the same physical connection.
+    // The pool's max:1 setting controls maximum connections, but cursor
+    // queries (which need a long-lived connection) may acquire a fresh
+    // connection from the pool independently of the previous query.
+    //
+    // The bug surfaces when:
+    //   1. The prepSql call creates TEMPORARY tables on connection A
+    //   2. The library returns connection A to the pool
+    //   3. The cursor stream call acquires connection B (or reconnects A
+    //      as a new session)
+    //   4. The cursor query references the temp tables and fails with
+    //      "tmp_address_geocodes does not exist"
+    //
+    // Empirically observed in NSW3 local run with the OLD LATERAL spatial
+    // join (~67 min prepSql). Hidden by E1.21 making the spatial join fast
+    // enough that the timing window doesn't trigger, but the bug is still
+    // there structurally and would re-emerge if Path 2 ever slowed again.
+    //
+    // sql.reserve returns a Sql instance whose handler is bound to a single
+    // dedicated connection. All subsequent calls on the reserved instance
+    // use that same connection — same Postgres session, temp tables persist.
+    const reserved = await sql.reserve();
+    try {
+      let flattenSql: string;
 
-    const source = Readable.from(
-      (async function* () {
-        for await (const batch of cursor) {
-          for (const row of batch) {
-            yield row;
+      if (materialize) {
+        // Production mode: pre-materialize aggregations as temp tables, then stream the simple join
+        const prepSql = applySchemaVersion(readFileSync(PREP_SQL_PATH, "utf-8"), schemaVersion);
+        console.log("[flatten] Materializing aggregation tables...");
+        await reserved.unsafe(prepSql); // DDL: creates temp tables in the reserved connection's session
+        console.log("[flatten] Aggregation tables ready. Starting cursor stream...");
+        flattenSql = applySchemaVersion(readFileSync(MAIN_SQL_PATH, "utf-8"), schemaVersion);
+      } else {
+        // Fixture mode: use the CTE-based query (fine for small datasets)
+        flattenSql = applySchemaVersion(readFileSync(SQL_PATH, "utf-8"), schemaVersion);
+      }
+
+      const cursor = reserved.unsafe(flattenSql).cursor(500);
+
+      const source = Readable.from(
+        (async function* () {
+          for await (const batch of cursor) {
+            for (const row of batch) {
+              yield row;
+            }
           }
-        }
-      })(),
-    );
+        })(),
+      );
 
-    const compose = new Transform({
-      objectMode: true,
-      transform(row: Record<string, unknown>, _encoding, callback) {
-        try {
-          const doc = composeDocument(row, version);
-          const result = AddressDocumentSchema.safeParse(doc);
-          if (result.success) {
-            count++;
-            logger?.progress("flatten", { rows: count });
-            callback(null, JSON.stringify(result.data) + "\n");
-          } else {
+      const compose = new Transform({
+        objectMode: true,
+        transform(row: Record<string, unknown>, _encoding, callback) {
+          try {
+            const doc = composeDocument(row, version);
+            const result = AddressDocumentSchema.safeParse(doc);
+            if (result.success) {
+              count++;
+              logger?.progress("flatten", { rows: count });
+              callback(null, JSON.stringify(result.data) + "\n");
+            } else {
+              errors++;
+              const pid = row._id as string;
+              console.error(`[flatten] Validation failed for ${pid}: ${result.error.message}`);
+              callback();
+            }
+          } catch (err) {
             errors++;
-            const pid = row._id as string;
-            console.error(`[flatten] Validation failed for ${pid}: ${result.error.message}`);
+            const pid = (row._id as string) ?? "unknown";
+            console.error(`[flatten] Error composing ${pid}:`, err);
             callback();
           }
-        } catch (err) {
-          errors++;
-          const pid = (row._id as string) ?? "unknown";
-          console.error(`[flatten] Error composing ${pid}:`, err);
-          callback();
-        }
-      },
-    });
+        },
+      });
 
-    const output = createWriteStream(outputPath);
+      const output = createWriteStream(outputPath);
 
-    await pipeline(source, compose, output);
+      await pipeline(source, compose, output);
 
-    logger?.stageEnd("flatten", { rows: count });
+      logger?.stageEnd("flatten", { rows: count });
+    } finally {
+      // Return the reserved connection to the pool. This always runs,
+      // even if the cursor or pipeline failed mid-iteration, so the
+      // connection isn't leaked.
+      reserved.release();
+    }
   } finally {
     await sql.end();
   }
