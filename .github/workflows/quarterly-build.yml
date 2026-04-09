@@ -932,6 +932,50 @@ jobs:
           fi
           echo "✓ All files at top level of s3-upload/"
 
+      - name: Verify local file set is complete
+        run: |
+          # Defensive check BEFORE we sync with --delete: confirm we actually
+          # have the canonical set of files we expect to mirror. If a prior
+          # step silently produced an incomplete s3-upload/ directory, we'd
+          # otherwise nuke remote files we wanted to keep.
+          #
+          # Required files (must all be present):
+          #   - 9 × flat-white-{version}-{state}.ndjson.gz
+          #   - 1 × flat-white-{version}-all.ndjson.gz
+          #   - metadata.json
+          #   - DOCUMENT-SCHEMA.md
+          #   - verification-report.md
+          #
+          # Optional files (may or may not be present, do not fail if missing):
+          #   - verification-report.json
+          #   - comparison-*.md (P4.03 build-over-build comparison)
+          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
+
+          MISSING=0
+          for state in act nsw nt ot qld sa tas vic wa all; do
+            f="s3-upload/flat-white-${RELEASE_VERSION}-${state}.ndjson.gz"
+            if [[ ! -f "$f" ]]; then
+              echo "::error::Missing required file: $(basename "$f")"
+              MISSING=1
+            fi
+          done
+
+          for required in metadata.json DOCUMENT-SCHEMA.md verification-report.md; do
+            if [[ ! -f "s3-upload/${required}" ]]; then
+              echo "::error::Missing required file: ${required}"
+              MISSING=1
+            fi
+          done
+
+          if [[ "$MISSING" -ne 0 ]]; then
+            echo ""
+            echo "::error::Local file set is incomplete — refusing to sync with --delete"
+            exit 1
+          fi
+
+          TOTAL=$(find s3-upload/ -type f | wc -l | tr -d ' ')
+          echo "✓ Local file set complete (${TOTAL} files including optional)"
+
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -943,16 +987,32 @@ jobs:
           aws sts get-caller-identity
           echo "✓ AWS role assumed"
 
-      - name: Upload to S3
+      - name: Upload to S3 (sync with --delete for set equality)
         run: |
           TAG="v${{ needs.setup.outputs.release_version }}"
           DEST="s3://${S3_BUCKET}/builds/${TAG}/"
 
           echo "Syncing s3-upload/ to ${DEST}"
+          # --delete: enforce set equality between local and remote.
+          # Removes any remote object under the destination prefix that is
+          # NOT present in the local source. Required because:
+          #   1. Re-runs of the workflow against an existing release tag
+          #      may differ in optional asset set (comparison report
+          #      sometimes generated, sometimes not)
+          #   2. A previous partial upload may have left orphan objects
+          #   3. The S3 prefix should be an EXACT mirror of the canonical
+          #      release asset set, not an accumulation of past attempts
+          # The "Verify local file set is complete" step above protects
+          # against accidentally nuking the prefix from an incomplete
+          # local state.
+          #
           # --no-progress: cleaner CI logs, no per-byte updates
           # --only-show-errors: don't print every successful upload
-          aws s3 sync s3-upload/ "${DEST}" --no-progress --only-show-errors
-          echo "✓ S3 sync complete"
+          aws s3 sync s3-upload/ "${DEST}" \
+            --delete \
+            --no-progress \
+            --only-show-errors
+          echo "✓ S3 sync complete (with --delete enforcing set equality)"
 
           echo ""
           echo "--- Remote ${DEST} contents ---"
@@ -962,32 +1022,76 @@ jobs:
           echo "--- Total objects ---"
           aws s3 ls "${DEST}" --recursive | wc -l | xargs echo "objects:"
 
-      - name: Verify upload integrity
+      - name: Verify upload integrity (two-way set equality)
         run: |
           TAG="v${{ needs.setup.outputs.release_version }}"
 
-          # Compare local and remote: every file in s3-upload/ must exist in
-          # S3 with matching ContentLength. aws s3 sync already did the upload
-          # and aws's internal retries; this is a defensive post-check that
-          # catches silent corruption or any layout drift.
+          # Two-way integrity check: enforce that the local set and the
+          # remote set are EXACTLY equal (set equality, not subset).
           #
-          # GitHub runners are Linux, so stat -c%s is the correct invocation
-          # (no BSD fallback needed).
+          # This is the post-hoc verification of what aws s3 sync --delete
+          # SHOULD have produced. Any discrepancy here means either the
+          # sync silently failed for some files, or something else is
+          # writing to the prefix concurrently — both are bugs we want to
+          # fail loud on.
           #
-          # No -maxdepth filter on find: the prior step already enforced that
-          # all files are at the top level of s3-upload/, so this loop sees
-          # exactly the set of files we intend to verify.
+          # GitHub-hosted ubuntu-latest runners are Linux, so stat -c%s
+          # is the correct invocation.
+
+          # Build local file list (basenames only, sorted)
+          find s3-upload/ -type f -exec basename {} \; | sort > /tmp/local-files.txt
+
+          # Build remote file list via list-objects-v2 (more robust than
+          # parsing aws s3 ls output). Strip the prefix to get basenames.
+          aws s3api list-objects-v2 \
+            --bucket "${S3_BUCKET}" \
+            --prefix "builds/${TAG}/" \
+            --query 'Contents[].Key' \
+            --output text 2>/dev/null \
+            | tr '\t' '\n' \
+            | grep -v '^$' \
+            | sed "s|^builds/${TAG}/||" \
+            | sort > /tmp/remote-files.txt
+
+          echo "--- Local files (s3-upload/) ---"
+          cat /tmp/local-files.txt
+          echo ""
+          echo "--- Remote files (s3://...${TAG}/) ---"
+          cat /tmp/remote-files.txt
+          echo ""
+
+          # Set difference both ways
+          LOCAL_ONLY=$(comm -23 /tmp/local-files.txt /tmp/remote-files.txt)
+          REMOTE_ONLY=$(comm -13 /tmp/local-files.txt /tmp/remote-files.txt)
+
+          FAIL=0
+          if [[ -n "$LOCAL_ONLY" ]]; then
+            echo "::error::Files in local but missing from S3 (sync did not upload):"
+            echo "$LOCAL_ONLY"
+            FAIL=1
+          fi
+          if [[ -n "$REMOTE_ONLY" ]]; then
+            echo "::error::Files in S3 but not in local (sync --delete did not remove, or concurrent write):"
+            echo "$REMOTE_ONLY"
+            FAIL=1
+          fi
+
+          if [[ "$FAIL" -ne 0 ]]; then
+            exit 1
+          fi
+          echo "✓ Set equality verified — local and remote contain exactly the same filenames"
+
+          # Now that the sets match, verify ContentLength for each file
           MISMATCH=0
-          while IFS= read -r local_file; do
-            local_size=$(stat -c%s "$local_file")
-            base=$(basename "$local_file")
+          while IFS= read -r base; do
+            local_size=$(stat -c%s "s3-upload/${base}")
             remote_size=$(aws s3api head-object \
               --bucket "${S3_BUCKET}" \
               --key "builds/${TAG}/${base}" \
               --query 'ContentLength' \
-              --output text 2>/dev/null || echo "MISSING")
-            if [[ "$remote_size" == "MISSING" ]]; then
-              echo "::error::Missing in S3: ${base}"
+              --output text 2>/dev/null || echo "ERROR")
+            if [[ "$remote_size" == "ERROR" ]]; then
+              echo "::error::head-object failed for ${base} (transient AWS error?)"
               MISMATCH=1
             elif [[ "$local_size" != "$remote_size" ]]; then
               echo "::error::Size mismatch: ${base} local=${local_size} remote=${remote_size}"
@@ -995,13 +1099,13 @@ jobs:
             else
               echo "✓ ${base} (${local_size} bytes)"
             fi
-          done < <(find s3-upload/ -type f)
+          done < /tmp/local-files.txt
 
           if [[ "$MISMATCH" -ne 0 ]]; then
             echo ""
-            echo "::error::Upload integrity check failed"
+            echo "::error::Upload integrity check failed (size mismatch)"
             exit 1
           fi
 
           echo ""
-          echo "✓ All files verified in S3"
+          echo "✓ All files verified in S3 (set equality + size match)"
