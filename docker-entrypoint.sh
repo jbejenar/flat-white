@@ -373,7 +373,11 @@ else
     exit 1
   fi
 
-  LOAD_ARGS="--geoscape-version $GEOSCAPE_VERSION"
+  # E1.23: always pass --no-boundary-tag. flat-white's spatial-join fallback
+  # in address_full_prep.sql (the E1.21 bulk insert-then-5-updates shape)
+  # is as fast as gnaf-loader's Part 5 and more reliable (no per-state
+  # shapefile filter cascade). Part 5 is never called.
+  LOAD_ARGS="--geoscape-version $GEOSCAPE_VERSION --no-boundary-tag"
   if [[ -n "$STATES" ]]; then
     LOAD_ARGS="$LOAD_ARGS --states $STATES"
   fi
@@ -385,29 +389,6 @@ else
   GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS 2>&1 | tee "$LOAD_LOG"
   LOAD_EXIT=${PIPESTATUS[0]}
   set -e
-
-  # Layered defence: if gnaf-loader fails AND the failure happened during/after
-  # boundary tagging (Part 5 of 6), retry with --no-boundary-tag so flat-white's
-  # spatial-join fallback in address_full_prep.sql can populate boundaries via
-  # ST_Intersects against the admin_bdys polygon tables.
-  #
-  # Detection logic is in scripts/detect-load-failure.sh — broad-by-design
-  # (catches ANY error in Part 5, not just specific column names) so it
-  # auto-recovers from any future upstream gnaf-loader regression in Part 5.
-  # When upstream ships a fix (E1.20), the first attempt succeeds and the
-  # retry never fires.
-  #
-  # Tested by test/integration/load-detection/test.sh (8 sample fixtures
-  # covering all known failure modes plus negative cases).
-  if /app/scripts/detect-load-failure.sh "$LOAD_LOG" "$LOAD_EXIT"; then
-    log "WARNING: gnaf-loader boundary tagging failed (Part 5)"
-    log "         retrying with --no-boundary-tag — flat-white spatial-join fallback will populate boundaries"
-    rm -f "$LOAD_LOG"
-    set +e
-    GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS --no-boundary-tag 2>&1 | tee "$LOAD_LOG"
-    LOAD_EXIT=${PIPESTATUS[0]}
-    set -e
-  fi
 
   if [[ $LOAD_EXIT -ne 0 ]]; then
     log "ERROR: gnaf-loader failed"

@@ -5006,7 +5006,7 @@ Origin: PR #67 audit (round 3). Found while tracing why v2026.04 has all-null bo
 ```yaml
 id: E1.20
 title: Push upstream PR to minus34/gnaf-loader fixing per-state admin_bdy_list filter
-status: deferred
+status: wont-do
 priority: p4-defer
 epic: E1.B
 persona: [maintainer]
@@ -5196,12 +5196,12 @@ Origin: "permanent fix" PR (PR #96). The original ticket (`p2-medium`) was conse
 ```yaml
 id: E1.22
 title: Repair extract-fixtures.sh — references abs_2021_mb_lookup which gnaf-loader does not create
-status: planned
+status: complete
 priority: p3-low
 epic: E1.B
 persona: [maintainer]
 depends_on: []
-completed: null
+completed: 2026-04-09
 ```
 
 ## User Story
@@ -5288,12 +5288,12 @@ Risk: low. The script is manual (not CI), nobody is currently blocked. Promote p
 ```yaml
 id: E1.23
 title: Always use flat-white spatial-join fallback; drop gnaf-loader Part 5 retry infrastructure
-status: planned
+status: complete
 priority: p2-medium
 epic: E1.B
 persona: [maintainer]
 depends_on: [E1.21, E1.24]
-completed: null
+completed: 2026-04-09
 ```
 
 ## User Story
@@ -6046,7 +6046,7 @@ GitHub Releases is the primary distribution, but a single distribution point is 
 ```yaml
 id: P5.02
 title: S3 Latest Pointer
-status: planned
+status: complete
 priority: p1-high
 epic: P5.1
 persona: [downstream developer]
@@ -6060,7 +6060,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-09
 ```
 
 ## User Story
@@ -6155,7 +6155,7 @@ Stored AWS access keys are a security risk — if leaked, they provide persisten
 ```yaml
 id: P5.04
 title: SNS Notification
-status: planned
+status: complete
 priority: p1-high
 epic: P5.1
 persona: [ops/maintainer]
@@ -6169,7 +6169,7 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: null
+completed: 2026-04-09
 ```
 
 ## User Story

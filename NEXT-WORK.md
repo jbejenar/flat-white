@@ -121,9 +121,10 @@
 - [x] Convention documented in `docs/RELEASING.md` (two-tier: consumer-facing uses current version, operational uses `${VERSION}`)
 - Origin: PR #77 audit — README VERSION example was the highest-impact and got fixed in #77; rest filed for follow-up
 
-### E1.20 — Push gnaf-loader settings.py / 04-06 fix upstream (deferred, p4-defer)
+### E1.20 — Push gnaf-loader settings.py / 04-06 fix upstream (deferred, p4-defer) — **wont-do**
 
 - [ ] **2026-04-09: downgraded.** Obsoleted by E1.21 (PR #106 — flat-white spatial join is now fast enough) and E1.23 (queued — collapse Path 1/2 means we never call gnaf-loader Part 5). Revisit only if E1.23 is cancelled OR for community-contribution reasons.
+- **2026-04-09: marked wont-do in ROADMAP.** E1.23 is now complete — flat-white never calls gnaf-loader Part 5, so this upstream fix has no load-bearing value for flat-white.
 
 ### E1.21 — Optimise spatial-join fallback for NSW scale (DONE 2026-04-09, PR #106)
 
@@ -134,12 +135,12 @@
 - [x] Quarterly run 24163471133 publishes v2026.02.1 with all 9 states green for the first time
 - Origin: "permanent fix" PR. See ROADMAP entry E1.21 for empirical evidence table and full implementation reasoning.
 
-### E1.23 — Collapse Path 1 and Path 2 into a single path (planned, p2-medium)
+### E1.23 — Collapse Path 1 and Path 2 into a single path (DONE 2026-04-09)
 
-- [ ] Always pass `--no-boundary-tag`; never call gnaf-loader Part 5
-- [ ] Delete `scripts/detect-load-failure.sh` + `test/integration/load-detection/`
-- [ ] Remove `--no-boundary-tag` retry branch from `docker-entrypoint.sh`
-- [ ] Rewrite `docs/BOUNDARIES.md` for single path
+- [x] Always pass `--no-boundary-tag`; never call gnaf-loader Part 5
+- [x] Delete `scripts/detect-load-failure.sh` + `test/integration/load-detection/`
+- [x] Remove `--no-boundary-tag` retry branch from `docker-entrypoint.sh`
+- [x] Rewrite `docs/BOUNDARIES.md` for single path
 - Origin: now possible because E1.21 made Path 2 as fast as Path 1. Removes ~100 lines and a whole class of failure modes. Depends on E1.24 (do that first since it touches `src/flatten.ts` which E1.23 will also coordinate with).
 
 ### E1.24 — Flatten temp tables disappear when prep SQL runs twice (planned, p2-medium)

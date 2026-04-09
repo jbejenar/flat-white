@@ -71,11 +71,8 @@ COPY gnaf-loader/ ./gnaf-loader/
 COPY scripts/build-fixture-only.sh ./scripts/build-fixture-only.sh
 COPY scripts/build-local.sh ./scripts/build-local.sh
 COPY scripts/extract-boundary-prelude.mjs ./scripts/extract-boundary-prelude.mjs
-# detect-load-failure.sh is invoked by docker-entrypoint.sh to classify
-# gnaf-loader failures and decide whether to retry with --no-boundary-tag
-COPY scripts/detect-load-failure.sh ./scripts/detect-load-failure.sh
 COPY scripts/validate-db-cache.sh ./scripts/validate-db-cache.sh
-RUN chmod +x ./scripts/detect-load-failure.sh ./scripts/validate-db-cache.sh
+RUN chmod +x ./scripts/validate-db-cache.sh
 
 # Copy entrypoint (P2.02 will replace this with a proper orchestrator)
 COPY docker-entrypoint.sh /docker-entrypoint.sh
