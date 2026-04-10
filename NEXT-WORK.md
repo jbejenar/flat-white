@@ -1,8 +1,57 @@
 # Next Work — flat-white
 
-> Updated: 2026-04-09. Active phase: E1 (Ongoing) — P4 blocked. Per-session log lives in `NEXT-SESSION.md`.
+> Updated: 2026-04-10. All implementation work complete. Next event: v2026.05 cron fires 2026-05-15.
 
-## Completed This Session (2026-04-07, session 5)
+## Completed (2026-04-10, session 6)
+
+### E1.21 — Bulk spatial join optimisation (done, PR #106)
+
+- [x] NSW spatial join 67min → 7.5min; all 9 states under budget
+
+### E1.22 — Fix extract-fixtures.sh naming (done, PR #120)
+
+- [x] `abs_2021_mb_lookup` → `abs_2021_mb` (matches production gnaf-loader)
+
+### E1.23 — Collapse dual-path architecture (done, PR #120)
+
+- [x] Always `--no-boundary-tag`, deleted detect-load-failure.sh + retry branch
+
+### E1.24–E1.29 — Latent bug fixes (done, PRs #112–#117, #120)
+
+- [x] E1.24: flatten.ts session management (sql.reserve + max_lifetime: null)
+- [x] E1.25: docker-entrypoint.sh env-var gap
+- [x] E1.26: ANALYZE after cache restore
+- [x] E1.27: CHANGELOG PR instead of direct push
+- [x] E1.28: Catalogue workflow trigger fix
+- [x] E1.29: GitHub Actions Node.js 24 upgrade
+
+### P5.01 — S3 upload (done, PR #111)
+
+- [x] Staging → verify → promote → manifest ordering
+
+### P5.03 — OIDC auth (done, PR #120)
+
+- [x] aws-actions/configure-aws-credentials with role-to-assume
+
+### P5.02 — S3 latest pointer (wont-do, removed in PR #131)
+
+- [x] Not part of original design; versioned manifests are canonical
+
+### P5.04 — SNS notification (wont-do, removed in PR #131)
+
+- [x] No topic subscribers exist; can re-add when demand emerges
+
+### S3 convention fix (PR #131)
+
+- [x] All-states file uploaded to data/address/{version}/all.ndjson.gz
+- [x] Latest pointer removed
+- [x] SNS step removed
+
+### Deps rollup (PR #129)
+
+- [x] postgres 3.4.9, vitest 4.1.4, @types/node 25.5.2, eslint 10.2.0, typescript-eslint 8.58.1
+
+## Completed (2026-04-07, session 5)
 
 ### E1.05 — Geoparquet Output (done — roadmap updated)
 
