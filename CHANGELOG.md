@@ -15,6 +15,26 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
+## [v2026.02.4] - 2026-04-09
+
+### Release
+
+- **Release version:** 2026.02.4
+- **G-NAF data version:** 2026.02
+- **Schema version:** 0.2.0
+- **Total addresses:** 15015573
+- **Per-state counts:**
+  - ACT: 245362
+  - NSW: 4619401
+  - NT: 110079
+  - OT: 3805
+  - QLD: 3100481
+  - SA: 1123131
+  - TAS: 346248
+  - VIC: 3940659
+  - WA: 1526407
+
+
 ## [v2026.02.3] - 2026-04-09
 
 > **Patch release** — supersedes the deleted v2026.04, v2026.02.1, and v2026.02.2 releases. The underlying G-NAF data is unchanged (still G-NAF 2026.02). v2026.04 was published 2026-04-05 with all-null boundary fields (lga, ward, stateElectorate, commonwealthElectorate) due to a chain of upstream and downstream issues (E1.14 gnaf-loader `shp2pgsql` silently failing; E1.17 hardcoded download URL labeling 2026.02 data as 2026.04). v2026.02.1 was the first attempt at a corrected patch but predated several latent fixes (E1.24 flatten session, E1.26 WA cache restore, E1.27 CHANGELOG PR, E1.28 catalogue trigger). v2026.02.2 was a smoke test for P5.01 (S3 mirror) before all the fixes landed. **v2026.02.3 is the canonical first quarterly release built and validated end-to-end with the full set of post-arc fixes.**
