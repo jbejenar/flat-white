@@ -41,7 +41,7 @@
   ],
   "dependencies": {
     "@dsnp/parquetjs": "^1.8.7",
-    "postgres": "^3.4.8",
+    "postgres": "^3.4.9",
     "zod": "^4.3.6"
   },
   "devDependencies": {
