@@ -35,7 +35,6 @@ env:
   # Default version: latest published quarterly release for the trigger date
   DOCKER_IMAGE: flat-white
   DB_CACHE_VERSION: v2
-  SNS_TOPIC_ARN: arn:aws:sns:ap-southeast-2:493712557159:flat-white-release
   # Optional manual release-data overrides.
   # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery > Feb 2026 fallback for 2026.02 only
   DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || '' }}
@@ -1304,26 +1303,3 @@ jobs:
           echo ""
           echo "Manifest:"
           aws s3 ls "s3://${S3_BUCKET}/${MANIFEST_KEY}" --human-readable
-
-      # P5.04: Notify downstream via SNS (non-fatal — data + manifest already published).
-      # Always runs (not gated on check_existing) so reruns can retry a failed
-      # notification even if the versioned manifest already exists. (Bot review Bug 5.)
-      - name: Send SNS release notification (always runs)
-        if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.published == 'true' }}
-        run: |
-          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
-          VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
-          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
-
-          # Download the published manifest from S3 (works on first run AND reruns)
-          if aws s3 cp "s3://${S3_BUCKET}/${MANIFEST_KEY}" /tmp/sns-manifest.json --no-progress 2>/dev/null; then
-            aws sns publish \
-              --topic-arn "${SNS_TOPIC_ARN}" \
-              --subject "flat-white ${VERSION_DASH} released" \
-              --message "$(cat /tmp/sns-manifest.json)" \
-              --no-cli-pager \
-              || echo "::warning::SNS notification failed (non-fatal — data + manifest already published)"
-            echo "✓ SNS notification sent (or warned)"
-          else
-            echo "::warning::Could not download manifest for SNS notification — skipping"
-          fi
