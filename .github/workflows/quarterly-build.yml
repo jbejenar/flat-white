@@ -1133,15 +1133,12 @@ jobs:
           echo "  all: ${TOTAL_RECORDS} records, ${ALL_BYTES} bytes, sha256=${ALL_SHA256:0:12}..."
           aws s3 cp "$ALL_GZ" "s3://${S3_BUCKET}/${ALL_STAGING_KEY}" --no-progress
 
-          jq -n \
-            --arg key "$ALL_PUBLISHED_KEY" \
-            --argjson records "$TOTAL_RECORDS" \
-            --argjson bytes "$ALL_BYTES" \
-            --arg sha256 "$ALL_SHA256" \
-            '{key: $key, records: $records, bytes: $bytes, sha256: $sha256}' \
-            >> /tmp/manifest-files.jsonl
+          # all.ndjson.gz is NOT added to the manifest files[] array — it's a
+          # convenience download (concatenation of the 9 per-state files). Adding
+          # it to files[] would cause consumers iterating the array to ingest the
+          # dataset twice.
 
-          echo "✓ All-states file uploaded to staging"
+          echo "✓ All-states file uploaded to staging (not in manifest — convenience download only)"
 
           # Export for subsequent steps
           echo "version_dash=${VERSION_DASH}" >> "$GITHUB_OUTPUT"
