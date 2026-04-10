@@ -35,7 +35,6 @@ env:
   # Default version: latest published quarterly release for the trigger date
   DOCKER_IMAGE: flat-white
   DB_CACHE_VERSION: v2
-  SNS_TOPIC_ARN: arn:aws:sns:ap-southeast-2:493712557159:flat-white-release
   # Optional manual release-data overrides.
   # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery > Feb 2026 fallback for 2026.02 only
   DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || '' }}
@@ -1121,6 +1120,26 @@ jobs:
           echo "✓ All 9 per-state data files uploaded to staging"
           echo "  Total records: ${TOTAL_RECORDS}"
 
+          # Upload the all-states concatenated file
+          ALL_GZ=$(find "artifacts/flat-white-all" -name "*.ndjson.gz" | head -1)
+          if [[ -z "$ALL_GZ" ]]; then
+            echo "::error::No all-states .ndjson.gz file found in flat-white-all artifact"
+            exit 1
+          fi
+          ALL_PUBLISHED_KEY="${S3_PREFIX}/all.ndjson.gz"
+          ALL_STAGING_KEY="${STAGING_PREFIX}/all.ndjson.gz"
+          ALL_BYTES=$(stat -c%s "$ALL_GZ")
+          ALL_SHA256=$(sha256sum "$ALL_GZ" | cut -d' ' -f1)
+          echo "  all: ${TOTAL_RECORDS} records, ${ALL_BYTES} bytes, sha256=${ALL_SHA256:0:12}..."
+          aws s3 cp "$ALL_GZ" "s3://${S3_BUCKET}/${ALL_STAGING_KEY}" --no-progress
+
+          # all.ndjson.gz is NOT added to the manifest files[] array — it's a
+          # convenience download (concatenation of the 9 per-state files). Adding
+          # it to files[] would cause consumers iterating the array to ingest the
+          # dataset twice.
+
+          echo "✓ All-states file uploaded to staging (not in manifest — convenience download only)"
+
           # Export for subsequent steps
           echo "version_dash=${VERSION_DASH}" >> "$GITHUB_OUTPUT"
           echo "total_records=${TOTAL_RECORDS}" >> "$GITHUB_OUTPUT"
@@ -1201,6 +1220,24 @@ jobs:
             fi
           done
 
+          # Verify all-states file
+          ALL_GZ=$(find "artifacts/flat-white-all" -name "*.ndjson.gz" | head -1)
+          ALL_LOCAL_SIZE=$(stat -c%s "$ALL_GZ")
+          ALL_REMOTE_SIZE=$(aws s3api head-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${STAGING_PREFIX}/all.ndjson.gz" \
+            --query 'ContentLength' \
+            --output text 2>/dev/null || echo "MISSING")
+          if [[ "$ALL_REMOTE_SIZE" == "MISSING" ]]; then
+            echo "::error::Missing from staging: all.ndjson.gz"
+            MISMATCH=1
+          elif [[ "$ALL_LOCAL_SIZE" != "$ALL_REMOTE_SIZE" ]]; then
+            echo "::error::Size mismatch in staging: all.ndjson.gz local=${ALL_LOCAL_SIZE} remote=${ALL_REMOTE_SIZE}"
+            MISMATCH=1
+          else
+            echo "✓ all.ndjson.gz (${ALL_LOCAL_SIZE} bytes)"
+          fi
+
           if [[ "$MISMATCH" -ne 0 ]]; then
             echo ""
             echo "::error::Staging verification failed — published data is UNTOUCHED"
@@ -1211,7 +1248,7 @@ jobs:
           fi
 
           echo ""
-          echo "✓ All 9 staged files verified (count + size match)"
+          echo "✓ All 10 staged files verified (count + size match)"
 
       # Phase 3: Promote staging → published prefix.
       # This step only runs for FIRST-TIME publishes (check_existing
@@ -1233,10 +1270,16 @@ jobs:
             echo "  ✓ ${STATE}.ndjson.gz"
           done
 
+          # Promote all-states file
+          aws s3 cp \
+            "s3://${S3_BUCKET}/${STAGING_PREFIX}/all.ndjson.gz" \
+            "s3://${S3_BUCKET}/${S3_PREFIX}/all.ndjson.gz"
+          echo "  ✓ all.ndjson.gz"
+
           # Clean up staging
           aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive
           echo ""
-          echo "✓ All 9 files promoted, staging cleaned up"
+          echo "✓ All 10 files promoted, staging cleaned up"
 
       # Phase 4: Upload manifest LAST — this is the downstream trigger.
       # Only reached after staging is verified AND promoted.
@@ -1250,8 +1293,6 @@ jobs:
           aws s3 cp /tmp/manifest.json "s3://${S3_BUCKET}/${MANIFEST_KEY}" --no-progress
           echo "✓ Manifest uploaded — version ${VERSION_DASH} is now published"
 
-          echo "✓ Manifest uploaded — latest pointer update handled in a separate step"
-
           echo ""
           echo "--- Final S3 state ---"
           echo "Data:"
@@ -1259,99 +1300,3 @@ jobs:
           echo ""
           echo "Manifest:"
           aws s3 ls "s3://${S3_BUCKET}/${MANIFEST_KEY}" --human-readable
-          echo ""
-          echo "(Latest pointer updated in a separate step below)"
-
-      # P5.02: Update the latest pointer. This step ALWAYS runs (not gated
-      # on check_existing) so that a rerun can repair a failed pointer update
-      # even if the versioned manifest already exists. (Bot review Bug 2.)
-      #
-      # Uses semantic version comparison, not lexicographic, to handle
-      # non-zero-padded patch versions correctly (e.g., 2026-05-10 > 2026-05-2).
-      # (Bot review Bug 1.)
-      - name: Update latest pointer (always runs)
-        if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.published == 'true' }}
-        run: |
-          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
-          VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
-
-          # Component-wise version comparison: parse YYYY-MM[-PATCH] and compare
-          # each segment as a decimal integer. Handles arbitrary patch numbers
-          # (including >= 100). Uses 10# to prevent bash octal trap on 08/09.
-          # Returns 0 if $1 >= $2, 1 otherwise.
-          version_ge() {
-            local y1 m1 p1 y2 m2 p2
-            IFS='-' read -r y1 m1 p1 <<< "$1"; p1="${p1:-0}"
-            IFS='-' read -r y2 m2 p2 <<< "$2"; p2="${p2:-0}"
-            if (( 10#$y1 != 10#$y2 )); then (( 10#$y1 > 10#$y2 )); return; fi
-            if (( 10#$m1 != 10#$m2 )); then (( 10#$m1 > 10#$m2 )); return; fi
-            (( 10#$p1 >= 10#$p2 )); return
-          }
-
-          # Read current latest pointer. Fail closed: only treat a confirmed
-          # 404 as "first publish". All other errors (auth, network, throttle)
-          # abort the step to prevent regressing the pointer. (Bot review Bug 3.)
-          LATEST_KEY="manifests/address-latest.json"
-          SHOULD_UPDATE=false
-
-          HEAD_OUTPUT=$(aws s3api head-object --bucket "${S3_BUCKET}" --key "${LATEST_KEY}" 2>&1) || {
-            HEAD_EXIT=$?
-            if echo "$HEAD_OUTPUT" | grep -q "Not Found\|404\|NoSuchKey"; then
-              # Genuine 404 — first publish, no existing pointer
-              CURRENT_LATEST=""
-            else
-              echo "::error::Failed to read address-latest.json (non-404 error) — refusing to update pointer (fail closed)"
-              echo "::error::AWS response: $HEAD_OUTPUT"
-              exit 1
-            fi
-          }
-
-          # If head-object succeeded, download and parse
-          if [[ -z "${CURRENT_LATEST+x}" ]]; then
-            CURRENT_LATEST=$(aws s3 cp "s3://${S3_BUCKET}/${LATEST_KEY}" - 2>&1 | jq -r '.version' 2>/dev/null)
-            if [[ -z "$CURRENT_LATEST" || "$CURRENT_LATEST" == "null" ]]; then
-              echo "::error::address-latest.json exists but could not parse .version — refusing to update (fail closed)"
-              exit 1
-            fi
-          fi
-
-          if [[ -z "$CURRENT_LATEST" ]]; then
-            echo "No existing latest pointer — setting to ${VERSION_DASH}"
-            SHOULD_UPDATE=true
-          elif version_ge "$VERSION_DASH" "$CURRENT_LATEST"; then
-            echo "Advancing latest pointer: ${CURRENT_LATEST} → ${VERSION_DASH}"
-            SHOULD_UPDATE=true
-          else
-            echo "::notice::Not updating latest pointer: current ${CURRENT_LATEST} is newer than ${VERSION_DASH}"
-            SHOULD_UPDATE=false
-          fi
-
-          if [[ "$SHOULD_UPDATE" == "true" ]]; then
-            # Download the versioned manifest and copy as latest
-            aws s3 cp "s3://${S3_BUCKET}/manifests/address-${VERSION_DASH}.json" \
-                      "s3://${S3_BUCKET}/manifests/address-latest.json" --no-progress
-            echo "✓ Latest pointer updated (manifests/address-latest.json → ${VERSION_DASH})"
-          fi
-
-      # P5.04: Notify downstream via SNS (non-fatal — data + manifest already published).
-      # Always runs (not gated on check_existing) so reruns can retry a failed
-      # notification even if the versioned manifest already exists. (Bot review Bug 5.)
-      - name: Send SNS release notification (always runs)
-        if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.published == 'true' }}
-        run: |
-          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
-          VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
-          MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
-
-          # Download the published manifest from S3 (works on first run AND reruns)
-          if aws s3 cp "s3://${S3_BUCKET}/${MANIFEST_KEY}" /tmp/sns-manifest.json --no-progress 2>/dev/null; then
-            aws sns publish \
-              --topic-arn "${SNS_TOPIC_ARN}" \
-              --subject "flat-white ${VERSION_DASH} released" \
-              --message "$(cat /tmp/sns-manifest.json)" \
-              --no-cli-pager \
-              || echo "::warning::SNS notification failed (non-fatal — data + manifest already published)"
-            echo "✓ SNS notification sent (or warned)"
-          else
-            echo "::warning::Could not download manifest for SNS notification — skipping"
-          fi
