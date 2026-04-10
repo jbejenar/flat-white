@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-04T02:17:41.623Z",
+  "generatedAt": "2026-04-10T23:39:38.104Z",
   "schemas": {
     "AddressDocument": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -197,6 +197,26 @@
                 }
               },
               "required": ["latitude", "longitude", "type", "reliability"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "lat": {
+                  "type": "number"
+                },
+                "lon": {
+                  "type": "number"
+                }
+              },
+              "required": ["lat", "lon"],
               "additionalProperties": false
             },
             {
@@ -532,6 +552,7 @@
         "aliasPrincipal",
         "primarySecondary",
         "geocode",
+        "location",
         "allGeocodes",
         "locality",
         "street",

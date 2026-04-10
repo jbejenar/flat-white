@@ -33,6 +33,10 @@ function validDocument() {
       type: "FRONTAGE CENTRE SETBACK",
       reliability: 2,
     },
+    location: {
+      lat: -37.79815294,
+      lon: 144.89719303,
+    },
     allGeocodes: [
       { lat: -37.79815294, lng: 144.89719303, type: "FRONTAGE CENTRE SETBACK", reliability: 2 },
     ],
@@ -105,6 +109,7 @@ describe("AddressDocumentSchema", () => {
     doc.postcode = null;
     doc.legalParcelId = null;
     doc.primarySecondary = null;
+    doc.location = null;
     doc.boundaries = {
       lga: null,
       ward: null,

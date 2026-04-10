@@ -7,4 +7,4 @@
  * See ROADMAP.md for the full architecture and ticket breakdown.
  */
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
