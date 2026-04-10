@@ -6046,7 +6046,7 @@ GitHub Releases is the primary distribution, but a single distribution point is 
 ```yaml
 id: P5.02
 title: S3 Latest Pointer
-status: complete
+status: wont-do
 priority: p1-high
 epic: P5.1
 persona: [downstream developer]
@@ -6060,7 +6060,12 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: 2026-04-09
+completed: null
+removed: 2026-04-10
+note: >
+  Implemented in PR #120, removed in PR #131. Downstream consumers use
+  the versioned manifest key (manifests/address-{version}.json) directly.
+  Latest pointer was not part of the original design.
 ```
 
 ## User Story
@@ -6155,7 +6160,7 @@ Stored AWS access keys are a security risk — if leaked, they provide persisten
 ```yaml
 id: P5.04
 title: SNS Notification
-status: complete
+status: wont-do
 priority: p1-high
 epic: P5.1
 persona: [ops/maintainer]
@@ -6169,7 +6174,11 @@ tech_stack:
   ci: GitHub Actions (free tier)
   output: NDJSON
   distribution: GitHub Releases
-completed: 2026-04-09
+completed: null
+removed: 2026-04-10
+note: >
+  Implemented in PR #120, removed in PR #131. No SNS topic subscribers
+  exist. Can be re-added when there is downstream consumer demand.
 ```
 
 ## User Story
