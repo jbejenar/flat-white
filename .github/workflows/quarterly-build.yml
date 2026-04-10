@@ -1229,13 +1229,12 @@ jobs:
           for STATE in vic nsw qld sa wa tas nt act ot; do
             aws s3 cp \
               "s3://${S3_BUCKET}/${STAGING_PREFIX}/${STATE}.ndjson.gz" \
-              "s3://${S3_BUCKET}/${S3_PREFIX}/${STATE}.ndjson.gz" \
-              --no-progress
+              "s3://${S3_BUCKET}/${S3_PREFIX}/${STATE}.ndjson.gz"
             echo "  ✓ ${STATE}.ndjson.gz"
           done
 
           # Clean up staging
-          aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive --no-progress
+          aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive
           echo ""
           echo "✓ All 9 files promoted, staging cleaned up"
 
