@@ -69,6 +69,27 @@ function mapPrimarySecondary(value: unknown): "PRIMARY" | "SECONDARY" | null {
   return null;
 }
 
+function parseFiniteCoordinate(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function composeLocation(
+  geocode: { latitude: number; longitude: number } | null,
+): { lat: number; lon: number } | null {
+  if (geocode == null) return null;
+  if (!Number.isFinite(geocode.latitude) || !Number.isFinite(geocode.longitude)) {
+    return null;
+  }
+  return {
+    lat: geocode.latitude,
+    lon: geocode.longitude,
+  };
+}
+
 /**
  * Compose an AddressDocument from a flat SQL row.
  * Maps column names to the document schema fields.
@@ -79,6 +100,18 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
 
   // Build addressLabelSearch by expanding abbreviations
   const searchLabel = composeSearchLabel(row);
+
+  const latitude = parseFiniteCoordinate(bestGeocode?.latitude);
+  const longitude = parseFiniteCoordinate(bestGeocode?.longitude);
+  const geocode =
+    bestGeocode && latitude != null && longitude != null
+      ? {
+          latitude,
+          longitude,
+          type: bestGeocode.type as string,
+          reliability: Number(bestGeocode.reliability),
+        }
+      : null;
 
   const doc: AddressDocument = {
     _id: row._id as string,
@@ -106,14 +139,8 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
     // Alias addresses would require a separate join on address_aliases.
     aliasPrincipal: "PRINCIPAL",
     primarySecondary: mapPrimarySecondary(row.primary_secondary),
-    geocode: bestGeocode
-      ? {
-          latitude: Number(bestGeocode.latitude),
-          longitude: Number(bestGeocode.longitude),
-          type: bestGeocode.type as string,
-          reliability: Number(bestGeocode.reliability),
-        }
-      : null,
+    geocode,
+    location: composeLocation(geocode),
     allGeocodes: allGeocodes
       ? allGeocodes.map((g) => ({
           lat: Number(g.lat),

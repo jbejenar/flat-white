@@ -46,6 +46,10 @@ function makeDoc(overrides: Record<string, unknown> = {}): string {
       type: "FRONTAGE CENTRE SETBACK",
       reliability: 2,
     },
+    location: {
+      lat: -37.8136,
+      lon: 144.9631,
+    },
     allGeocodes: [
       { lat: -37.8136, lng: 144.9631, type: "FRONTAGE CENTRE SETBACK", reliability: 2 },
     ],
@@ -157,7 +161,8 @@ describe("convertToParquet", () => {
       reliability: 3,
     };
     const locality = { pid: "NSW0001", class: "LOCALITY", neighbours: ["A", "B"], aliases: ["X"] };
-    writeFileSync(ndjsonPath, makeDoc({ geocode, locality }) + "\n");
+    const location = { lat: geocode.latitude, lon: geocode.longitude };
+    writeFileSync(ndjsonPath, makeDoc({ geocode, location, locality }) + "\n");
 
     await convertToParquet({ inputPath: ndjsonPath, outputPath: parquetPath });
 
@@ -168,6 +173,7 @@ describe("convertToParquet", () => {
 
     // Complex fields should be JSON strings that parse back to the original
     expect(JSON.parse(row.geocode as string)).toEqual(geocode);
+    expect(JSON.parse(row.location as string)).toEqual(location);
     expect(JSON.parse(row.locality as string)).toEqual(locality);
   });
 
@@ -183,6 +189,7 @@ describe("convertToParquet", () => {
         buildingName: null,
         flatType: null,
         geocode: null,
+        location: null,
         primarySecondary: null,
       }) + "\n",
     );
@@ -198,6 +205,7 @@ describe("convertToParquet", () => {
     expect(row.buildingName).toBeNull();
     expect(row.flatType).toBeNull();
     expect(row.geocode).toBeNull();
+    expect(row.location).toBeNull();
     expect(row.primarySecondary).toBeNull();
   });
 

@@ -1,0 +1,79 @@
+{
+  "dynamic": false,
+  "properties": {
+    "addressLabelSearch": { "type": "search_as_you_type" },
+    "addressLabel": { "type": "keyword" },
+    "localityName": { "type": "keyword" },
+    "state": { "type": "keyword" },
+    "postcode": { "type": "keyword" },
+    "streetName": { "type": "keyword" },
+    "streetType": { "type": "keyword" },
+    "numberFirst": { "type": "keyword" },
+    "confidence": { "type": "byte" },
+    "location": { "type": "geo_point" },
+    "geocode": {
+      "properties": {
+        "latitude": { "type": "float" },
+        "longitude": { "type": "float" },
+        "type": { "type": "keyword" },
+        "reliability": { "type": "byte" }
+      }
+    },
+    "boundaries": {
+      "properties": {
+        "lga": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "code": { "type": "keyword" }
+          }
+        },
+        "ward": {
+          "properties": {
+            "name": { "type": "keyword" }
+          }
+        },
+        "stateElectorate": {
+          "properties": {
+            "name": { "type": "keyword" }
+          }
+        },
+        "commonwealthElectorate": {
+          "properties": {
+            "name": { "type": "keyword" }
+          }
+        },
+        "meshBlock": {
+          "properties": {
+            "code": { "type": "keyword" },
+            "category": { "type": "keyword" }
+          }
+        },
+        "sa1": { "type": "keyword" },
+        "sa2": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "code": { "type": "keyword" }
+          }
+        },
+        "sa3": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "code": { "type": "keyword" }
+          }
+        },
+        "sa4": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "code": { "type": "keyword" }
+          }
+        },
+        "gccsa": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "code": { "type": "keyword" }
+          }
+        }
+      }
+    }
+  }
+}

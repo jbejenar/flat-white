@@ -28,6 +28,10 @@
     "type": "FRONTAGE CENTRE SETBACK",
     "reliability": 2
   },
+  "location": {
+    "lat": -37.89180933,
+    "lon": 145.01510717
+  },
   "allGeocodes": [
     {
       "lat": -37.89180933,

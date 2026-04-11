@@ -1006,6 +1006,8 @@ jobs:
       AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-role
       S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
     steps:
+      - uses: actions/checkout@v6
+
       - name: Download per-state build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -1056,6 +1058,7 @@ jobs:
         run: |
           RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           GNAF_VERSION="${{ needs.setup.outputs.version }}"
+          MAX_SINGLE_OBJECT_BYTES=$((5 * 1024 * 1024 * 1024))
 
           # Version: 2026.02.3 → 2026-02-3 (dots to dashes)
           VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
@@ -1078,30 +1081,48 @@ jobs:
 
           for STATE in vic nsw qld sa wa tas nt act ot; do
             STATE_UPPER=$(echo "$STATE" | tr '[:lower:]' '[:upper:]')
-            GZ_FILE=$(find "artifacts/flat-white-${STATE_UPPER}" -name "*.ndjson.gz" | head -1)
+            mapfile -t STATE_GZ_FILES < <(find "artifacts/flat-white-${STATE_UPPER}" -name "*.ndjson.gz")
             COUNT_FILE="artifacts/flat-white-${STATE_UPPER}/${STATE_UPPER}.count"
             # Manifest keys reference the PUBLISHED prefix (not staging)
             PUBLISHED_KEY="${S3_PREFIX}/${STATE}.ndjson.gz"
             STAGING_KEY="${STAGING_PREFIX}/${STATE}.ndjson.gz"
 
-            if [[ -z "$GZ_FILE" ]]; then
+            if [[ ${#STATE_GZ_FILES[@]} -eq 0 ]]; then
               echo "::error::No .ndjson.gz file found for state ${STATE_UPPER}"
+              exit 1
+            fi
+            if [[ ${#STATE_GZ_FILES[@]} -gt 1 ]]; then
+              echo "::error::Found ${#STATE_GZ_FILES[@]} .ndjson.gz files for state ${STATE_UPPER}; expected exactly 1"
+              printf '  %s\n' "${STATE_GZ_FILES[@]}"
               exit 1
             fi
             if [[ ! -f "$COUNT_FILE" ]]; then
               echo "::error::No .count file found for state ${STATE_UPPER}"
               exit 1
             fi
+            GZ_FILE="${STATE_GZ_FILES[0]}"
 
             # Compute metadata on the compressed file directly
             RECORDS=$(cat "$COUNT_FILE" | tr -d '[:space:]')
             BYTES=$(stat -c%s "$GZ_FILE")
             SHA256=$(sha256sum "$GZ_FILE" | cut -d' ' -f1)
+            SHA256_B64="$(openssl dgst -sha256 -binary "$GZ_FILE" | openssl base64 -A)"
+
+            if [[ "$BYTES" -ge "$MAX_SINGLE_OBJECT_BYTES" ]]; then
+              echo "::error::Object exceeds single-call S3 put/copy limit: $GZ_FILE ($BYTES bytes)"
+              exit 1
+            fi
 
             echo "  ${STATE}: ${RECORDS} records, ${BYTES} bytes, sha256=${SHA256:0:12}..."
 
             # Upload to staging (not the published prefix)
-            aws s3 cp "$GZ_FILE" "s3://${S3_BUCKET}/${STAGING_KEY}" --no-progress
+            aws s3api put-object \
+              --bucket "${S3_BUCKET}" \
+              --key "${STAGING_KEY}" \
+              --body "$GZ_FILE" \
+              --content-type "application/gzip" \
+              --checksum-algorithm SHA256 \
+              --checksum-sha256 "$SHA256_B64" >/dev/null
 
             # Manifest entry references the published key (where files will be
             # promoted to after verification)
@@ -1121,17 +1142,34 @@ jobs:
           echo "  Total records: ${TOTAL_RECORDS}"
 
           # Upload the all-states concatenated file
-          ALL_GZ=$(find "artifacts/flat-white-all" -name "*.ndjson.gz" | head -1)
-          if [[ -z "$ALL_GZ" ]]; then
+          mapfile -t ALL_GZ_FILES < <(find "artifacts/flat-white-all" -name "*.ndjson.gz")
+          if [[ ${#ALL_GZ_FILES[@]} -eq 0 ]]; then
             echo "::error::No all-states .ndjson.gz file found in flat-white-all artifact"
             exit 1
           fi
+          if [[ ${#ALL_GZ_FILES[@]} -gt 1 ]]; then
+            echo "::error::Found ${#ALL_GZ_FILES[@]} all-states .ndjson.gz files; expected exactly 1"
+            printf '  %s\n' "${ALL_GZ_FILES[@]}"
+            exit 1
+          fi
+          ALL_GZ="${ALL_GZ_FILES[0]}"
           ALL_PUBLISHED_KEY="${S3_PREFIX}/all.ndjson.gz"
           ALL_STAGING_KEY="${STAGING_PREFIX}/all.ndjson.gz"
           ALL_BYTES=$(stat -c%s "$ALL_GZ")
           ALL_SHA256=$(sha256sum "$ALL_GZ" | cut -d' ' -f1)
+          ALL_SHA256_B64="$(openssl dgst -sha256 -binary "$ALL_GZ" | openssl base64 -A)"
+          if [[ "$ALL_BYTES" -ge "$MAX_SINGLE_OBJECT_BYTES" ]]; then
+            echo "::error::Object exceeds single-call S3 put/copy limit: $ALL_GZ ($ALL_BYTES bytes)"
+            exit 1
+          fi
           echo "  all: ${TOTAL_RECORDS} records, ${ALL_BYTES} bytes, sha256=${ALL_SHA256:0:12}..."
-          aws s3 cp "$ALL_GZ" "s3://${S3_BUCKET}/${ALL_STAGING_KEY}" --no-progress
+          aws s3api put-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${ALL_STAGING_KEY}" \
+            --body "$ALL_GZ" \
+            --content-type "application/gzip" \
+            --checksum-algorithm SHA256 \
+            --checksum-sha256 "$ALL_SHA256_B64" >/dev/null
 
           # all.ndjson.gz is NOT added to the manifest files[] array — it's a
           # convenience download (concatenation of the 9 per-state files). Adding
@@ -1139,6 +1177,19 @@ jobs:
           # dataset twice.
 
           echo "✓ All-states file uploaded to staging (not in manifest — convenience download only)"
+
+          MAPPINGS_SOURCE="opensearch/address-mappings.json"
+          MAPPINGS_STAGING_KEY="${STAGING_PREFIX}/mappings.json"
+          if [[ ! -f "$MAPPINGS_SOURCE" ]]; then
+            echo "::error::Mappings file not found: $MAPPINGS_SOURCE"
+            exit 1
+          fi
+          aws s3api put-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${MAPPINGS_STAGING_KEY}" \
+            --body "$MAPPINGS_SOURCE" \
+            --content-type "application/json" >/dev/null
+          echo "✓ Mappings uploaded to staging"
 
           # Export for subsequent steps
           echo "version_dash=${VERSION_DASH}" >> "$GITHUB_OUTPUT"
@@ -1182,7 +1233,7 @@ jobs:
               files: $files,
               total_records: $total_records,
               index: {
-                mappings_key: "data/address/mappings.json",
+                mappings_key: ("data/address/" + $version + "/mappings.json"),
                 settings: { number_of_shards: 3, number_of_replicas: 0 }
               }
             }' > /tmp/manifest.json
@@ -1204,38 +1255,73 @@ jobs:
             STATE_UPPER=$(echo "$STATE" | tr '[:lower:]' '[:upper:]')
             LOCAL_FILE=$(find "artifacts/flat-white-${STATE_UPPER}" -name "*.ndjson.gz" | head -1)
             LOCAL_SIZE=$(stat -c%s "$LOCAL_FILE")
-            REMOTE_SIZE=$(aws s3api head-object \
+            HEAD_JSON=$(aws s3api head-object \
               --bucket "${S3_BUCKET}" \
               --key "${STAGING_PREFIX}/${STATE}.ndjson.gz" \
-              --query 'ContentLength' \
-              --output text 2>/dev/null || echo "MISSING")
-            if [[ "$REMOTE_SIZE" == "MISSING" ]]; then
+              --checksum-mode ENABLED \
+              --output json 2>/dev/null || echo "MISSING")
+            if [[ "$HEAD_JSON" == "MISSING" ]]; then
               echo "::error::Missing from staging: ${STATE}.ndjson.gz"
+              MISMATCH=1
+              continue
+            fi
+            REMOTE_SIZE=$(jq -r '.ContentLength' <<<"$HEAD_JSON")
+            REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$HEAD_JSON")
+            REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$HEAD_JSON")
+            if [[ -z "$REMOTE_SHA256" ]]; then
+              echo "::error::Missing ChecksumSHA256 in staging: ${STATE}.ndjson.gz"
+              echo "$HEAD_JSON"
               MISMATCH=1
             elif [[ "$LOCAL_SIZE" != "$REMOTE_SIZE" ]]; then
               echo "::error::Size mismatch in staging: ${STATE}.ndjson.gz local=${LOCAL_SIZE} remote=${REMOTE_SIZE}"
               MISMATCH=1
+            elif [[ -n "$REMOTE_CHECKSUM_TYPE" && "$REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
+              echo "::error::Unexpected ChecksumType in staging: ${STATE}.ndjson.gz type=${REMOTE_CHECKSUM_TYPE}"
+              echo "$HEAD_JSON"
+              MISMATCH=1
             else
-              echo "✓ ${STATE}.ndjson.gz (${LOCAL_SIZE} bytes)"
+              echo "✓ ${STATE}.ndjson.gz (${LOCAL_SIZE} bytes, checksum present)"
             fi
           done
 
           # Verify all-states file
           ALL_GZ=$(find "artifacts/flat-white-all" -name "*.ndjson.gz" | head -1)
           ALL_LOCAL_SIZE=$(stat -c%s "$ALL_GZ")
-          ALL_REMOTE_SIZE=$(aws s3api head-object \
+          ALL_HEAD_JSON=$(aws s3api head-object \
             --bucket "${S3_BUCKET}" \
             --key "${STAGING_PREFIX}/all.ndjson.gz" \
-            --query 'ContentLength' \
-            --output text 2>/dev/null || echo "MISSING")
-          if [[ "$ALL_REMOTE_SIZE" == "MISSING" ]]; then
+            --checksum-mode ENABLED \
+            --output json 2>/dev/null || echo "MISSING")
+          if [[ "$ALL_HEAD_JSON" == "MISSING" ]]; then
             echo "::error::Missing from staging: all.ndjson.gz"
             MISMATCH=1
-          elif [[ "$ALL_LOCAL_SIZE" != "$ALL_REMOTE_SIZE" ]]; then
-            echo "::error::Size mismatch in staging: all.ndjson.gz local=${ALL_LOCAL_SIZE} remote=${ALL_REMOTE_SIZE}"
+          else
+            ALL_REMOTE_SIZE=$(jq -r '.ContentLength' <<<"$ALL_HEAD_JSON")
+            ALL_REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$ALL_HEAD_JSON")
+            ALL_REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$ALL_HEAD_JSON")
+            if [[ -z "$ALL_REMOTE_SHA256" ]]; then
+              echo "::error::Missing ChecksumSHA256 in staging: all.ndjson.gz"
+              echo "$ALL_HEAD_JSON"
+              MISMATCH=1
+            elif [[ "$ALL_LOCAL_SIZE" != "$ALL_REMOTE_SIZE" ]]; then
+              echo "::error::Size mismatch in staging: all.ndjson.gz local=${ALL_LOCAL_SIZE} remote=${ALL_REMOTE_SIZE}"
+              MISMATCH=1
+            elif [[ -n "$ALL_REMOTE_CHECKSUM_TYPE" && "$ALL_REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
+              echo "::error::Unexpected ChecksumType in staging: all.ndjson.gz type=${ALL_REMOTE_CHECKSUM_TYPE}"
+              echo "$ALL_HEAD_JSON"
+              MISMATCH=1
+            else
+              echo "✓ all.ndjson.gz (${ALL_LOCAL_SIZE} bytes, checksum present)"
+            fi
+          fi
+
+          if ! aws s3api head-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${STAGING_PREFIX}/mappings.json" >/dev/null 2>&1; then
+            echo "::error::Missing from staging: mappings.json"
             MISMATCH=1
           else
-            echo "✓ all.ndjson.gz (${ALL_LOCAL_SIZE} bytes)"
+            echo "✓ mappings.json"
           fi
 
           if [[ "$MISMATCH" -ne 0 ]]; then
@@ -1248,7 +1334,7 @@ jobs:
           fi
 
           echo ""
-          echo "✓ All 10 staged files verified (count + size match)"
+          echo "✓ All 11 staged files verified"
 
       # Phase 3: Promote staging → published prefix.
       # This step only runs for FIRST-TIME publishes (check_existing
@@ -1264,22 +1350,102 @@ jobs:
 
           echo "Promoting staging → published..."
           for STATE in vic nsw qld sa wa tas nt act ot; do
-            aws s3 cp \
-              "s3://${S3_BUCKET}/${STAGING_PREFIX}/${STATE}.ndjson.gz" \
-              "s3://${S3_BUCKET}/${S3_PREFIX}/${STATE}.ndjson.gz"
+            aws s3api copy-object \
+              --bucket "${S3_BUCKET}" \
+              --copy-source "${S3_BUCKET}/${STAGING_PREFIX}/${STATE}.ndjson.gz" \
+              --key "${S3_PREFIX}/${STATE}.ndjson.gz" >/dev/null
             echo "  ✓ ${STATE}.ndjson.gz"
           done
 
           # Promote all-states file
-          aws s3 cp \
-            "s3://${S3_BUCKET}/${STAGING_PREFIX}/all.ndjson.gz" \
-            "s3://${S3_BUCKET}/${S3_PREFIX}/all.ndjson.gz"
+          aws s3api copy-object \
+            --bucket "${S3_BUCKET}" \
+            --copy-source "${S3_BUCKET}/${STAGING_PREFIX}/all.ndjson.gz" \
+            --key "${S3_PREFIX}/all.ndjson.gz" >/dev/null
           echo "  ✓ all.ndjson.gz"
+
+          aws s3api copy-object \
+            --bucket "${S3_BUCKET}" \
+            --copy-source "${S3_BUCKET}/${STAGING_PREFIX}/mappings.json" \
+            --key "${S3_PREFIX}/mappings.json" >/dev/null
+          echo "  ✓ mappings.json"
 
           # Clean up staging
           aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive
           echo ""
-          echo "✓ All 10 files promoted, staging cleaned up"
+          echo "✓ All 11 files promoted, staging cleaned up"
+
+      - name: Verify published data files (pre-manifest gate)
+        if: steps.check_existing.outputs.skip != 'true'
+        run: |
+          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
+          S3_PREFIX="data/address/${VERSION_DASH}"
+
+          echo "--- Verifying published files in s3://${S3_BUCKET}/${S3_PREFIX}/ ---"
+
+          MISMATCH=0
+          for STATE in vic nsw qld sa wa tas nt act ot; do
+            HEAD_JSON=$(aws s3api head-object \
+              --bucket "${S3_BUCKET}" \
+              --key "${S3_PREFIX}/${STATE}.ndjson.gz" \
+              --checksum-mode ENABLED \
+              --output json 2>/dev/null || echo "MISSING")
+            if [[ "$HEAD_JSON" == "MISSING" ]]; then
+              echo "::error::Missing from published prefix: ${STATE}.ndjson.gz"
+              MISMATCH=1
+              continue
+            fi
+            REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$HEAD_JSON")
+            REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$HEAD_JSON")
+            if [[ -z "$REMOTE_SHA256" ]]; then
+              echo "::error::Missing ChecksumSHA256 in published prefix: ${STATE}.ndjson.gz"
+              echo "$HEAD_JSON"
+              MISMATCH=1
+            elif [[ -n "$REMOTE_CHECKSUM_TYPE" && "$REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
+              echo "::error::Unexpected ChecksumType in published prefix: ${STATE}.ndjson.gz type=${REMOTE_CHECKSUM_TYPE}"
+              echo "$HEAD_JSON"
+              MISMATCH=1
+            else
+              echo "✓ ${STATE}.ndjson.gz"
+            fi
+          done
+
+          ALL_HEAD_JSON=$(aws s3api head-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${S3_PREFIX}/all.ndjson.gz" \
+            --checksum-mode ENABLED \
+            --output json 2>/dev/null || echo "MISSING")
+          if [[ "$ALL_HEAD_JSON" == "MISSING" ]]; then
+            echo "::error::Missing from published prefix: all.ndjson.gz"
+            MISMATCH=1
+          else
+            ALL_REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$ALL_HEAD_JSON")
+            ALL_REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$ALL_HEAD_JSON")
+            if [[ -z "$ALL_REMOTE_SHA256" ]]; then
+              echo "::error::Missing ChecksumSHA256 in published prefix: all.ndjson.gz"
+              echo "$ALL_HEAD_JSON"
+              MISMATCH=1
+            elif [[ -n "$ALL_REMOTE_CHECKSUM_TYPE" && "$ALL_REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
+              echo "::error::Unexpected ChecksumType in published prefix: all.ndjson.gz type=${ALL_REMOTE_CHECKSUM_TYPE}"
+              echo "$ALL_HEAD_JSON"
+              MISMATCH=1
+            else
+              echo "✓ all.ndjson.gz"
+            fi
+          fi
+
+          if ! aws s3api head-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${S3_PREFIX}/mappings.json" >/dev/null 2>&1; then
+            echo "::error::Missing from published prefix: mappings.json"
+            MISMATCH=1
+          else
+            echo "✓ mappings.json"
+          fi
+
+          if [[ "$MISMATCH" -ne 0 ]]; then
+            exit 1
+          fi
 
       # Phase 4: Upload manifest LAST — this is the downstream trigger.
       # Only reached after staging is verified AND promoted.
@@ -1290,7 +1456,11 @@ jobs:
           MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
 
           echo "Uploading manifest to s3://${S3_BUCKET}/${MANIFEST_KEY} ..."
-          aws s3 cp /tmp/manifest.json "s3://${S3_BUCKET}/${MANIFEST_KEY}" --no-progress
+          aws s3api put-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${MANIFEST_KEY}" \
+            --body /tmp/manifest.json \
+            --content-type "application/json" >/dev/null
           echo "✓ Manifest uploaded — version ${VERSION_DASH} is now published"
 
           echo ""
