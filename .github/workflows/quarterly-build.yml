@@ -990,13 +990,6 @@ jobs:
   #   - manifests/{product}-{version}.json is the trigger for downstream
   #     ingestion (EventBridge watches the manifests/ prefix)
   #
-  # Prontiq Address Phase 1 ingests EXACTLY ONE manifest-declared file:
-  #   data/address/{version}/all.ndjson.gz
-  #
-  # The 9 per-state files may still be published as convenience artifacts, but
-  # they are intentionally outside the manifest contract and must not appear in
-  # manifest.files[].
-  #
   # The manifest is uploaded LAST — all data files must be in S3 before the
   # manifest lands, because the manifest is what signals "this version is
   # ready for ingestion."
@@ -1083,14 +1076,15 @@ jobs:
           echo "Version (dash): ${VERSION_DASH}"
           echo ""
 
-          # Phase 1a: Upload convenience per-state files to staging.
-          # These are published for humans/operators, not declared in the
-          # Prontiq ingestion contract.
+          # Phase 1a: Upload to staging prefix
+          > /tmp/manifest-files.jsonl  # truncate
 
           for STATE in vic nsw qld sa wa tas nt act ot; do
             STATE_UPPER=$(echo "$STATE" | tr '[:lower:]' '[:upper:]')
             mapfile -t STATE_GZ_FILES < <(find "artifacts/flat-white-${STATE_UPPER}" -name "*.ndjson.gz")
             COUNT_FILE="artifacts/flat-white-${STATE_UPPER}/${STATE_UPPER}.count"
+            # Manifest keys reference the PUBLISHED prefix (not staging)
+            PUBLISHED_KEY="${S3_PREFIX}/${STATE}.ndjson.gz"
             STAGING_KEY="${STAGING_PREFIX}/${STATE}.ndjson.gz"
 
             if [[ ${#STATE_GZ_FILES[@]} -eq 0 ]]; then
@@ -1130,6 +1124,16 @@ jobs:
               --checksum-algorithm SHA256 \
               --checksum-sha256 "$SHA256_B64" >/dev/null
 
+            # Manifest entry references the published key (where files will be
+            # promoted to after verification)
+            jq -n \
+              --arg key "$PUBLISHED_KEY" \
+              --argjson records "$RECORDS" \
+              --argjson bytes "$BYTES" \
+              --arg sha256 "$SHA256" \
+              '{key: $key, records: $records, bytes: $bytes, sha256: $sha256}' \
+              >> /tmp/manifest-files.jsonl
+
             TOTAL_RECORDS=$((TOTAL_RECORDS + RECORDS))
           done
 
@@ -1167,18 +1171,17 @@ jobs:
             --checksum-algorithm SHA256 \
             --checksum-sha256 "$ALL_SHA256_B64" >/dev/null
 
-          # all.ndjson.gz is the ONLY ingestion artifact declared in the
-          # manifest. The per-state files remain published as convenience
-          # artifacts but are intentionally excluded from manifest.files[].
+          # all.ndjson.gz is also declared in the manifest alongside the 9
+          # per-state files.
           jq -n \
             --arg key "$ALL_PUBLISHED_KEY" \
             --argjson records "$TOTAL_RECORDS" \
             --argjson bytes "$ALL_BYTES" \
             --arg sha256 "$ALL_SHA256" \
             '{key: $key, records: $records, bytes: $bytes, sha256: $sha256}' \
-            > /tmp/manifest-file.json
+            >> /tmp/manifest-files.jsonl
 
-          echo "✓ All-states file uploaded to staging and selected as the sole manifest ingestion file"
+          echo "✓ All-states file uploaded to staging and added to the manifest"
 
           MAPPINGS_SOURCE="opensearch/address-mappings.json"
           MAPPINGS_STAGING_KEY="${STAGING_PREFIX}/mappings.json"
@@ -1208,8 +1211,8 @@ jobs:
           # Derive human-readable source release name (e.g., "February 2026")
           SOURCE_RELEASE=$(date -d "${GNAF_VERSION/./-}-01" +"%B %Y")
 
-          # Assemble the single-file ingestion contract from all.ndjson.gz
-          FILES_JSON=$(jq -n '[inputs]' /tmp/manifest-file.json)
+          # Assemble the files array from the per-state JSONL plus all.ndjson.gz
+          FILES_JSON=$(jq --slurp '.' /tmp/manifest-files.jsonl)
 
           # Build the v1 manifest
           jq -n \
