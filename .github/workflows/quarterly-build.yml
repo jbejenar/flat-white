@@ -1252,10 +1252,26 @@ jobs:
         run: |
           VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
           EXPECTED_SOURCE_KEY="data/address/${VERSION_DASH}/all.ndjson.gz"
+          EXPECTED_FILE_KEYS=$(jq -nc --arg version "$VERSION_DASH" '
+            [
+              "vic",
+              "nsw",
+              "qld",
+              "sa",
+              "wa",
+              "tas",
+              "nt",
+              "act",
+              "ot",
+              "all"
+            ] | map("data/address/" + $version + "/" + . + ".ndjson.gz")
+          ')
           jq -e \
-            --arg expected_source_key "$EXPECTED_SOURCE_KEY" '
+            --arg expected_source_key "$EXPECTED_SOURCE_KEY" \
+            --argjson expected_file_keys "$EXPECTED_FILE_KEYS" '
               .manifest_version == 2 and
               (.files | type) == "array" and
+              ([.files[].key] | sort) == ($expected_file_keys | sort) and
               (.index.source_keys | type) == "array" and
               (.index.source_keys | length) == 1 and
               .index.source_keys[0] == $expected_source_key and

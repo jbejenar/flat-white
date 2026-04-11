@@ -82,6 +82,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const inputPath = resolve(args.input);
   const assetDir = resolve(args.assetDir);
+  const versionDash = args.version.replaceAll(".", "-");
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf-8"),
   );
@@ -121,7 +122,7 @@ async function main() {
 
     return manifestFileForPath({
       gzipPath,
-      key: `data/address/${args.version}/${state}.ndjson.gz`,
+      key: `data/address/${versionDash}/${state}.ndjson.gz`,
       records,
     });
   }));
@@ -129,7 +130,7 @@ async function main() {
   manifestFiles.push(
     await manifestFileForPath({
       gzipPath: allFile,
-      key: `data/address/${args.version}/all.ndjson.gz`,
+      key: `data/address/${versionDash}/all.ndjson.gz`,
       records: splitResult.totalCount,
     }),
   );
@@ -153,7 +154,7 @@ async function main() {
   const states = Object.keys(splitResult.states).sort();
 
   const manifest = buildAddressManifestV2({
-    version: args.version,
+    version: versionDash,
     createdAt: new Date().toISOString(),
     pipeline: {
       repo: "fixture/quarterly-shape-smoke",
@@ -166,9 +167,9 @@ async function main() {
       url: "https://data.gov.au/dataset/geocoded-national-address-file-g-naf",
     },
     files: manifestFiles,
-    sourceKeys: [`data/address/${args.version}/all.ndjson.gz`],
+    sourceKeys: [`data/address/${versionDash}/all.ndjson.gz`],
   });
-  validateAddressManifestV2(manifest, [`data/address/${args.version}/all.ndjson.gz`]);
+  validateAddressManifestV2(manifest, [`data/address/${versionDash}/all.ndjson.gz`]);
   await writeFile(join(assetDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
   // Boundary coverage thresholds for the FIXTURE shape smoke. The committed
