@@ -168,6 +168,11 @@ describe("composeDocument", () => {
     expect(doc.geocode.reliability).toBe(2);
   });
 
+  it("maps location from geocode coordinates", () => {
+    const doc = composeDocument(baseRow, "2026.02");
+    expect(doc.location).toEqual({ lat: -37.79815294, lon: 144.89719303 });
+  });
+
   it("maps allGeocodes correctly", () => {
     const doc = composeDocument(baseRow, "2026.02");
     expect(doc.allGeocodes).toHaveLength(2);
@@ -252,7 +257,25 @@ describe("composeDocument", () => {
     const row = { ...baseRow, best_geocode: null, all_geocodes: null };
     const doc = composeDocument(row, "2026.02");
     expect(doc.geocode).toBeNull();
+    expect(doc.location).toBeNull();
     expect(doc.allGeocodes).toEqual([]);
+    const result = AddressDocumentSchema.safeParse(doc);
+    expect(result.success).toBe(true);
+  });
+
+  it("returns null geocode and location when best_geocode has null coordinates", () => {
+    const row = {
+      ...baseRow,
+      best_geocode: {
+        latitude: null,
+        longitude: "",
+        type: "FRONTAGE CENTRE SETBACK",
+        reliability: 2,
+      },
+    };
+    const doc = composeDocument(row, "2026.02");
+    expect(doc.geocode).toBeNull();
+    expect(doc.location).toBeNull();
     const result = AddressDocumentSchema.safeParse(doc);
     expect(result.success).toBe(true);
   });

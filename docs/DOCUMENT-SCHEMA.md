@@ -10,38 +10,39 @@ Every line in the NDJSON output is one JSON document conforming to this schema. 
 
 ## Top-Level Fields
 
-| Field                | Type    | Nullable | Description                                                                               | Example                               | G-NAF Source                                                                |
-| -------------------- | ------- | -------- | ----------------------------------------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
-| `_id`                | string  | No       | G-NAF address persistent identifier (PID)                                                 | `"GAVIC425181432"`                    | `gnaf.address_principals.address_detail_pid`                                |
-| `_version`           | string  | No       | G-NAF data release version (YYYY.MM)                                                      | `"2026.04"`                           | Build parameter                                                             |
-| `addressLabel`       | string  | No       | Canonical address label using G-NAF abbreviations                                         | `"1 MCNAB AV, FOOTSCRAY VIC 3011"`    | Composed from address components                                            |
-| `addressLabelSearch` | string  | No       | Search-optimised label with expanded street/flat types                                    | `"1 MCNAB AVENUE FOOTSCRAY VIC 3011"` | Composed; street type expanded via authority codes                          |
-| `addressSiteName`    | string  | Yes      | Site name (e.g. shopping centre, hospital)                                                | `"FOOTSCRAY MARKET"`                  | `gnaf.address_principals.address_site_name`                                 |
-| `buildingName`       | string  | Yes      | Building name                                                                             | `"TOWER A"`                           | `gnaf.address_principals.building_name`                                     |
-| `flatType`           | string  | Yes      | Flat/unit type abbreviation                                                               | `"UNIT"`                              | `gnaf.address_principals.flat_type`                                         |
-| `flatNumber`         | string  | Yes      | Flat/unit number (without type prefix)                                                    | `"G1"`                                | `raw_gnaf.address_detail.flat_number` (composed from prefix+number+suffix)  |
-| `levelType`          | string  | Yes      | Level type                                                                                | `"LEVEL"`                             | `gnaf.address_principals.level_type`                                        |
-| `levelNumber`        | string  | Yes      | Level number (without type prefix)                                                        | `"1"`                                 | `raw_gnaf.address_detail.level_number` (composed from prefix+number+suffix) |
-| `numberFirst`        | string  | Yes      | Street number (first/only)                                                                | `"1"`                                 | `gnaf.address_principals.number_first`                                      |
-| `numberLast`         | string  | Yes      | Street number (last, for ranges like 1-5)                                                 | `"5"`                                 | `gnaf.address_principals.number_last`                                       |
-| `lotNumber`          | string  | Yes      | Lot number (rural/unsubdivided land)                                                      | `"3"`                                 | `gnaf.address_principals.lot_number`                                        |
-| `streetName`         | string  | No       | Street name                                                                               | `"MCNAB"`                             | `gnaf.address_principals.street_name`                                       |
-| `streetType`         | string  | Yes      | Street type (full name)                                                                   | `"AVENUE"`                            | `gnaf.address_principals.street_type`                                       |
-| `streetSuffix`       | string  | Yes      | Street suffix (N, S, E, W, etc.)                                                          | `"N"`                                 | `gnaf.address_principals.street_suffix`                                     |
-| `localityName`       | string  | No       | Suburb/locality name                                                                      | `"FOOTSCRAY"`                         | `gnaf.address_principals.locality_name`                                     |
-| `state`              | string  | No       | State/territory code                                                                      | `"VIC"`                               | `gnaf.address_principals.state`                                             |
-| `postcode`           | string  | Yes      | Postcode                                                                                  | `"3011"`                              | `gnaf.address_principals.postcode`                                          |
-| `legalParcelId`      | string  | Yes      | Legal parcel identifier                                                                   | `"1\\PS733924"`                       | `gnaf.address_principals.legal_parcel_id`                                   |
-| `confidence`         | integer | No       | Address confidence level (0 = low, 2 = high)                                              | `2`                                   | `gnaf.address_principals.confidence`                                        |
-| `aliasPrincipal`     | enum    | No       | `"PRINCIPAL"` or `"ALIAS"`                                                                | `"PRINCIPAL"`                         | Derived from source table (address_principals vs address_aliases)           |
-| `primarySecondary`   | enum    | Yes      | `"PRIMARY"`, `"SECONDARY"`, or null                                                       | `"PRIMARY"`                           | `gnaf.address_principals.primary_secondary`                                 |
-| `geocode`            | object  | Yes      | Best geocode for this address, or null if no geocode exists (see Geocode)                 | _(see below)_                         | `gnaf.address_site_geocodes` (highest reliability, preferring FCS)          |
-| `allGeocodes`        | array   | No       | All geocode types for this address (see AllGeocodesItem)                                  | _(see below)_                         | `gnaf.address_site_geocodes` (all rows)                                     |
-| `locality`           | object  | No       | Locality context with neighbours and aliases (see Locality)                               | _(see below)_                         | `gnaf.localities` + `gnaf.locality_neighbours` + `gnaf.locality_aliases`    |
-| `street`             | object  | No       | Street metadata (see Street)                                                              | _(see below)_                         | `gnaf.streets` + `gnaf.street_aliases`                                      |
-| `boundaries`         | object  | No       | Administrative and statistical boundaries (see Boundaries)                                | _(see below)_                         | `gnaf.address_principal_admin_boundaries` + ABS lookup tables               |
-| `aliases`            | array   | No       | Alternative address names (see Alias). Empty array if none.                               | _(see below)_                         | `gnaf.address_aliases`                                                      |
-| `secondaries`        | array   | No       | Child addresses (units/flats) for primary addresses (see Secondary). Empty array if none. | _(see below)_                         | `gnaf.address_principals` where `primary_secondary = 'SECONDARY'`           |
+| Field                | Type    | Nullable | Description                                                                               | Example                                        | G-NAF Source                                                                |
+| -------------------- | ------- | -------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------- |
+| `_id`                | string  | No       | G-NAF address persistent identifier (PID)                                                 | `"GAVIC425181432"`                             | `gnaf.address_principals.address_detail_pid`                                |
+| `_version`           | string  | No       | G-NAF data release version (YYYY.MM)                                                      | `"2026.04"`                                    | Build parameter                                                             |
+| `addressLabel`       | string  | No       | Canonical address label using G-NAF abbreviations                                         | `"1 MCNAB AV, FOOTSCRAY VIC 3011"`             | Composed from address components                                            |
+| `addressLabelSearch` | string  | No       | Search-optimised label with expanded street/flat types                                    | `"1 MCNAB AVENUE FOOTSCRAY VIC 3011"`          | Composed; street type expanded via authority codes                          |
+| `addressSiteName`    | string  | Yes      | Site name (e.g. shopping centre, hospital)                                                | `"FOOTSCRAY MARKET"`                           | `gnaf.address_principals.address_site_name`                                 |
+| `buildingName`       | string  | Yes      | Building name                                                                             | `"TOWER A"`                                    | `gnaf.address_principals.building_name`                                     |
+| `flatType`           | string  | Yes      | Flat/unit type abbreviation                                                               | `"UNIT"`                                       | `gnaf.address_principals.flat_type`                                         |
+| `flatNumber`         | string  | Yes      | Flat/unit number (without type prefix)                                                    | `"G1"`                                         | `raw_gnaf.address_detail.flat_number` (composed from prefix+number+suffix)  |
+| `levelType`          | string  | Yes      | Level type                                                                                | `"LEVEL"`                                      | `gnaf.address_principals.level_type`                                        |
+| `levelNumber`        | string  | Yes      | Level number (without type prefix)                                                        | `"1"`                                          | `raw_gnaf.address_detail.level_number` (composed from prefix+number+suffix) |
+| `numberFirst`        | string  | Yes      | Street number (first/only)                                                                | `"1"`                                          | `gnaf.address_principals.number_first`                                      |
+| `numberLast`         | string  | Yes      | Street number (last, for ranges like 1-5)                                                 | `"5"`                                          | `gnaf.address_principals.number_last`                                       |
+| `lotNumber`          | string  | Yes      | Lot number (rural/unsubdivided land)                                                      | `"3"`                                          | `gnaf.address_principals.lot_number`                                        |
+| `streetName`         | string  | No       | Street name                                                                               | `"MCNAB"`                                      | `gnaf.address_principals.street_name`                                       |
+| `streetType`         | string  | Yes      | Street type (full name)                                                                   | `"AVENUE"`                                     | `gnaf.address_principals.street_type`                                       |
+| `streetSuffix`       | string  | Yes      | Street suffix (N, S, E, W, etc.)                                                          | `"N"`                                          | `gnaf.address_principals.street_suffix`                                     |
+| `localityName`       | string  | No       | Suburb/locality name                                                                      | `"FOOTSCRAY"`                                  | `gnaf.address_principals.locality_name`                                     |
+| `state`              | string  | No       | State/territory code                                                                      | `"VIC"`                                        | `gnaf.address_principals.state`                                             |
+| `postcode`           | string  | Yes      | Postcode                                                                                  | `"3011"`                                       | `gnaf.address_principals.postcode`                                          |
+| `legalParcelId`      | string  | Yes      | Legal parcel identifier                                                                   | `"1\\PS733924"`                                | `gnaf.address_principals.legal_parcel_id`                                   |
+| `confidence`         | integer | No       | Address confidence level (0 = low, 2 = high)                                              | `2`                                            | `gnaf.address_principals.confidence`                                        |
+| `aliasPrincipal`     | enum    | No       | `"PRINCIPAL"` or `"ALIAS"`                                                                | `"PRINCIPAL"`                                  | Derived from source table (address_principals vs address_aliases)           |
+| `primarySecondary`   | enum    | Yes      | `"PRIMARY"`, `"SECONDARY"`, or null                                                       | `"PRIMARY"`                                    | `gnaf.address_principals.primary_secondary`                                 |
+| `geocode`            | object  | Yes      | Best geocode for this address, or null if no geocode exists (see Geocode)                 | _(see below)_                                  | `gnaf.address_site_geocodes` (highest reliability, preferring FCS)          |
+| `location`           | object  | Yes      | OpenSearch-ready geo point `{ lat, lon }`, or null if no geocode exists                   | `{ "lat": -37.79815294, "lon": 144.89719303 }` | Derived from `geocode.latitude` + `geocode.longitude`                       |
+| `allGeocodes`        | array   | No       | All geocode types for this address (see AllGeocodesItem)                                  | _(see below)_                                  | `gnaf.address_site_geocodes` (all rows)                                     |
+| `locality`           | object  | No       | Locality context with neighbours and aliases (see Locality)                               | _(see below)_                                  | `gnaf.localities` + `gnaf.locality_neighbours` + `gnaf.locality_aliases`    |
+| `street`             | object  | No       | Street metadata (see Street)                                                              | _(see below)_                                  | `gnaf.streets` + `gnaf.street_aliases`                                      |
+| `boundaries`         | object  | No       | Administrative and statistical boundaries (see Boundaries)                                | _(see below)_                                  | `gnaf.address_principal_admin_boundaries` + ABS lookup tables               |
+| `aliases`            | array   | No       | Alternative address names (see Alias). Empty array if none.                               | _(see below)_                                  | `gnaf.address_aliases`                                                      |
+| `secondaries`        | array   | No       | Child addresses (units/flats) for primary addresses (see Secondary). Empty array if none. | _(see below)_                                  | `gnaf.address_principals` where `primary_secondary = 'SECONDARY'`           |
 
 ---
 
@@ -68,6 +69,17 @@ One entry per geocode type available for this address. Every address has at leas
 | `lng`         | number  | No       | WGS84 longitude                                                      | `144.89719303`              | `gnaf.address_site_geocodes.longitude`                                   |
 | `type`        | string  | No       | Geocode type description (long form, consistent with `geocode.type`) | `"FRONTAGE CENTRE SETBACK"` | `gnaf.address_site_geocodes.geocode_type` (expanded from authority code) |
 | `reliability` | integer | No       | Reliability level (1-6)                                              | `2`                         | `gnaf.address_site_geocodes.reliability`                                 |
+
+---
+
+## Nested Object: Location
+
+OpenSearch-ready geo point derived from the primary `geocode` object.
+
+| Field | Type   | Nullable | Description     | Example        | Source              |
+| ----- | ------ | -------- | --------------- | -------------- | ------------------- |
+| `lat` | number | No       | WGS84 latitude  | `-37.79815294` | `geocode.latitude`  |
+| `lon` | number | No       | WGS84 longitude | `144.89719303` | `geocode.longitude` |
 
 ---
 
@@ -213,7 +225,7 @@ Available via `--format parquet`. Produces an Apache Parquet file with the same 
 
 - Scalar fields (`_id`, `addressLabel`, `state`, `confidence`, etc.) are stored as native Parquet types (`UTF8`, `INT32`).
 - Nullable scalar fields use Parquet's optional repetition level.
-- Complex fields (`geocode`, `allGeocodes`, `locality`, `street`, `boundaries`, `aliases`, `secondaries`) are serialized as **JSON strings** (UTF8 columns) for maximum compatibility across Parquet readers.
+- Complex fields (`geocode`, `location`, `allGeocodes`, `locality`, `street`, `boundaries`, `aliases`, `secondaries`) are serialized as **JSON strings** (UTF8 columns) for maximum compatibility across Parquet readers.
 
 **Reading complex fields from Parquet:**
 

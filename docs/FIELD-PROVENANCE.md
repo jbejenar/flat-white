@@ -130,7 +130,18 @@ Best geocode selected per address. Determined inside the `address_geocodes` CTE.
 
 **Join path:** `address_principals.gnaf_pid` → `address_detail.address_detail_pid` → `address_detail.address_site_pid` → `address_site_geocode.address_site_pid`
 
-> **⚠️ Known technical debt:** The fallback values (`latitude: 0`, `longitude: 0`, `type: "UNKNOWN"`, `reliability: 6`) when no geocode exists violate the repo's "no silent sentinel values" rule (see AGENTS.md, Immutable Rule 3). Coordinates of `0,0` place the address in the Atlantic Ocean. This fallback exists in the current `src/flatten.ts` implementation but **must not be copied into new code**. The intended fix is to either make the `geocode` field nullable across the schema (`src/schema.ts`, `docs/DOCUMENT-SCHEMA.md`, fixtures, and tests) or fail validation when no geocode is present.
+`src/flatten.ts` emits `geocode: null` when no best geocode exists.
+
+## Field Provenance — `location` Object
+
+OpenSearch-ready geo point derived directly from the primary `geocode` object during document composition.
+
+| Output field   | Derived from        | Transform |
+| -------------- | ------------------- | --------- |
+| `location.lat` | `geocode.latitude`  | copied    |
+| `location.lon` | `geocode.longitude` | copied    |
+
+`location` is `null` whenever `geocode` is `null` or the coordinates are non-finite.
 
 ---
 

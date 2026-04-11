@@ -16,6 +16,11 @@ export const GeocodeSchema = z.object({
   reliability: z.number().int().min(1).max(6),
 });
 
+export const LocationSchema = z.object({
+  lat: z.number(),
+  lon: z.number(),
+});
+
 export const AllGeocodesItemSchema = z.object({
   lat: z.number(),
   lng: z.number(),
@@ -101,6 +106,7 @@ export const AddressDocumentSchema = z.object({
   aliasPrincipal: z.enum(["PRINCIPAL", "ALIAS"]),
   primarySecondary: z.enum(["PRIMARY", "SECONDARY"]).nullable(),
   geocode: GeocodeSchema.nullable(),
+  location: LocationSchema.nullable(),
   allGeocodes: z.array(AllGeocodesItemSchema),
   locality: LocalitySchema,
   street: StreetSchema,
@@ -127,6 +133,7 @@ export const LocalityDocumentSchema = z.object({
 // --- Inferred TypeScript types ---
 
 export type Geocode = z.infer<typeof GeocodeSchema>;
+export type Location = z.infer<typeof LocationSchema>;
 export type AllGeocodesItem = z.infer<typeof AllGeocodesItemSchema>;
 export type Locality = z.infer<typeof LocalitySchema>;
 export type Street = z.infer<typeof StreetSchema>;

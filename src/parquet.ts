@@ -22,7 +22,7 @@ export interface ParquetConvertOptions {
  * Parquet schema for AddressDocument.
  *
  * Scalar fields → native types.
- * Complex fields (geocode, allGeocodes, locality, street, boundaries,
+ * Complex fields (geocode, location, allGeocodes, locality, street, boundaries,
  * aliases, secondaries) → UTF8 JSON strings.
  */
 const ADDRESS_PARQUET_SCHEMA = new ParquetSchema({
@@ -51,6 +51,7 @@ const ADDRESS_PARQUET_SCHEMA = new ParquetSchema({
   primarySecondary: { type: "UTF8", optional: true },
   // Complex fields serialized as JSON strings
   geocode: { type: "UTF8", optional: true },
+  location: { type: "UTF8", optional: true },
   allGeocodes: { type: "UTF8" },
   locality: { type: "UTF8" },
   street: { type: "UTF8" },
@@ -107,9 +108,12 @@ export function toParquetRow(doc: Record<string, unknown>): Record<string, unkno
     }
   }
 
-  // Nullable complex field: geocode
+  // Nullable complex fields
   if (doc.geocode != null) {
     row.geocode = JSON.stringify(doc.geocode);
+  }
+  if (doc.location != null) {
+    row.location = JSON.stringify(doc.location);
   }
 
   return row;

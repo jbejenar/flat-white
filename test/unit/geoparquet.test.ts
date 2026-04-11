@@ -46,6 +46,10 @@ function makeDoc(overrides: Record<string, unknown> = {}): string {
       type: "FRONTAGE CENTRE SETBACK",
       reliability: 2,
     },
+    location: {
+      lat: -37.8136,
+      lon: 144.9631,
+    },
     allGeocodes: [
       { lat: -37.8136, lng: 144.9631, type: "FRONTAGE CENTRE SETBACK", reliability: 2 },
     ],
@@ -237,6 +241,7 @@ describe("convertToGeoparquet", () => {
     expect(row.state).toBe("VIC");
     // Complex field should still be JSON string
     expect(JSON.parse(row.locality as string)).toHaveProperty("pid", "VIC1234");
+    expect(JSON.parse(row.location as string)).toEqual({ lat: -37.8136, lon: 144.9631 });
     // Geometry should also be present
     expect(Buffer.isBuffer(row.geometry)).toBe(true);
   });

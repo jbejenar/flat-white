@@ -69,6 +69,7 @@ const GEOPARQUET_SCHEMA = new ParquetSchema({
   primarySecondary: { type: "UTF8", optional: true },
   // Complex fields serialized as JSON strings
   geocode: { type: "UTF8", optional: true },
+  location: { type: "UTF8", optional: true },
   allGeocodes: { type: "UTF8" },
   locality: { type: "UTF8" },
   street: { type: "UTF8" },
