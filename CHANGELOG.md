@@ -34,7 +34,6 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
   - VIC: 3940659
   - WA: 1526407
 
-
 ## [v2026.02.5] - 2026-04-10
 
 ### Release
@@ -54,7 +53,6 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
   - VIC: 3940659
   - WA: 1526407
 
-
 ## [v2026.02.4] - 2026-04-09
 
 ### Release
@@ -73,7 +71,6 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
   - TAS: 346248
   - VIC: 3940659
   - WA: 1526407
-
 
 ## [v2026.02.3] - 2026-04-09
 

@@ -983,9 +983,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # Job 4: S3 data + manifest upload (platform convention)
   # ---------------------------------------------------------------------------
-  # Uploads per-state address data files to data/address/{version}/ and a v1
-  # manifest to manifests/address-{version}.json. This follows the platform-
-  # wide convention where:
+  # Uploads address data files to data/address/{version}/ and a v2 manifest to
+  # manifests/address-{version}.json. This follows the platform-wide
+  # convention where:
   #   - data/{product}/{version}/ holds the actual data files
   #   - manifests/{product}-{version}.json is the trigger for downstream
   #     ingestion (EventBridge watches the manifests/ prefix)
@@ -1171,12 +1171,17 @@ jobs:
             --checksum-algorithm SHA256 \
             --checksum-sha256 "$ALL_SHA256_B64" >/dev/null
 
-          # all.ndjson.gz is NOT added to the manifest files[] array — it's a
-          # convenience download (concatenation of the 9 per-state files). Adding
-          # it to files[] would cause consumers iterating the array to ingest the
-          # dataset twice.
+          # all.ndjson.gz is also declared in the manifest alongside the 9
+          # per-state files.
+          jq -n \
+            --arg key "$ALL_PUBLISHED_KEY" \
+            --argjson records "$TOTAL_RECORDS" \
+            --argjson bytes "$ALL_BYTES" \
+            --arg sha256 "$ALL_SHA256" \
+            '{key: $key, records: $records, bytes: $bytes, sha256: $sha256}' \
+            >> /tmp/manifest-files.jsonl
 
-          echo "✓ All-states file uploaded to staging (not in manifest — convenience download only)"
+          echo "✓ All-states file uploaded to staging and added to the manifest"
 
           MAPPINGS_SOURCE="opensearch/address-mappings.json"
           MAPPINGS_STAGING_KEY="${STAGING_PREFIX}/mappings.json"
@@ -1206,12 +1211,12 @@ jobs:
           # Derive human-readable source release name (e.g., "February 2026")
           SOURCE_RELEASE=$(date -d "${GNAF_VERSION/./-}-01" +"%B %Y")
 
-          # Assemble the files array from the per-state JSONL
+          # Assemble the files array from the per-state JSONL plus all.ndjson.gz
           FILES_JSON=$(jq --slurp '.' /tmp/manifest-files.jsonl)
 
-          # Build the v1 manifest
+          # Build the v2 manifest
           jq -n \
-            --argjson manifest_version 1 \
+            --argjson manifest_version 2 \
             --arg product "address" \
             --arg version "$VERSION_DASH" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -1234,12 +1239,58 @@ jobs:
               total_records: $total_records,
               index: {
                 mappings_key: ("data/address/" + $version + "/mappings.json"),
-                settings: { number_of_shards: 3, number_of_replicas: 0 }
+                settings: { number_of_shards: 1, number_of_replicas: 0 },
+                source_keys: [("data/address/" + $version + "/all.ndjson.gz")]
               }
             }' > /tmp/manifest.json
 
           echo "--- Manifest preview ---"
           jq . /tmp/manifest.json
+
+      - name: Validate manifest contract
+        if: steps.check_existing.outputs.skip != 'true'
+        run: |
+          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
+          EXPECTED_SOURCE_KEY="data/address/${VERSION_DASH}/all.ndjson.gz"
+          EXPECTED_FILE_KEYS=$(jq -nc --arg version "$VERSION_DASH" '
+            [
+              "vic",
+              "nsw",
+              "qld",
+              "sa",
+              "wa",
+              "tas",
+              "nt",
+              "act",
+              "ot",
+              "all"
+            ] | map("data/address/" + $version + "/" + . + ".ndjson.gz")
+          ')
+          jq -e \
+            --arg expected_source_key "$EXPECTED_SOURCE_KEY" \
+            --argjson expected_file_keys "$EXPECTED_FILE_KEYS" '
+              .manifest_version == 2 and
+              (.files | type) == "array" and
+              ([.files[].key] | sort) == ($expected_file_keys | sort) and
+              (.index.source_keys | type) == "array" and
+              (.index.source_keys | length) == 1 and
+              .index.source_keys[0] == $expected_source_key and
+              (
+                [ .index.source_keys[] as $key
+                  | .files[]
+                  | select(.key == $key)
+                  | .records
+                ] | add
+              ) == .total_records and
+              (
+                [ .index.source_keys[] as $key
+                  | any(.files[]; .key == $key)
+                ] | all
+              ) and
+              .index.settings.number_of_shards == 1 and
+              .index.settings.number_of_replicas == 0
+            ' /tmp/manifest.json >/dev/null
+          echo "✓ Manifest contract validated"
 
       # Phase 2: VERIFY staged data files in S3 BEFORE promoting to published.
       - name: Verify staged data files (pre-promote gate)

@@ -7,6 +7,7 @@ import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { compress } from "../dist/compress.js";
+import { buildAddressManifestV2, validateAddressManifestV2 } from "../dist/manifest.js";
 import { writeMetadata } from "../dist/metadata.js";
 import { split } from "../dist/split.js";
 
@@ -68,10 +69,20 @@ function resolveGnafLoaderVersion() {
   }
 }
 
+async function manifestFileForPath({ gzipPath, key, records }) {
+  return {
+    key,
+    records,
+    bytes: (await readFile(gzipPath)).byteLength,
+    sha256: execFileSync("sha256sum", [gzipPath], { encoding: "utf-8" }).split(/\s+/)[0],
+  };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const inputPath = resolve(args.input);
   const assetDir = resolve(args.assetDir);
+  const versionDash = args.version.replaceAll(".", "-");
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf-8"),
   );
@@ -97,6 +108,33 @@ async function main() {
   const allFile = join(assetDir, `flat-white-${args.version}-all.ndjson.gz`);
   await concatenateGzipFiles(compressedFiles, allFile);
 
+  const manifestFiles = await Promise.all(compressedFiles.map(async (gzipPath) => {
+    const state = basename(gzipPath).match(/-([a-z]+)\.ndjson\.gz$/)?.[1];
+    if (state == null) {
+      throw new Error(`Could not derive state key from ${gzipPath}`);
+    }
+
+    const stateUpper = state.toUpperCase();
+    const records = splitResult.states[stateUpper];
+    if (records == null) {
+      throw new Error(`Missing split record count for ${stateUpper}`);
+    }
+
+    return manifestFileForPath({
+      gzipPath,
+      key: `data/address/${versionDash}/${state}.ndjson.gz`,
+      records,
+    });
+  }));
+
+  manifestFiles.push(
+    await manifestFileForPath({
+      gzipPath: allFile,
+      key: `data/address/${versionDash}/all.ndjson.gz`,
+      records: splitResult.totalCount,
+    }),
+  );
+
   const metadata = await writeMetadata({
     ndjsonPath: inputPath,
     version: args.version,
@@ -114,6 +152,25 @@ async function main() {
   }
 
   const states = Object.keys(splitResult.states).sort();
+
+  const manifest = buildAddressManifestV2({
+    version: versionDash,
+    createdAt: new Date().toISOString(),
+    pipeline: {
+      repo: "fixture/quarterly-shape-smoke",
+      commit: "fixture",
+      run_id: "fixture",
+    },
+    source: {
+      name: "G-NAF",
+      release: "Fixture",
+      url: "https://data.gov.au/dataset/geocoded-national-address-file-g-naf",
+    },
+    files: manifestFiles,
+    sourceKeys: [`data/address/${versionDash}/all.ndjson.gz`],
+  });
+  validateAddressManifestV2(manifest, [`data/address/${versionDash}/all.ndjson.gz`]);
+  await writeFile(join(assetDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
   // Boundary coverage thresholds for the FIXTURE shape smoke. The committed
   // fixture sits at 100% on every boundary type except ward (99.6%, two
