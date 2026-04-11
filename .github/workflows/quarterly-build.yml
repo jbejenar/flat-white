@@ -1196,6 +1196,19 @@ jobs:
             --content-type "application/json" >/dev/null
           echo "✓ Mappings uploaded to staging"
 
+          MAPPINGS_SOURCE="opensearch/address-mappings.json"
+          MAPPINGS_STAGING_KEY="${STAGING_PREFIX}/mappings.json"
+          if [[ ! -f "$MAPPINGS_SOURCE" ]]; then
+            echo "::error::Mappings file not found: $MAPPINGS_SOURCE"
+            exit 1
+          fi
+          aws s3api put-object \
+            --bucket "${S3_BUCKET}" \
+            --key "${MAPPINGS_STAGING_KEY}" \
+            --body "$MAPPINGS_SOURCE" \
+            --content-type "application/json" >/dev/null
+          echo "✓ Mappings uploaded to staging"
+
           # Export for subsequent steps
           echo "version_dash=${VERSION_DASH}" >> "$GITHUB_OUTPUT"
           echo "total_records=${TOTAL_RECORDS}" >> "$GITHUB_OUTPUT"
