@@ -109,7 +109,7 @@ jobs:
           # nested path `^gnaf-loader/`) is explicitly included — a submodule
           # bump is one of the highest-risk inputs to the load/flatten path
           # and must never skip the smoke.
-          PATTERN='^(Dockerfile|docker-entrypoint\.sh|scripts/|sql/|src/(split|verification-report|metadata|compress|verify|schema|flatten)\.ts|fixtures/|test/|\.github/workflows/ci\.yml|package(-lock)?\.json|tsconfig\.json|\.nvmrc|gnaf-loader$|gnaf-loader/)'
+          PATTERN='^(Dockerfile|docker-entrypoint\.sh|scripts/|sql/|src/(split|verification-report|metadata|manifest|compress|verify|schema|flatten)\.ts|fixtures/|test/|\.github/workflows/ci\.yml|package(-lock)?\.json|tsconfig\.json|\.nvmrc|gnaf-loader$|gnaf-loader/)'
 
           # 3-dot diff = changes from merge-base to HEAD (true PR delta), not
           # `git diff A B` which compares snapshots and would flag files that
