@@ -167,9 +167,34 @@ The G-NAF data version stays at `2026.04` for all `v2026.04.N` patches — the p
 
 ### What patch releases do NOT do
 
-- **Do not delete the parent release.** Patches are additive. Consumers who pinned to `v2026.04` can keep that pin if they accept the bug; consumers who want the fix bump their pin to `v2026.04.1`. The catalogue (E1.08) eventually shows both.
+- **Do not delete the parent release by default.** Patches are normally additive. Consumers who pinned to `v2026.04` can keep that pin if they accept the bug; consumers who want the fix bump their pin to `v2026.04.1`. The catalogue (E1.08) eventually shows both.
 - **Do not rebuild the G-NAF data.** Use the same `gnaf_version`. The fix is in flat-white code, not in upstream G-NAF.
 - **Do not change the schema.** Patches are bug fixes only. Schema changes need a quarterly release with a schema version bump.
+
+### Exceptional cleanup of superseded patch releases
+
+Delete older patch releases only when all three conditions are true:
+
+1. a newer patch in the same chain is the single canonical consumer target
+2. no downstream consumers are pinned to the older patch tags
+3. the operator intentionally wants a single visible release per quarterly line
+
+When that bar is met, clean up the superseded patches completely:
+
+```bash
+# Example: keep only v2026.02.7 in the 2026.02 patch line
+for tag in v2026.02.3 v2026.02.4 v2026.02.5 v2026.02.6; do
+  gh release delete "$tag" --yes
+  git push origin ":refs/tags/${tag}"
+done
+```
+
+Rules:
+
+- Keep the newest patch release in the line.
+- Delete the GitHub release object and the matching Git tag together.
+- Do not use this for quarterly parents that still have active pinned consumers.
+- Prefer documenting the cleanup decision in the PR or CHANGELOG when it affects a public patch chain.
 
 ### Verifying a patch release
 
