@@ -199,6 +199,7 @@ describe("resolveDataSources", () => {
     delete process.env.DOWNLOAD_URL_GNAF;
     delete process.env.DOWNLOAD_URL_ADMIN_BDYS;
     delete process.env.ADMIN_BDYS_EXTRACTED_DIR;
+    delete process.env.ADMIN_BDYS_VERSION;
     Object.assign(process.env, originalEnv);
   });
 
@@ -347,6 +348,101 @@ describe("discoverDataSources", () => {
       "Could not find the 2026.05 G-NAF GDA2020 ZIP on data.gov.au",
     );
   });
+
+  it("uses the freshest available Admin Boundaries release independently of G-NAF", async () => {
+    const mockFetch: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes(GNAF_PACKAGE_ID)) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            result: {
+              resources: [
+                {
+                  name: "MAY 2026 - Geoscape G-NAF - GDA2020",
+                  format: "ZIP",
+                  state: "active",
+                  url: "https://example.com/g-naf_may26_allstates_gda2020_psv.zip",
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          result: {
+            resources: [
+              {
+                name: "FEB26 - Geoscape Admin Boundaries - ESRI Shapefile - GDA2020",
+                format: "ZIP",
+                state: "active",
+                url: "https://example.com/feb26_adminbounds_gda_2020_shp.zip",
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const sources = await discoverDataSources("2026.05", mockFetch);
+    expect(sources[0]?.url).toBe("https://example.com/g-naf_may26_allstates_gda2020_psv.zip");
+    expect(sources[1]?.url).toBe("https://example.com/feb26_adminbounds_gda_2020_shp.zip");
+    expect(sources[1]?.extractedDir).toBe("FEB26_AdminBounds_GDA_2020_SHP");
+  });
+
+  it("honors an explicit Admin Boundaries version from setup", async () => {
+    const mockFetch: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes(GNAF_PACKAGE_ID)) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            result: {
+              resources: [
+                {
+                  name: "MAY 2026 - Geoscape G-NAF - GDA2020",
+                  format: "ZIP",
+                  state: "active",
+                  url: "https://example.com/g-naf_may26_allstates_gda2020_psv.zip",
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          result: {
+            resources: [
+              {
+                name: "FEB26 - Geoscape Admin Boundaries - ESRI Shapefile - GDA2020",
+                format: "ZIP",
+                state: "active",
+                url: "https://example.com/feb26_adminbounds_gda_2020_shp.zip",
+              },
+              {
+                name: "MAY26 - Geoscape Admin Boundaries - ESRI Shapefile - GDA2020",
+                format: "ZIP",
+                state: "active",
+                url: "https://example.com/may26_adminbounds_gda_2020_shp.zip",
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const sources = await discoverDataSources("2026.05", mockFetch, "2026.02");
+    expect(sources[1]?.url).toBe("https://example.com/feb26_adminbounds_gda_2020_shp.zip");
+    expect(sources[1]?.extractedDir).toBe("FEB26_AdminBounds_GDA_2020_SHP");
+  });
 });
 
 describe("resolveDownloadDataSources", () => {
@@ -394,9 +490,48 @@ describe("resolveDownloadDataSources", () => {
     expect(sources[1]?.extractedDir).toBe("APR26_AdminBounds_GDA_2020_SHP");
   });
 
-  it("uses the built-in fallback for 2026.02", async () => {
-    const sources = await resolveDownloadDataSources(DEFAULT_FALLBACK_VERSION);
-    expect(sources).toEqual(DEFAULT_DATA_SOURCES);
+  it("discovers 2026.02 instead of relying on built-in fallback URLs", async () => {
+    const mockFetch: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes(GNAF_PACKAGE_ID)) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            result: {
+              resources: [
+                {
+                  name: "FEB 2026 - Geoscape G-NAF - GDA2020",
+                  format: "ZIP",
+                  state: "active",
+                  url: "https://example.com/current-feb-gnaf.zip",
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          result: {
+            resources: [
+              {
+                name: "FEB26 - Geoscape Admin Boundaries - ESRI Shapefile - GDA2020",
+                format: "ZIP",
+                state: "active",
+                url: "https://example.com/current-feb-admin.zip",
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const sources = await resolveDownloadDataSources(DEFAULT_FALLBACK_VERSION, mockFetch);
+    expect(sources[0]?.url).toBe("https://example.com/current-feb-gnaf.zip");
+    expect(sources[1]?.url).toBe("https://example.com/current-feb-admin.zip");
   });
 });
 

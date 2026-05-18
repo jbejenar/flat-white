@@ -4,10 +4,10 @@ import json
 import re
 import sys
 import urllib.request
+from argparse import ArgumentParser
 
 GNAF_PACKAGE_ID = "19432f89-dc3a-4ef3-b943-5326ef1dbecc"
 ADMIN_PACKAGE_ID = "bdcf5b09-89bc-47ec-9281-6b8e9ee147aa"
-FALLBACK_VERSION = "2026.02"
 MONTHS = {
     "JAN": "01",
     "FEB": "02",
@@ -63,40 +63,40 @@ def extract_versions(resources: list[dict], *, admin: bool) -> set[str]:
     return versions
 
 
-def compatible_versions(
-    gnaf_versions: set[str],
-    admin_versions: set[str],
-    fallback_version: str = FALLBACK_VERSION,
-) -> list[str]:
-    gnaf_compatible = set(gnaf_versions)
-    admin_compatible = set(admin_versions)
-
-    # data.gov.au only exposes a small moving window of resources. Keep the
-    # known-good Feb 2026 fallback eligible only when at least one package still
-    # advertises it, so parser/API regressions still fail fast.
-    if fallback_version in gnaf_versions:
-        admin_compatible.add(fallback_version)
-    if fallback_version in admin_versions:
-        gnaf_compatible.add(fallback_version)
-
-    return sorted(gnaf_compatible & admin_compatible)
-
-
-def resolve_latest_common_version(gnaf_versions: set[str], admin_versions: set[str]) -> str:
-    common_versions = compatible_versions(gnaf_versions, admin_versions)
-
-    if not common_versions:
+def resolve_latest_release_versions(
+    gnaf_versions: set[str], admin_versions: set[str]
+) -> dict[str, str]:
+    if not gnaf_versions:
+        raise RuntimeError("No active G-NAF GDA2020 ZIP releases found on data.gov.au")
+    if not admin_versions:
         raise RuntimeError(
-            "No overlapping quarterly G-NAF/Admin Boundaries releases found on data.gov.au"
+            "No active Admin Boundaries GDA2020 shapefile ZIP releases found on data.gov.au"
         )
 
-    return common_versions[-1]
+    return {
+        "gnaf_version": sorted(gnaf_versions)[-1],
+        "admin_bdys_version": sorted(admin_versions)[-1],
+    }
 
 
 def main() -> int:
+    parser = ArgumentParser(
+        description="Discover the freshest available G-NAF and Admin Boundaries releases."
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print both discovered versions as JSON instead of only the G-NAF version.",
+    )
+    args = parser.parse_args()
+
     gnaf_versions = extract_versions(fetch_resources(GNAF_PACKAGE_ID), admin=False)
     admin_versions = extract_versions(fetch_resources(ADMIN_PACKAGE_ID), admin=True)
-    print(resolve_latest_common_version(gnaf_versions, admin_versions))
+    versions = resolve_latest_release_versions(gnaf_versions, admin_versions)
+    if args.json:
+        print(json.dumps(versions, sort_keys=True))
+    else:
+        print(versions["gnaf_version"])
     return 0
 
 
