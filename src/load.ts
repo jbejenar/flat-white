@@ -37,6 +37,8 @@ export interface LoadOptions {
   pgPassword?: string;
   /** Geoscape version string, e.g. '202602' */
   geoscapeVersion?: string;
+  /** Previous Geoscape version string, e.g. '202511'. Derived from geoscapeVersion by default. */
+  previousGeoscapeVersion?: string;
   /** Coordinate reference system. Default: 7844 (GDA2020) */
   srid?: number;
   /** Max parallel processes for gnaf-loader. Default: 4 */
@@ -67,6 +69,21 @@ function validateGeoscapeVersion(v: string): string {
     throw new Error(`--geoscape-version must be a 6-digit YYYYMM string (got "${v}")`);
   }
   return v;
+}
+
+export function derivePreviousGeoscapeVersion(geoscapeVersion: string): string {
+  const validated = validateGeoscapeVersion(geoscapeVersion);
+  const year = Number(validated.slice(0, 4));
+  const month = Number(validated.slice(4, 6));
+
+  if (month === 2) return `${year - 1}11`;
+  if (month === 5) return `${year}02`;
+  if (month === 8) return `${year}05`;
+  if (month === 11) return `${year}08`;
+
+  throw new Error(
+    `--geoscape-version must use a quarterly release month: 02, 05, 08, or 11 (got "${geoscapeVersion}")`,
+  );
 }
 
 export function deriveGeoscapeVersion(): string | null {
@@ -120,6 +137,19 @@ export function buildArgs(opts: LoadOptions): string[] {
   const dataDir = resolve(opts.dataDir ?? resolve(PROJECT_ROOT, "data"));
   const gnafTablesPath = resolveGnafTablesPath(dataDir);
   const adminBdysPath = resolveAdminBdysPath(dataDir);
+  const geoscapeVersion = validateGeoscapeVersion(
+    opts.geoscapeVersion ??
+      deriveGeoscapeVersion() ??
+      (() => {
+        throw new Error(
+          "Geoscape version is required. Set GNAF_VERSION env var (e.g. GNAF_VERSION=2026.05) " +
+            "or pass --geoscape-version YYYYMM.",
+        );
+      })(),
+  );
+  const previousGeoscapeVersion = validateGeoscapeVersion(
+    opts.previousGeoscapeVersion ?? derivePreviousGeoscapeVersion(geoscapeVersion),
+  );
 
   const args: string[] = [
     resolve(PROJECT_ROOT, "gnaf-loader", "load-gnaf.py"),
@@ -132,16 +162,9 @@ export function buildArgs(opts: LoadOptions): string[] {
     "--pguser",
     opts.pgUser ?? "postgres",
     "--geoscape-version",
-    validateGeoscapeVersion(
-      opts.geoscapeVersion ??
-        deriveGeoscapeVersion() ??
-        (() => {
-          throw new Error(
-            "Geoscape version is required. Set GNAF_VERSION env var (e.g. GNAF_VERSION=2026.05) " +
-              "or pass --geoscape-version YYYYMM.",
-          );
-        })(),
-    ),
+    geoscapeVersion,
+    "--previous-geoscape-version",
+    previousGeoscapeVersion,
     "--srid",
     String(opts.srid ?? 7844),
     "--max-processes",
@@ -282,6 +305,16 @@ async function main(): Promise<void> {
           throw new Error(`--geoscape-version must be a 6-digit YYYYMM string (got "${v}")`);
         }
         opts.geoscapeVersion = v;
+        break;
+      }
+      case "--previous-geoscape-version": {
+        const v = args[++i];
+        if (!/^\d{6}$/.test(v)) {
+          throw new Error(
+            `--previous-geoscape-version must be a 6-digit YYYYMM string (got "${v}")`,
+          );
+        }
+        opts.previousGeoscapeVersion = v;
         break;
       }
       case "--server-data-dir":
