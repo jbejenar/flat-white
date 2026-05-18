@@ -15,6 +15,26 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
 
+## [v2026.05] - 2026-05-18
+
+### Release
+
+- **Release version:** 2026.05
+- **G-NAF data version:** 2026.05
+- **Schema version:** 0.3.0
+- **Total addresses:** 15057532
+- **Per-state counts:**
+  - ACT: 245919
+  - NSW: 4634883
+  - NT: 110243
+  - OT: 3805
+  - QLD: 3105019
+  - SA: 1126439
+  - TAS: 346900
+  - VIC: 3953704
+  - WA: 1530620
+
+
 ## [v2026.02.7] - 2026-04-11
 
 ### Release
