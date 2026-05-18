@@ -67,6 +67,20 @@ export const DEFAULT_DATA_SOURCES: DataSource[] = [
 export const DEFAULT_FALLBACK_VERSION = "2026.02";
 export const GNAF_PACKAGE_ID = "19432f89-dc3a-4ef3-b943-5326ef1dbecc";
 export const ADMIN_BDYS_PACKAGE_ID = "bdcf5b09-89bc-47ec-9281-6b8e9ee147aa";
+const MONTHS_BY_ABBREV: Record<string, string> = {
+  JAN: "01",
+  FEB: "02",
+  MAR: "03",
+  APR: "04",
+  MAY: "05",
+  JUN: "06",
+  JUL: "07",
+  AUG: "08",
+  SEP: "09",
+  OCT: "10",
+  NOV: "11",
+  DEC: "12",
+};
 
 interface CkanResource {
   format?: string;
@@ -185,6 +199,47 @@ function resourceText(resource: CkanResource): string {
   return `${resource.name ?? ""} ${resource.url ?? ""}`.toLowerCase();
 }
 
+function resourceVersion(resource: CkanResource): string | undefined {
+  const text = `${resource.name ?? ""} ${resource.url ?? ""}`.toUpperCase();
+  const match = text.match(
+    /\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\s_-]?(\d{2}|\d{4})\b/,
+  );
+  if (!match) return undefined;
+
+  const month = MONTHS_BY_ABBREV[match[1]];
+  if (!month) return undefined;
+
+  const rawYear = match[2];
+  const year = rawYear.length === 2 ? `20${rawYear}` : rawYear;
+  return `${year}.${month}`;
+}
+
+function isGnafGda2020Resource(resource: CkanResource): boolean {
+  const text = resourceText(resource);
+  return isZipResource(resource) && text.includes("gda2020") && !text.includes("gda94");
+}
+
+function isAdminBdysGda2020Resource(resource: CkanResource): boolean {
+  const text = resourceText(resource);
+  return (
+    isZipResource(resource) &&
+    text.includes("gda2020") &&
+    !text.includes("gda94") &&
+    (text.includes("shapefile") || text.includes("_shp") || text.includes(" shp"))
+  );
+}
+
+function latestResourceByVersion(resources: CkanResource[]): CkanResource | undefined {
+  return resources
+    .filter((resource) => Boolean(resource.url && resourceVersion(resource)))
+    .sort((a, b) => {
+      const versionA = resourceVersion(a) ?? "";
+      const versionB = resourceVersion(b) ?? "";
+      return versionA.localeCompare(versionB);
+    })
+    .at(-1);
+}
+
 async function fetchCkanPackage(
   packageId: string,
   fetchImpl: typeof fetch = fetch,
@@ -207,24 +262,16 @@ async function fetchCkanPackage(
 export async function discoverDataSources(
   version: string,
   fetchImpl: typeof fetch = fetch,
+  adminBdysVersion?: string,
 ): Promise<DataSource[]> {
-  const tokens = versionTokens(version);
   const [gnafResources, adminResources] = await Promise.all([
     fetchCkanPackage(GNAF_PACKAGE_ID, fetchImpl),
     fetchCkanPackage(ADMIN_BDYS_PACKAGE_ID, fetchImpl),
   ]);
 
   const gnaf = findMatchingResource(gnafResources, [
-    isZipResource,
-    (resource) => {
-      const text = resourceText(resource);
-      return (
-        text.includes("gda2020") &&
-        (text.includes(tokens.gnafNameToken.toLowerCase()) ||
-          text.includes(tokens.compactTokenLower))
-      );
-    },
-    (resource) => !resourceText(resource).includes("gda94"),
+    isGnafGda2020Resource,
+    (resource) => resourceVersion(resource) === version,
   ]);
 
   if (!gnaf?.url) {
@@ -234,25 +281,23 @@ export async function discoverDataSources(
     );
   }
 
-  const admin = findMatchingResource(adminResources, [
-    isZipResource,
-    (resource) => {
-      const text = resourceText(resource);
-      return (
-        text.includes("gda2020") &&
-        (text.includes("shapefile") || text.includes("_shp") || text.includes(" shp")) &&
-        text.includes(tokens.compactTokenLower)
-      );
-    },
-    (resource) => !resourceText(resource).includes("gda94"),
-  ]);
+  const adminCandidates = adminResources
+    .filter(isAdminBdysGda2020Resource)
+    .filter((resource) => !adminBdysVersion || resourceVersion(resource) === adminBdysVersion);
+  const admin = latestResourceByVersion(adminCandidates);
 
   if (!admin?.url) {
+    const requested = adminBdysVersion ? `${adminBdysVersion} ` : "";
     throw new Error(
-      `Could not find the ${version} Administrative Boundaries GDA2020 shapefile ZIP on data.gov.au. ` +
+      `Could not find the ${requested}Administrative Boundaries GDA2020 shapefile ZIP on data.gov.au. ` +
         "Use manual download overrides if Geoscape has changed the resource naming.",
     );
   }
+  const adminVersion = resourceVersion(admin);
+  if (!adminVersion) {
+    throw new Error("Matched Administrative Boundaries resource did not include a release version");
+  }
+  const adminTokens = versionTokens(adminVersion);
 
   return [
     {
@@ -264,7 +309,7 @@ export async function discoverDataSources(
     {
       name: "Administrative Boundaries GDA2020",
       url: admin.url,
-      extractedDir: tokens.adminExtractedDir,
+      extractedDir: adminTokens.adminExtractedDir,
       sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
     },
   ];
@@ -322,12 +367,14 @@ export async function resolveDownloadDataSources(
     return resolveDataSources(version);
   }
 
-  if (version === DEFAULT_FALLBACK_VERSION) {
-    return resolveDataSources(version);
-  }
-
-  console.error(`[download] Auto-discovering data.gov.au sources for ${version}...`);
-  return discoverDataSources(version, fetchImpl);
+  const adminBdysVersion = readEnvOverride("ADMIN_BDYS_VERSION");
+  const adminLabel = adminBdysVersion
+    ? `Admin Boundaries ${adminBdysVersion}`
+    : "latest Admin Boundaries";
+  console.error(
+    `[download] Auto-discovering data.gov.au sources for G-NAF ${version} and ${adminLabel}...`,
+  );
+  return discoverDataSources(version, fetchImpl, adminBdysVersion);
 }
 
 // --- Types ---
@@ -689,14 +736,17 @@ export function resolveOutputDir(version?: string): string {
 
   const sources = resolveDataSources(version);
   const effectiveVersion = version ?? process.env.GNAF_VERSION;
+  const effectiveAdminBdysVersion = readEnvOverride("ADMIN_BDYS_VERSION");
   const fallbackAdminExtractedDir = DEFAULT_DATA_SOURCES.find((s) =>
     s.name.includes("Administrative"),
   )?.extractedDir;
   const adminExtractedDir =
     readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR") ??
-    (effectiveVersion && effectiveVersion !== DEFAULT_FALLBACK_VERSION
-      ? versionTokens(effectiveVersion).adminExtractedDir
-      : fallbackAdminExtractedDir);
+    (effectiveAdminBdysVersion && /^\d{4}\.\d{2}$/.test(effectiveAdminBdysVersion)
+      ? versionTokens(effectiveAdminBdysVersion).adminExtractedDir
+      : effectiveVersion && effectiveVersion !== DEFAULT_FALLBACK_VERSION
+        ? versionTokens(effectiveVersion).adminExtractedDir
+        : fallbackAdminExtractedDir);
   const gnafSource = sources.find((s) => s.name.includes("G-NAF"));
   const adminSource = adminExtractedDir
     ? {
