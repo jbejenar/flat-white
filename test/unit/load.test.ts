@@ -37,6 +37,7 @@ import {
   resolveGnafTablesPath,
   resolveAdminBdysPath,
   deriveGeoscapeVersion,
+  derivePreviousGeoscapeVersion,
 } from "../../src/load.js";
 
 beforeEach(() => {
@@ -69,6 +70,8 @@ describe("buildArgs", () => {
     expect(args).toContain("gnaf");
     expect(args).toContain("--geoscape-version");
     expect(args).toContain("202602");
+    expect(args).toContain("--previous-geoscape-version");
+    expect(args).toContain("202511");
     expect(args).toContain("--srid");
     expect(args).toContain("7844");
     expect(args).toContain("--states");
@@ -173,6 +176,22 @@ describe("deriveGeoscapeVersion", () => {
   });
 });
 
+describe("derivePreviousGeoscapeVersion", () => {
+  it("derives previous release for February across the year boundary", () => {
+    expect(derivePreviousGeoscapeVersion("202602")).toBe("202511");
+  });
+
+  it("derives previous release for other quarterly releases", () => {
+    expect(derivePreviousGeoscapeVersion("202605")).toBe("202602");
+    expect(derivePreviousGeoscapeVersion("202608")).toBe("202605");
+    expect(derivePreviousGeoscapeVersion("202611")).toBe("202608");
+  });
+
+  it("rejects non-quarterly release months", () => {
+    expect(() => derivePreviousGeoscapeVersion("202604")).toThrow(/quarterly release month/);
+  });
+});
+
 describe("buildArgs — geoscape version", () => {
   const originalEnv = process.env.GNAF_VERSION;
 
@@ -190,11 +209,25 @@ describe("buildArgs — geoscape version", () => {
     expect(args[idx + 1]).toBe("202605");
   });
 
+  it("passes previous-geoscape-version derived from explicit geoscapeVersion", () => {
+    const args = buildArgs({ geoscapeVersion: "202602" });
+    const idx = args.indexOf("--previous-geoscape-version");
+    expect(args[idx + 1]).toBe("202511");
+  });
+
+  it("allows previousGeoscapeVersion override", () => {
+    const args = buildArgs({ geoscapeVersion: "202602", previousGeoscapeVersion: "202508" });
+    const idx = args.indexOf("--previous-geoscape-version");
+    expect(args[idx + 1]).toBe("202508");
+  });
+
   it("derives from GNAF_VERSION env var when no explicit option", () => {
     process.env.GNAF_VERSION = "2026.05";
     const args = buildArgs({});
     const idx = args.indexOf("--geoscape-version");
     expect(args[idx + 1]).toBe("202605");
+    const previousIdx = args.indexOf("--previous-geoscape-version");
+    expect(args[previousIdx + 1]).toBe("202602");
   });
 
   it("throws when neither option nor env var set", () => {
@@ -214,6 +247,12 @@ describe("buildArgs — geoscape version validation", () => {
     expect(() => buildArgs({ geoscapeVersion: "abcdef" })).toThrow(
       /must be a 6-digit YYYYMM string/,
     );
+  });
+
+  it("rejects invalid previousGeoscapeVersion override", () => {
+    expect(() =>
+      buildArgs({ geoscapeVersion: "202602", previousGeoscapeVersion: "2025.11" }),
+    ).toThrow(/must be a 6-digit YYYYMM string/);
   });
 });
 
