@@ -184,11 +184,11 @@ A document's `_version` identifies the G-NAF quarter. It does not identify the
 schema, ASGS year, administrative source quarter or release patch. Keep the
 release metadata with downloaded files.
 
-| Surface                        | Contract fields                                                                                                                 |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub release `metadata.json` | `schemaVersion`, `asgsYear`; also `version`, `gnafVersion`, `adminBoundariesVersion`, `buildTimestamp`, `states`, `totalCount`. |
-| S3 `manifest.json`             | `schema_version`, `asgs_year`; `manifest_version: 2` describes the manifest envelope.                                           |
-| OpenSearch mapping `_meta`     | `schemaVersion`, `asgsYear`.                                                                                                    |
+| Surface                                          | Contract fields                                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub release `metadata.json`                   | `schemaVersion`, `asgsYear`; also `version`, `gnafVersion`, `adminBoundariesVersion`, `buildTimestamp`, `states`, `totalCount`. |
+| S3 manifest (`manifests/address-{version}.json`) | `schema_version`, `asgs_year`; `manifest_version: 2` describes the manifest envelope.                                           |
+| OpenSearch mapping `_meta`                       | `schemaVersion`, `asgsYear`.                                                                                                    |
 
 The local [`BuildMetadata`](../src/metadata.ts) helper is a separate shape: it
 emits `version`, `schemaVersion`, `asgsYear`, `buildTimestamp`, `gnafLoaderVersion`,

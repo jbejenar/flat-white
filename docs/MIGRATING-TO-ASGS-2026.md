@@ -68,11 +68,11 @@ URLs and verify the loaded schema rather than inferring a quarter from that valu
 
 The same contract is identified differently by each distribution format:
 
-| Where                          | Fields to check                              |
-| ------------------------------ | -------------------------------------------- |
-| GitHub release `metadata.json` | `schemaVersion: "1.0.0"`, `asgsYear: 2026`   |
-| S3 `manifest.json`             | `schema_version: "1.0.0"`, `asgs_year: 2026` |
-| OpenSearch mapping `_meta`     | `schemaVersion: "1.0.0"`, `asgsYear: 2026`   |
+| Where                                            | Fields to check                              |
+| ------------------------------------------------ | -------------------------------------------- |
+| GitHub release `metadata.json`                   | `schemaVersion: "1.0.0"`, `asgsYear: 2026`   |
+| S3 manifest (`manifests/address-{version}.json`) | `schema_version: "1.0.0"`, `asgs_year: 2026` |
+| OpenSearch mapping `_meta`                       | `schemaVersion: "1.0.0"`, `asgsYear: 2026`   |
 
 S3 `manifest_version` remains **2**. That is the manifest format, not the address
 schema. Historical manifests may lack both geography fields; absence must not be

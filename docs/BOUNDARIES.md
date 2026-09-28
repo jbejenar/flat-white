@@ -70,11 +70,14 @@ and is rebuilt from source by the state wrapper. The cache namespace is
 `v3-asgs2026`.
 
 The input check proves that the expected columns and at least one matching code
-exist. It does **not** prove that every address has a census match. The current
-output thresholds gate administrative fields; the verifier reports mesh-block,
-SA1 and SA2 coverage but does not impose census percentage thresholds or separately
-report SA3, SA4 and GCCSA coverage. Review census coverage and representative
-hierarchy joins when assessing a production release.
+exist. It does **not** prove that every address has a census match. The production
+`verify.ts` thresholds gate administrative fields. It reports mesh-block, SA1
+and SA2 coverage without imposing census percentage thresholds or separately
+reporting SA3, SA4 and GCCSA coverage. The separate `verification-report.ts` tool
+accepts configurable census thresholds; the quarterly fixture shape smoke uses
+those, while the production release workflow does not currently supply them.
+Review census coverage and representative hierarchy joins when assessing a
+production release.
 
 ## Administrative gaps vary by state
 
