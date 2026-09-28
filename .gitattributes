@@ -1,0 +1,4 @@
+# Generated one-line-per-address baseline: whole-line diffs repeat unchanged data.
+# Keep the complete text file and byte-for-byte regression checks. For review use
+# fixtures/SCHEMA-1.0-CHANGES.md or explicitly request: git diff --text -- <path>
+fixtures/expected-output.ndjson -diff linguist-generated=true

@@ -40,6 +40,13 @@ assignments, runs both flatten paths and verifies the output.
 | [SCHEMA-REFERENCE.md](SCHEMA-REFERENCE.md)                 | Table and column reference. Read this before opening the large seed.                       |
 | [edge-cases.md](edge-cases.md)                             | Measured output coverage, example PIDs and known gaps.                                     |
 
+## Review generated output changes
+
+The full NDJSON baseline remains committed and tested byte for byte. Its large
+whole-line diff is suppressed by Git attributes. Read the
+[schema 1.0.0 change inventory](SCHEMA-1.0-CHANGES.md) for every changed field,
+snapshot hashes and commands to inspect all before/after values.
+
 ## What changed in the census fixture?
 
 `seed-census-2026.sql` adds `mb_2026_code` to principal and alias address tables and
