@@ -130,16 +130,18 @@ test "$ACTUAL" = "$EXPECTED"
 ```
 
 For document validation, use a checkout matching the release's schema, install
-its dependencies and run `npm run build`. The verifier reads uncompressed NDJSON:
+its dependencies and run `npm run build`. Run this from the directory containing
+the downloaded state file and its `metadata.json`:
 
 ```bash
-gzip -cd "$FILE" > addresses.ndjson
-node /path/to/flat-white/dist/verify.js addresses.ndjson --expected-count "$EXPECTED"
+node /path/to/flat-white/dist/verification-report.js . \
+  --states VIC --output verification-report.md
 ```
 
-Replace `/path/to/flat-white` with that checkout's path. Allow disk space for the
-uncompressed file. These checks cover compressed-file integrity, counts and the
-document schema; they do not prove that an external geographic join uses the
+Replace `/path/to/flat-white` with that checkout's path. The report streams the
+compressed file, validates every document, checks state membership and reports
+coverage for all census levels. The commands above check integrity, counts and
+the document schema; they do not prove that an external geographic join uses the
 right edition. The [migration checklist](docs/MIGRATING-TO-ASGS-2026.md#upgrade-in-six-steps)
 covers that part.
 

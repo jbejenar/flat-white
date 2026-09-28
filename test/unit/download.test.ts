@@ -596,4 +596,21 @@ describe("isExtractionComplete", () => {
       false,
     );
   });
+
+  it("rejects files posing as required G-NAF directories", () => {
+    mkdirSync(resolve(testDir, "G-NAF AUGUST 2026"));
+    writeFileSync(resolve(testDir, "G-NAF AUGUST 2026/Standard"), "not a directory");
+    mkdirSync(resolve(testDir, "G-NAF AUGUST 2026/Authority Code"));
+    expect(isExtractionComplete(testDir, ["G-NAF */Standard", "G-NAF */Authority Code"])).toBe(
+      false,
+    );
+  });
+
+  it("requires Standard and Authority Code under the same release directory", () => {
+    mkdirSync(resolve(testDir, "G-NAF MAY 2026/Standard"), { recursive: true });
+    mkdirSync(resolve(testDir, "G-NAF AUGUST 2026/Authority Code"), { recursive: true });
+    expect(isExtractionComplete(testDir, ["G-NAF */Standard", "G-NAF */Authority Code"])).toBe(
+      false,
+    );
+  });
 });

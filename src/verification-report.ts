@@ -16,8 +16,9 @@ import { createInterface } from "node:readline";
 import { createGunzip } from "node:zlib";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PassThrough } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { AddressDocumentSchema } from "./schema.js";
+import type { AddressDocument } from "./schema.js";
 import type { BuildMetadata } from "./metadata.js";
 import { ENUM_FIELD_PATHS } from "./verify.js";
 import type { EnumSets, EnumUnknownCounts } from "./verify.js";
@@ -27,10 +28,7 @@ const VALID_STATES = new Set(DEFAULT_STATES);
 
 /** Per-field minimum boundary coverage thresholds (percent, 0-100). */
 export type BoundaryCoverageThresholds = Partial<
-  Record<
-    "lga" | "ward" | "stateElectorate" | "commonwealthElectorate" | "meshBlock" | "sa1" | "sa2",
-    number
-  >
+  Record<keyof AddressDocument["boundaries"], number>
 >;
 
 export interface CoverageBelowThreshold {
@@ -62,10 +60,8 @@ export interface VerificationReport {
 }
 
 /**
- * Verify a single gzipped NDJSON file by decompressing and streaming through verify().
- *
- * Since verify() expects a file path, we decompress to a temp pipeline.
- * Instead, we directly stream and apply the same checks.
+ * Stream a gzipped state artifact, validating every record before publication.
+ * Decompression and input errors reject the promise and close the whole stream.
  */
 export async function verifyGzippedState(
   gzPath: string,
@@ -75,7 +71,7 @@ export async function verifyGzippedState(
 ): Promise<StateVerification> {
   let rowCount = 0;
   let schemaErrors = 0;
-  const boundaryCounts: Record<string, number> = {
+  const boundaryCounts: Record<keyof AddressDocument["boundaries"], number> = {
     lga: 0,
     ward: 0,
     stateElectorate: 0,
@@ -83,9 +79,12 @@ export async function verifyGzippedState(
     meshBlock: 0,
     sa1: 0,
     sa2: 0,
+    sa3: 0,
+    sa4: 0,
+    gccsa: 0,
   };
   let qualityErrors = 0;
-  let qualityWarnings = 0;
+  const qualityWarnings = 0;
   // NOTE: For NSW (~4.5M addresses), this Set can consume ~250-360MB.
   // The Set is scoped per-state (released between calls), and the workflow
   // step uses --max-old-space-size=512 to provide headroom.
@@ -94,87 +93,90 @@ export async function verifyGzippedState(
   const enumUnknownCounts: EnumUnknownCounts = {};
 
   const gunzip = createGunzip();
-  const passthrough = new PassThrough();
   const fileStream = createReadStream(gzPath);
-
-  // Pipe through gunzip without awaiting — we read from readline
-  fileStream.pipe(gunzip).pipe(passthrough);
-
   const rl = createInterface({
-    input: passthrough,
+    input: gunzip,
     crlfDelay: Infinity,
   });
+  // Register the reader before starting I/O and handle the pipeline rejection
+  // immediately. Neither a missing file nor a truncated gzip can leak an
+  // unhandled error or leave the reader waiting forever.
+  const lines = rl[Symbol.asyncIterator]();
+  let streamError: unknown;
+  const completion = pipeline(fileStream, gunzip).catch((error: unknown) => {
+    streamError = error;
+    rl.close();
+  });
 
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    rowCount++;
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      rowCount++;
 
-    let doc: Record<string, unknown>;
-    try {
-      doc = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      schemaErrors++;
-      continue;
-    }
-
-    // Schema validation (sample: validate first 100 + every 1000th for performance)
-    if (rowCount <= 100 || rowCount % 1000 === 0) {
-      const result = AddressDocumentSchema.safeParse(doc);
-      if (!result.success) {
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch {
         schemaErrors++;
+        continue;
       }
-    }
 
-    // PID uniqueness
-    const pid = doc._id as string;
-    if (pid) {
-      if (pids.has(pid)) {
-        duplicatePids++;
+      const parsed = AddressDocumentSchema.safeParse(value);
+      if (!parsed.success) {
+        schemaErrors++;
+        continue;
       }
-      pids.add(pid);
-    }
+      const doc = parsed.data;
 
-    // Boundary coverage
-    const boundaries = doc.boundaries as Record<string, unknown> | null;
-    if (boundaries) {
-      if (boundaries.lga) boundaryCounts.lga++;
-      if (boundaries.ward) boundaryCounts.ward++;
-      if (boundaries.stateElectorate) boundaryCounts.stateElectorate++;
-      if (boundaries.commonwealthElectorate) boundaryCounts.commonwealthElectorate++;
-      if (boundaries.meshBlock) boundaryCounts.meshBlock++;
-      if (boundaries.sa1) boundaryCounts.sa1++;
-      if (boundaries.sa2) boundaryCounts.sa2++;
-    }
-
-    // Coordinate quality check
-    const geocode = doc.geocode as { latitude: number; longitude: number } | null;
-    if (geocode) {
-      const { latitude, longitude } = geocode;
-      if (latitude < -44 || latitude > -9 || longitude < 96 || longitude > 168) {
-        qualityErrors++;
+      // PID uniqueness
+      const pid = doc._id;
+      if (pid) {
+        if (pids.has(pid)) {
+          duplicatePids++;
+        }
+        pids.add(pid);
       }
-    }
 
-    // State/postcode cross-validation
-    const docState = doc.state as string;
-    const postcode = doc.postcode as string | null;
-    if (postcode && docState !== state && docState) {
-      qualityWarnings++;
-    }
+      // Boundary coverage
+      for (const field of Object.keys(boundaryCounts) as (keyof typeof boundaryCounts)[]) {
+        if (doc.boundaries[field]) boundaryCounts[field]++;
+      }
 
-    // Enum-ish field validation
-    if (enumSets) {
-      for (const { field, path } of ENUM_FIELD_PATHS) {
-        const value = path(doc);
-        if (value === null || value === undefined) continue;
-        const validSet = enumSets[field];
-        if (!validSet) continue;
-        if (!validSet.has(value)) {
-          enumUnknownCounts[field] = (enumUnknownCounts[field] ?? 0) + 1;
+      // Coordinate quality check
+      const geocode = doc.geocode;
+      if (geocode) {
+        const { latitude, longitude } = geocode;
+        if (latitude < -44 || latitude > -9 || longitude < 96 || longitude > 168) {
+          qualityErrors++;
+        }
+      }
+      for (const { lat, lng } of doc.allGeocodes) {
+        if (lat < -44 || lat > -9 || lng < 96 || lng > 168) qualityErrors++;
+      }
+
+      // A per-state artifact must contain only that state, including records
+      // whose postcode is null (valid for some addresses).
+      if (doc.state !== state) qualityErrors++;
+
+      // Enum-ish field validation
+      if (enumSets) {
+        for (const { field, path } of ENUM_FIELD_PATHS) {
+          const value = path(doc);
+          if (value === null || value === undefined) continue;
+          const validSet = enumSets[field];
+          if (!validSet) continue;
+          if (!validSet.has(value)) {
+            enumUnknownCounts[field] = (enumUnknownCounts[field] ?? 0) + 1;
+          }
         }
       }
     }
+  } finally {
+    rl.close();
+    gunzip.destroy();
+    await completion;
   }
+  if (streamError) throw streamError;
 
   const boundaryCoverage: Record<string, number> = {};
   if (rowCount > 0) {
@@ -198,7 +200,7 @@ export async function verifyGzippedState(
       number,
     ][]) {
       if (threshold === undefined) continue;
-      const actual = rowCount > 0 ? (boundaryCoverage[field] ?? 0) : 0;
+      const actual = rowCount > 0 ? (boundaryCounts[field] / rowCount) * 100 : 0;
       if (actual < threshold) {
         coverageBelowThreshold.push({ field, actual, threshold });
       }
@@ -265,13 +267,17 @@ export function formatVerificationReport(report: VerificationReport): string {
   // Boundary coverage table
   lines.push("## Boundary Coverage (%)");
   lines.push("");
-  lines.push("| State | LGA | Ward | State Elect. | Cwlth Elect. | Mesh Block | SA1 | SA2 |");
-  lines.push("|-------|----:|-----:|-------------:|-------------:|-----------:|----:|----:|");
+  lines.push(
+    "| State | LGA | Ward | State Elect. | Cwlth Elect. | Mesh Block | SA1 | SA2 | SA3 | SA4 | GCCSA |",
+  );
+  lines.push(
+    "|-------|----:|-----:|-------------:|-------------:|-----------:|----:|----:|----:|----:|------:|",
+  );
 
   for (const s of report.states) {
     const c = s.boundaryCoverage;
     lines.push(
-      `| ${s.state} | ${c.lga ?? "-"} | ${c.ward ?? "-"} | ${c.stateElectorate ?? "-"} | ${c.commonwealthElectorate ?? "-"} | ${c.meshBlock ?? "-"} | ${c.sa1 ?? "-"} | ${c.sa2 ?? "-"} |`,
+      `| ${s.state} | ${c.lga ?? "-"} | ${c.ward ?? "-"} | ${c.stateElectorate ?? "-"} | ${c.commonwealthElectorate ?? "-"} | ${c.meshBlock ?? "-"} | ${c.sa1 ?? "-"} | ${c.sa2 ?? "-"} | ${c.sa3 ?? "-"} | ${c.sa4 ?? "-"} | ${c.gccsa ?? "-"} |`,
     );
   }
 
@@ -359,6 +365,9 @@ const VALID_THRESHOLD_FIELDS = new Set<keyof BoundaryCoverageThresholds>([
   "meshBlock",
   "sa1",
   "sa2",
+  "sa3",
+  "sa4",
+  "gccsa",
 ]);
 
 /**

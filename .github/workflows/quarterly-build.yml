@@ -107,14 +107,14 @@ jobs:
           fi
           echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Skip already built quarters on scheduled runs
+      - name: Check release and tag availability
         id: release-check
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: v${{ steps.version.outputs.release_version }}
-        run: bash scripts/check-quarterly-release.sh "$EVENT_NAME" "$REPOSITORY" "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+        run: bash scripts/check-quarterly-release.sh "$EVENT_NAME" "$REPOSITORY" "$RELEASE_TAG" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # Job 1: Build each state in parallel
@@ -440,9 +440,11 @@ jobs:
           cp docs/DOCUMENT-SCHEMA.md "$ASSET_DIR/DOCUMENT-SCHEMA.md"
 
           # Export for later steps
-          echo "total=${TOTAL}" >> "$GITHUB_OUTPUT"
-          echo "schema_version=${SCHEMA_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "asset_dir=${ASSET_DIR}" >> "$GITHUB_OUTPUT"
+          {
+            echo "total=${TOTAL}"
+            echo "schema_version=${SCHEMA_VERSION}"
+            echo "asset_dir=${ASSET_DIR}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Verify upstream artifacts present
         run: |
@@ -456,7 +458,7 @@ jobs:
           #
           # Expected at this point: 9 per-state ndjson.gz + metadata.json +
           # DOCUMENT-SCHEMA.md = 11.
-          ASSET_COUNT=$(ls -1 "$ASSET_DIR" | wc -l | tr -d ' ')
+          ASSET_COUNT=$(find "$ASSET_DIR" -maxdepth 1 -type f -printf '.' | wc -c)
           echo "Asset count (pre-report): $ASSET_COUNT"
           ls -lh "$ASSET_DIR"
 
@@ -495,7 +497,7 @@ jobs:
             exit 1
           fi
 
-          ASSET_COUNT=$(ls -1 "$ASSET_DIR" | wc -l | tr -d ' ')
+          ASSET_COUNT=$(find "$ASSET_DIR" -maxdepth 1 -type f -printf '.' | wc -c)
           echo "Asset count (post-report): $ASSET_COUNT"
           ls -lh "$ASSET_DIR"
 
@@ -506,16 +508,8 @@ jobs:
           fi
           echo "✓ Final asset count verified: $ASSET_COUNT (minimum $MIN_ASSETS)"
 
-          # Verify total size under 2GB (2147483648 bytes — GitHub Release limit)
-          TOTAL_SIZE=$(du -sb "$ASSET_DIR" | cut -f1)
-          LIMIT=2147483648
-          echo "Total asset size: $(du -sh "$ASSET_DIR" | cut -f1)"
-
-          if [[ "$TOTAL_SIZE" -ge "$LIMIT" ]]; then
-            echo "ERROR: Total asset size ($TOTAL_SIZE bytes) exceeds 2GB GitHub limit"
-            exit 1
-          fi
-          echo "✓ Total size under 2GB"
+          # GitHub limits each asset; valid state files may exceed 2 GiB together.
+          python3 scripts/check-release-asset-sizes.py "$ASSET_DIR"
 
       - name: Compare with prior release (P4.03)
         id: compare
@@ -556,6 +550,9 @@ jobs:
                 if ! ls "$ASSET_DIR"/comparison-*.md >/dev/null 2>&1; then
                   echo "::warning::Comparison report not copied to release assets"
                 fi
+              elif [[ $COMPARE_EXIT -ne 0 ]]; then
+                echo "::error::Release comparison failed (exit ${COMPARE_EXIT})"
+                exit "$COMPARE_EXIT"
               fi
             else
               echo "Could not download prior metadata — skipping comparison"
@@ -573,7 +570,6 @@ jobs:
           ADMIN_BDYS_VERSION="${{ needs.setup.outputs.admin_bdys_version }}"
           TOTAL="${{ steps.collect.outputs.total }}"
           SCHEMA_VERSION="${{ steps.collect.outputs.schema_version }}"
-          ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
 
           # If this is a patch release, build a clear "supersedes" notice
           IS_PATCH=false
@@ -658,14 +654,19 @@ jobs:
 
           ```bash
           # Single state (e.g. Victoria)
-          gh release download v{VERSION} --pattern '*-vic.ndjson.gz'
+          gh release download v{VERSION} --repo {REPOSITORY} --pattern '*-vic.ndjson.gz'
 
-          # All states in one file
-          gh release download v{VERSION} --pattern '*-all.ndjson.gz'
+          # All nine state files, combined locally into one NDJSON file
+          gh release download v{VERSION} --repo {REPOSITORY} --pattern '*.ndjson.gz' --dir state-files
+          gzip -cd state-files/flat-white-{VERSION}-*.ndjson.gz > all.ndjson
 
           # Everything
-          gh release download v{VERSION}
+          gh release download v{VERSION} --repo {REPOSITORY}
           ```
+
+          The combined national file is a workflow artifact and S3 output, not a
+          GitHub release asset. Combining the state files locally needs enough
+          disk space for the uncompressed data.
 
           ## Schema
 
@@ -700,6 +701,7 @@ jobs:
           # Replace {VERSION} placeholder in download examples (use release_version
           # so the gh download commands reference the correct tag and asset names)
           sed -i "s/{VERSION}/${RELEASE_VERSION}/g" "$NOTES_FILE"
+          sed -i "s|{REPOSITORY}|${GITHUB_REPOSITORY}|g" "$NOTES_FILE"
 
           # Remove leading whitespace from heredoc
           sed -i 's/^          //' "$NOTES_FILE"
@@ -863,14 +865,15 @@ jobs:
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
           NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
 
-          # Idempotency guard: delete any existing release for this tag (re-run safety).
-          # For patch releases (e.g. v2026.04.1), this only deletes the patch tag —
-          # the original v2026.04 release is untouched.
-          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          # Recheck after the long build: another run may have published this tag.
+          # Never delete a release/tag or overwrite an existing draft on rerun.
+          bash scripts/check-quarterly-release.sh workflow_dispatch "$GITHUB_REPOSITORY" "$TAG" "$GITHUB_SHA"
+          python3 scripts/check-release-asset-sizes.py "$ASSET_DIR"
 
           # Create as draft — only publish after verification passes
           gh release create "$TAG" \
             --draft \
+            --target "$GITHUB_SHA" \
             --title "flat-white ${TAG}" \
             --notes-file "$NOTES_FILE" \
             "$ASSET_DIR"/*
@@ -970,8 +973,8 @@ jobs:
           }
           PAYLOADEOF
           )
-          # Remove leading whitespace from heredoc
-          PAYLOAD=$(echo "$PAYLOAD" | sed 's/^          //')
+          # Validate and compact the JSON before dispatch.
+          PAYLOAD=$(jq -c . <<< "$PAYLOAD")
 
           echo "--- Dispatch Payload ---"
           echo "$PAYLOAD" | jq .
@@ -1109,7 +1112,7 @@ jobs:
           echo ""
 
           # Phase 1a: Upload to staging prefix
-          > /tmp/manifest-files.jsonl  # truncate
+          : > /tmp/manifest-files.jsonl  # truncate
 
           for STATE in vic nsw qld sa wa tas nt act ot; do
             STATE_UPPER=$(echo "$STATE" | tr '[:lower:]' '[:upper:]')
@@ -1229,9 +1232,11 @@ jobs:
           echo "✓ Mappings uploaded to staging"
 
           # Export for subsequent steps
-          echo "version_dash=${VERSION_DASH}" >> "$GITHUB_OUTPUT"
-          echo "total_records=${TOTAL_RECORDS}" >> "$GITHUB_OUTPUT"
-          echo "gnaf_version=${GNAF_VERSION}" >> "$GITHUB_OUTPUT"
+          {
+            echo "version_dash=${VERSION_DASH}"
+            echo "total_records=${TOTAL_RECORDS}"
+            echo "gnaf_version=${GNAF_VERSION}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate manifest (local only — not uploaded yet)
         if: steps.check_existing.outputs.skip != 'true'

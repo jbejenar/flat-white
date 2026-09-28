@@ -44,14 +44,26 @@ Historical entries retain the contract and source versions published at the time
 ### Fixed
 
 - Accept legacy and current Administrative Boundaries directory layouts; reject
-  incomplete extractions before replacing existing data.
-- Retry transport errors and HTTP 429/5xx, without retrying permanent archive or
-  schema failures as generic download failures.
+  incomplete extractions before replacing existing data. Require actual G-NAF
+  directories from the same release folder.
+- Retry transport errors and HTTP 408/429/5xx. Permanent download failures stop
+  immediately; recovered errors from earlier stages cannot trigger a retry of a
+  later permanent failure.
+- Validate every document in compressed release artifacts, reject misplaced state
+  records and invalid alternative geocodes, and handle damaged gzip streams cleanly.
+  Report all six census levels and compare coverage thresholds before rounding.
+- Correct the README's schema-validation command and generated release notes'
+  download instructions.
 - Discover quarterly releases weekly and skip already published/draft quarters;
   add a metadata-only `preflight_only` workflow mode.
 - Validate production quarters consistently in the workflow, Docker entrypoint
   and local build, before downloads or database startup. Cached builds cannot
   bypass the minimum; the frozen fixture remains exempt.
+- Freeze both source quarters in Mini Quarterly and include both in its cache
+  identity, so a newer boundary release cannot be loaded under an older cache key.
+- Apply GitHub's size limit to each release asset, stop on comparison-tool errors,
+  and publish at the exact build commit. Refuse to replace existing releases or
+  tags pointing elsewhere; remove the destructive release/tag deletion on rerun.
 
 ## [v2026.05] - 2026-05-18
 

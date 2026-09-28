@@ -61,18 +61,24 @@ Postgres or downloading anything. Use `YYYY.MM` with month `02`, `05`, `08` or
 
 Read the error immediately before `Download failed`:
 
-| Evidence                                   | Interpretation and response                                                                                       |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| Timeout, connection reset, HTTP 429 or 5xx | A transport or service failure can be retried. Check the earlier attempts before rerunning.                       |
-| HTTP 404                                   | Check the resource URL and quarter. The container wrapper does not treat a generic download failure as transient. |
-| Missing extraction directory or sentinel   | Inspect the archive layout and source selection. Retrying the same layout will not fix it.                        |
-| Truncated or invalid archive               | Check transport evidence and archive integrity; do not promote a partial extraction.                              |
-| Disk exhaustion                            | Check available space and retained files before retrying.                                                         |
+| Evidence                                        | Interpretation and response                                                                               |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Timeout, connection reset, HTTP 408, 429 or 5xx | A transport or service failure can be retried. Check the earlier attempts before rerunning.               |
+| HTTP 404                                        | Check the resource URL and quarter. Both the downloader and container wrapper stop on permanent failures. |
+| Missing extraction directory or sentinel        | Inspect the archive layout and source selection. Retrying the same layout will not fix it.                |
+| Truncated or invalid archive                    | Check transport evidence and archive integrity; do not promote a partial extraction.                      |
+| Disk exhaustion                                 | Check available space and retained files before retrying.                                                 |
 
 Admin archives may use `LocalGovernmentAreas_*` or `LOCAL-GOVERNMENT-AREAS_*`.
 The validator accepts either, plus the required state-boundary directory, and
 requires actual directories. A filename matching the pattern is insufficient.
-New extraction is validated before replacing existing extracted data.
+G-NAF's `Standard` and `Authority Code` must be directories under the same release
+folder. New extraction is validated before replacing existing extracted data.
+
+The downloader's final `Failure kind` line distinguishes transient failures from
+permanent ones. The wrapper uses this result and the failed stage, so a recovered
+network error earlier in the log does not cause a later schema or archive error
+to retry. Telemetry still records those earlier network errors for diagnosis.
 
 To repair a layout change, inspect bounded archive metadata where possible and
 add a small synthetic ZIP regression case. Do not download the national dataset
@@ -110,6 +116,17 @@ separate missing rows, malformed values and legitimate null assignments. The
 current [boundary guide](BOUNDARIES.md) lists which state-specific gaps are expected.
 Do not set every missing value to a placeholder or lower thresholds to hide a
 missing table.
+
+The release report checks every document against the schema, including rows that
+would have fallen between the former sample checks. Wrong-state records and
+out-of-range primary or alternative geocodes fail verification. Missing or damaged
+gzip files also fail, with their streams closed cleanly.
+
+The report includes mesh block, SA1–SA4 and GCCSA coverage. Optional
+`--boundary-thresholds` values are evaluated before rounding for display. The
+quarterly workflow does not set census minimums: compare the reported rates with
+the actual source and expected nulls rather than treating a green report as proof
+of complete geographic assignments.
 
 Reproduce code changes with the fixture:
 
@@ -150,13 +167,15 @@ recovery path. Both paths share the same attempt budget.
 
 | Failure                                                           | Wrapper behaviour                              |
 | ----------------------------------------------------------------- | ---------------------------------------------- |
-| Recognised transport errors, HTTP 429/5xx                         | Retry within the budget.                       |
+| Recognised transport errors, HTTP 408/429/5xx                     | Retry within the budget.                       |
 | Container exit 137/143 or recognised resource exhaustion          | Retry within the budget.                       |
 | Rejected restored database                                        | Discard that local dump and retry from source. |
 | Permanent archive/schema error or generic `Download failed` alone | Stop; require investigation.                   |
 
-This table describes the container wrapper. The downloader also has its own
-request attempts; do not infer its behaviour from the wrapper's retry count.
+Within each container, an archive download has at most four request attempts,
+with 1, 2 and 4 second delays after transient failures. Permanent HTTP, certificate
+and local file errors stop immediately. CKAN metadata lookups have a 60 second
+timeout; their transient failures use the container retry budget.
 
 After fixing a transient external problem, rerun failed jobs from the existing
 run if the inputs and retained artifacts are still appropriate:
@@ -169,6 +188,11 @@ A code fix needs a new run on the corrected commit. Rerunning an old run does no
 pick up a new commit from `main`.
 
 ## Release or S3 failure
+
+An existing-release error is an intentional publication guard. Manual runs cannot
+replace a public release or an existing draft. Inspect the existing assets and
+reports, then choose an unused patch version for corrected data. A tag pointing
+to a different commit is also rejected. See [release recovery](RELEASING.md#recover-a-draft-or-incomplete-mirror).
 
 First establish whether the GitHub release is absent, draft or public. A comparison
 anomaly deliberately keeps it as a draft. Inspect the verification and comparison

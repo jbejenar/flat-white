@@ -34,7 +34,7 @@ export interface DataSource {
   name: string;
   url: string;
   extractedDir: string;
-  /** Required paths relative to extractedDir. A group allows alternative upstream names. */
+  /** Required directories relative to extractedDir. A group allows alternative upstream names. */
   sentinelPaths: Array<string | string[]>;
 }
 
@@ -47,7 +47,7 @@ function adminSentinelPaths(): DataSource["sentinelPaths"] {
  * Historical URL constants for the frozen February source; schema 1.x production
  * requires compatible ASGS 2026 input. See docs/RELEASING.md.
  *
- * sentinelPaths are well-known files/dirs within each extracted dataset.
+ * sentinelPaths are well-known directories within each extracted dataset.
  * Their presence confirms a complete extraction vs. a partial/interrupted one.
  *
  * Newer releases are discovered from CKAN metadata. Manual overrides use
@@ -250,9 +250,16 @@ async function fetchCkanPackage(
   fetchImpl: typeof fetch = fetch,
 ): Promise<CkanResource[]> {
   const url = `https://data.gov.au/data/api/3/action/package_show?id=${packageId}`;
-  const response = await fetchImpl(url, { redirect: "follow" });
+  const response = await fetchImpl(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(DEFAULT_STALL_TIMEOUT_MS),
+  });
   if (!response.ok) {
-    throw new Error(`data.gov.au CKAN lookup failed for ${packageId}: HTTP ${response.status}`);
+    await response.body?.cancel().catch(() => undefined);
+    throw new DownloadFailure(
+      `data.gov.au CKAN lookup failed for ${packageId}: HTTP ${response.status}`,
+      isRetryableStatus(response.status),
+    );
   }
 
   const payload = (await response.json()) as CkanPackageResponse;
@@ -437,44 +444,43 @@ export function formatProgress(downloaded: number, total: number | null, elapsed
 
 /**
  * Check whether an extracted directory contains all expected sentinel paths.
- * Returns true only if every sentinel file/directory exists, indicating a
- * complete extraction. Returns false for empty, partial, or missing directories.
+ * Every sentinel must be a directory. Paths sharing a wildcard parent must
+ * match the same release folder, not fragments from different extractions.
  */
 export function isExtractionComplete(
   extractedPath: string,
   sentinelPaths: DataSource["sentinelPaths"],
 ): boolean {
-  if (!existsSync(extractedPath)) return false;
-  try {
-    if (!statSync(extractedPath).isDirectory()) return false;
-  } catch {
-    return false;
+  function isDirectory(path: string): boolean {
+    try {
+      return statSync(path).isDirectory();
+    } catch {
+      return false;
+    }
   }
+  if (!isDirectory(extractedPath)) return false;
   if (sentinelPaths.length === 0) return false;
   // Read directory once for glob matching (avoids repeated readdirSync per sentinel)
   const hasGlob = sentinelPaths.flat().some((s) => s.includes("*"));
   const entries = hasGlob ? readdirSync(extractedPath, { withFileTypes: true }) : [];
-  function matches(sentinel: string): boolean {
-    if (sentinel.includes("/") && sentinel.includes("*")) {
-      // Path-segment wildcard: "G-NAF */Standard" — first segment has a wildcard, rest is literal
-      const [globSegment, ...rest] = sentinel.split("/");
-      const prefix = globSegment.replaceAll("*", "");
-      const matchingDirs = entries.filter(
-        (entry) => entry.isDirectory() && entry.name.startsWith(prefix),
-      );
-      const subPath = rest.join("/");
-      return matchingDirs.some((dir) => existsSync(resolve(extractedPath, dir.name, subPath)));
-    }
-    if (sentinel.endsWith("*")) {
-      // Trailing wildcard: "LocalGovernmentAreas_*" matches any entry starting with the prefix
-      const prefix = sentinel.slice(0, -1);
-      return entries.some((entry) => entry.isDirectory() && entry.name.startsWith(prefix));
-    }
-    return existsSync(resolve(extractedPath, sentinel));
+  function matches(index: number, parents: Map<string, string>): boolean {
+    if (index === sentinelPaths.length) return true;
+    const required = sentinelPaths[index];
+    const alternatives = typeof required === "string" ? [required] : required;
+    return alternatives.some((sentinel) => {
+      const [first, ...rest] = sentinel.split("/");
+      if (first.endsWith("*")) {
+        return entries.some((entry) => {
+          if (!entry.isDirectory() || !entry.name.startsWith(first.slice(0, -1))) return false;
+          if (parents.has(first) && parents.get(first) !== entry.name) return false;
+          if (!isDirectory(resolve(extractedPath, entry.name, ...rest))) return false;
+          return matches(index + 1, new Map([...parents, [first, entry.name]]));
+        });
+      }
+      return isDirectory(resolve(extractedPath, sentinel)) && matches(index + 1, parents);
+    });
   }
-  return sentinelPaths.every((sentinel) =>
-    typeof sentinel === "string" ? matches(sentinel) : sentinel.some(matches),
-  );
+  return matches(0, new Map());
 }
 
 // --- Retry logic ---
@@ -483,6 +489,44 @@ const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 /** Default inactivity timeout per attempt — abort if no data received for this long. */
 export const DEFAULT_STALL_TIMEOUT_MS = 60_000;
+
+class DownloadFailure extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    cause?: unknown,
+  ) {
+    super(message, { cause });
+  }
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || (status >= 500 && status < 600);
+}
+
+const TRANSIENT_CODES = new Set([
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENETUNREACH",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+function isRetryableDownloadError(error: unknown): boolean {
+  if (error instanceof DownloadFailure) return error.retryable;
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError") return true;
+  if ("code" in error && typeof error.code === "string" && TRANSIENT_CODES.has(error.code))
+    return true;
+  if (error instanceof AggregateError) return error.errors.some(isRetryableDownloadError);
+  if (error.cause !== undefined) return isRetryableDownloadError(error.cause);
+  return error instanceof TypeError && error.message === "fetch failed";
+}
 
 export function retryDelay(attempt: number): number {
   return BASE_DELAY_MS * Math.pow(2, attempt);
@@ -501,8 +545,6 @@ async function downloadFile(
   maxRetries: number = DEFAULT_MAX_RETRIES,
   stallTimeoutMs: number = DEFAULT_STALL_TIMEOUT_MS,
 ): Promise<number> {
-  let lastError: Error | null = null;
-
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
       const delay = retryDelay(attempt - 1);
@@ -512,10 +554,12 @@ async function downloadFile(
 
     const controller = new AbortController();
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    let stalled = false;
 
     const resetStallTimer = () => {
       if (stallTimer) clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
+        stalled = true;
         console.error(
           `[download] ${name}: stalled for ${stallTimeoutMs / 1000}s — aborting attempt ${attempt + 1}`,
         );
@@ -530,7 +574,11 @@ async function downloadFile(
       const response = await fetch(url, { redirect: "follow", signal: controller.signal });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        await response.body?.cancel().catch(() => undefined);
+        throw new DownloadFailure(
+          `HTTP ${response.status}: ${response.statusText}`,
+          isRetryableStatus(response.status),
+        );
       }
 
       if (!response.body) {
@@ -578,7 +626,8 @@ async function downloadFile(
       return downloaded;
     } catch (err) {
       if (stallTimer) clearTimeout(stallTimer);
-      lastError = err instanceof Error ? err : new Error(String(err));
+      const lastError = err instanceof Error ? err : new Error(String(err));
+      controller.abort(lastError);
       console.error(`[download] ${name}: attempt ${attempt + 1} failed — ${lastError.message}`);
 
       // Clean up partial file
@@ -587,12 +636,18 @@ async function downloadFile(
       } catch {
         // ignore cleanup errors
       }
+      const retryable = stalled || isRetryableDownloadError(lastError);
+      if (!retryable || attempt === maxRetries) {
+        throw new DownloadFailure(
+          `Failed to download ${name} after ${attempt + 1} attempts: ${lastError.message}`,
+          retryable,
+          lastError,
+        );
+      }
     }
   }
 
-  throw new Error(
-    `Failed to download ${name} after ${maxRetries + 1} attempts: ${lastError?.message}`,
-  );
+  throw new Error("Download retry count must be non-negative");
 }
 
 // --- Extraction ---
@@ -863,6 +918,9 @@ const entryFile = process.argv[1] ? resolve(process.argv[1]) : "";
 if (thisFile === entryFile || thisFile === entryFile.replace(/\.ts$/, ".js")) {
   main().catch((err) => {
     console.error("[download] Fatal:", err);
+    console.error(
+      `[download] Failure kind: ${isRetryableDownloadError(err) ? "transient" : "permanent"}`,
+    );
     process.exit(1);
   });
 }

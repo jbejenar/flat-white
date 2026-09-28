@@ -19,7 +19,11 @@ describe("quarterly pipeline retries", () => {
     root = mkdtempSync(join(tmpdir(), "flat-white-quarterly-retry-"));
     mkdirSync(join(root, "bin"));
     mkdirSync(join(root, "scripts"));
-    for (const file of ["run-quarterly-state.sh", "summarize-quarterly-run.py"]) {
+    for (const file of [
+      "run-quarterly-state.sh",
+      "summarize-quarterly-run.py",
+      "quarterly_failure.py",
+    ]) {
       copyFileSync(resolve("scripts", file), join(root, "scripts", file));
     }
     writeFileSync(
@@ -93,12 +97,36 @@ exit 0
     expect(result.telemetry.networkErrorDetected).toBe(false);
   });
 
+  it("does not retry a permanent download failure after a recovered transport error", () => {
+    const result = run(
+      "[download] attempt 1 failed: fetch failed\n[download] complete\n" +
+        "[download] Fatal: Error: failed sentinel validation\n" +
+        "[download] Failure kind: permanent\n[entrypoint] ERROR: Download failed\n",
+    );
+    expect(result.status).toBe(1);
+    expect(result.calls).toBe(1);
+    expect(result.telemetry.networkErrorDetected).toBe(true);
+  });
+
+  it("does not use recovered errors from an earlier stage to retry failed verification", () => {
+    const result = run(
+      '{"stage":"download","event":"stage_start"}\nfetch failed\n' +
+        '{"stage":"download","event":"stage_end","elapsed_s":2}\n' +
+        '{"stage":"verify","event":"stage_start"}\nERROR: schema validation failed\n',
+    );
+    expect(result.status).toBe(1);
+    expect(result.calls).toBe(1);
+    expect(result.telemetry.networkErrorDetected).toBe(true);
+  });
+
   it.each([
     "ETIMEDOUT",
     "fetch failed",
     "FETCH FAILED",
+    "HTTP 408 Request Timeout",
     "HTTP 429 Too Many Requests",
     "HTTP 503 Service Unavailable",
+    "[download] Failure kind: transient",
   ])("still retries actual transient failures: %s", (message) => {
     const result = run(`${message}\n[entrypoint] ERROR: Download failed\n`);
     expect(result.status).toBe(0);

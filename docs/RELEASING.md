@@ -54,6 +54,10 @@ archive contents, prove a complete loader run, measure production memory, or tes
 release/S3 publication. The loaded database checks provide a later compatibility
 gate for the actual sources.
 
+The manual **Mini Quarterly** workflow also freezes and validates both source
+quarters and includes both in its database cache key. An explicit quarter pins
+both sources; automatic discovery may choose different compatible quarters.
+
 ## Publish a quarter
 
 1. Land the intended code on `main` with CI passing. For a schema change, review
@@ -81,6 +85,20 @@ The workflow first creates a draft, verifies its assets and a programmatic
 download, then publishes it unless the comparison check reports anomalies. An
 anomaly leaves the release as a draft for investigation. A draft is not a
 consumer-ready release.
+
+The release verification report validates every document in each compressed state
+file. It checks state membership, coordinates and duplicates, and reports coverage
+through GCCSA. It does not impose census coverage minimums by default; review
+null rates and source compatibility as part of the migration checks.
+
+Publication also checks [GitHub's limit of less than 2 GiB per asset](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
+The combined size of valid state files can exceed that limit. A comparison-tool
+error stops publication rather than being treated as a clean comparison.
+
+Both setup and the final publication step check whether the release already
+exists. Scheduled runs skip existing releases; manual runs stop with an error.
+No run deletes an existing release or tag. New releases point to the exact commit
+used by the build. A pre-existing tag pointing elsewhere is rejected.
 
 ## Publish a correction
 
@@ -176,6 +194,11 @@ why the anomaly is expected or fix the data and choose the appropriate new build
 Only publish a reviewed draft when its contents satisfy the release checks.
 Manually making a draft public does not by itself run a previously skipped S3 job;
 track that mirror as unfinished and plan its recovery explicitly.
+
+Rerunning release creation will not replace an existing draft. Review that draft's
+assets and reports, then either publish the reviewed draft or use a new patch
+version for a corrected build. This also protects public releases from accidental
+deletion during a manual rerun.
 
 For a **failed S3 job after a public release**, inspect its logs, OIDC configuration
 and available artifacts. If the failure is recoverable and artifacts are still

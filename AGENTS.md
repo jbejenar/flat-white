@@ -21,7 +21,8 @@ src/
   flatten-localities.ts — separate locality export module
   split.ts              — split NDJSON into per-state files
   compress.ts           — streaming gzip
-  verify.ts             — counts, schema, quality and administrative coverage
+  verify.ts             — counts, quality and administrative coverage
+  verification-report.ts — full schema and quality checks on compressed state artifacts
   metadata.ts           — local build metadata helper
   manifest.ts           — S3 manifest handling
   cli.ts                — TypeScript argument parser (not the Docker entrypoint)

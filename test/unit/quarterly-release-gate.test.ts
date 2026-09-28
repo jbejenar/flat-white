@@ -71,12 +71,64 @@ describe("quarterly release gate", () => {
     expect(result.stdout).not.toContain("build_required=true");
   });
 
-  it("allows manual retries without querying the release API", () => {
+  it("allows a manual build after confirming that the release is absent", () => {
     expect(
       execFileSync("bash", [gate, "workflow_dispatch", "owner/repo", "v2026.08"], {
-        env: environment({}, 1),
+        env: environment({ data: { repository: { release: null } } }),
         encoding: "utf8",
       }).trim(),
     ).toBe("build_required=true");
+  });
+
+  it.each([true, false])(
+    "refuses to overwrite an existing release on a manual run (draft=%s)",
+    (isDraft) => {
+      const result = spawnSync("bash", [gate, "workflow_dispatch", "owner/repo", "v2026.08"], {
+        env: environment({
+          data: { repository: { release: { url: "https://example.com/release", isDraft } } },
+        }),
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("will not be overwritten");
+      expect(result.stdout).not.toContain("build_required=true");
+    },
+  );
+
+  it.each([
+    { ref: null, accepted: true },
+    { ref: { target: { __typename: "Commit", oid: "built-commit" } }, accepted: true },
+    {
+      ref: { target: { __typename: "Tag", target: { __typename: "Commit", oid: "built-commit" } } },
+      accepted: true,
+    },
+    { ref: { target: { __typename: "Commit", oid: "another-commit" } }, accepted: false },
+    {
+      ref: {
+        target: { __typename: "Tag", target: { __typename: "Commit", oid: "another-commit" } },
+      },
+      accepted: false,
+    },
+    { ref: { target: { __typename: "Blob", oid: "built-commit" } }, accepted: false },
+  ])("checks the tag against the built commit: %j", ({ ref, accepted }) => {
+    const result = spawnSync(
+      "bash",
+      [gate, "workflow_dispatch", "owner/repo", "v2026.08", "built-commit"],
+      {
+        env: environment({ data: { repository: { release: null, ref } } }),
+        encoding: "utf8",
+      },
+    );
+    expect(result.status === 0).toBe(accepted);
+    expect(result.stdout.includes("build_required=true")).toBe(accepted);
+  });
+
+  it("fails closed on a manual lookup error", () => {
+    const result = spawnSync("bash", [gate, "workflow_dispatch", "owner/repo", "v2026.08"], {
+      env: environment({}, 1),
+      encoding: "utf8",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("build_required=true");
   });
 });

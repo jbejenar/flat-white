@@ -44,7 +44,7 @@ describe("production version guards", () => {
     return { status: result.status, output: result.stdout + result.stderr };
   }
 
-  function runMini(input: string, discovered = "2026.08") {
+  function runMini(input: string, discovered = "2026.08", discoveredAdmin = "2026.08") {
     // Execute the actual workflow step, with only remote discovery replaced.
     const workflow = readFileSync(resolve(".github/workflows/mini-quarterly.yml"), "utf8");
     const match = workflow.match(
@@ -60,13 +60,13 @@ describe("production version guards", () => {
     writeFileSync(
       join(root, "scripts/discover_latest_release.py"),
       `
-import os
+import os, json
 from pathlib import Path
 Path("discovery-called").touch()
 version = os.environ["DISCOVERED_VERSION"]
 if version == "FAIL":
     raise RuntimeError("simulated discovery failure")
-print(version)
+print(json.dumps({"gnaf_version": version, "admin_bdys_version": os.environ["DISCOVERED_ADMIN"]}))
 `,
     );
     const output = join(root, "outputs");
@@ -77,6 +77,7 @@ print(version)
         ...process.env,
         GNAF_INPUT: input,
         DISCOVERED_VERSION: discovered,
+        DISCOVERED_ADMIN: discoveredAdmin,
         GITHUB_OUTPUT: output,
       },
     });
@@ -101,7 +102,9 @@ print(version)
     it.each(["2026.08", "2026.11"])("publishes a valid explicit quarter: %s", (version) => {
       const result = runMini(version);
       expect(result.status).toBe(0);
-      expect(result.published).toBe(`version=${version}\n`);
+      expect(result.published).toBe(
+        `version=${version}\nadmin_bdys_version=${version}\ndata_source_key=gnaf-${version}-admin-${version}\n`,
+      );
       expect(result.discovered).toBe(false);
     });
     it.each(["2026.13", "2027.01", "2026.05", "", "FAIL"])(
@@ -116,9 +119,26 @@ print(version)
     it("publishes a valid discovered quarter", () => {
       const result = runMini("");
       expect(result.status).toBe(0);
-      expect(result.published).toBe("version=2026.08\n");
+      expect(result.published).toBe(
+        "version=2026.08\nadmin_bdys_version=2026.08\ndata_source_key=gnaf-2026.08-admin-2026.08\n",
+      );
       expect(result.discovered).toBe(true);
     });
+    it("freezes independently discovered source versions in the cache identity", () => {
+      const result = runMini("", "2026.11", "2026.08");
+      expect(result.status).toBe(0);
+      expect(result.published).toBe(
+        "version=2026.11\nadmin_bdys_version=2026.08\ndata_source_key=gnaf-2026.11-admin-2026.08\n",
+      );
+    });
+    it.each(["2026.05", "2026.13", "", "--help"])(
+      "rejects incompatible discovered boundaries: %s",
+      (admin) => {
+        const result = runMini("", "2026.08", admin);
+        expect(result.status).toBe(1);
+        expect(result.published).toBe("");
+      },
+    );
   });
 
   for (const script of ["docker-entrypoint.sh", "scripts/build-local.sh"]) {
