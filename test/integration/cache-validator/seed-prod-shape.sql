@@ -1,11 +1,9 @@
 -- seed-prod-shape.sql — Provisions a production-shaped database for the
 -- cache-validator integration test.
 --
--- Purpose: catch the regression class where validate-db-cache.sh references
--- a fixture-only table name (e.g. abs_2026_mb_lookup) instead of the table
--- name gnaf-loader actually creates in production (abs_2026_mb). PR #99
--- introduced exactly this bug; this seed gives the test a reference reality
--- that matches what gnaf-loader produces, NOT what the fixture creates.
+-- Purpose: catch validators that accept fixture-only names or a legacy census
+-- schema. The historical bug involved abs_2021_mb_lookup; schema 1.x must
+-- require the actual upstream abs_2026_mb table and 2026 column names.
 --
 -- Schemas: gnaf_202699, raw_gnaf_202699, admin_bdys_202699, raw_admin_bdys_202699
 -- (uses `202699` to avoid colliding with the real `202602` fixture state if
@@ -90,8 +88,8 @@ INSERT INTO raw_gnaf_202699.address_site VALUES ('SITE000000', NULL);
 -- ─── admin_bdys schema ──────────────────────────────────────────────────────
 
 -- Mesh-block table: production gnaf-loader creates `abs_2026_mb` (NO _lookup
--- suffix). The fixture path's `abs_2026_mb_lookup` is fixture-only and MUST
--- NOT appear here — that would defeat the regression test.
+-- suffix). Neither retained historical 2021 tables nor an invented
+-- abs_2026_mb_lookup may satisfy this check.
 CREATE TABLE admin_bdys_202699.abs_2026_mb (
   gid integer,
   mb_code_26 bigint,

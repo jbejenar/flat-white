@@ -1,3 +1,6 @@
+import { VERSION } from "./index.js";
+import { ASGS_YEAR } from "./schema.js";
+
 export interface ManifestFile {
   key: string;
   records: number;
@@ -30,6 +33,9 @@ export interface ManifestIndex {
 
 export interface AddressManifestV2 {
   manifest_version: 2;
+  /** Absent only on historical manifests created before schema 1.0.0. */
+  schema_version?: string;
+  asgs_year?: number;
   product: "address";
   version: string;
   created_at: string;
@@ -74,6 +80,8 @@ export function buildAddressManifestV2(options: BuildAddressManifestOptions): Ad
 
   return {
     manifest_version: 2,
+    schema_version: VERSION,
+    asgs_year: ASGS_YEAR,
     product: "address",
     version: options.version,
     created_at: options.createdAt,
@@ -148,6 +156,15 @@ export function validateAddressManifestV2(
     throw new Error("Manifest product must be address");
   }
 
+  // Keep historical manifests readable without falsely assigning them the
+  // current geography. New manifests carry both markers as one contract.
+  const schemaMetadata: Pick<AddressManifestV2, "schema_version" | "asgs_year"> = {};
+  if (manifest.schema_version !== undefined || manifest.asgs_year !== undefined) {
+    schemaMetadata.schema_version = parseString(manifest.schema_version, "schema_version");
+    schemaMetadata.asgs_year = parseNonNegativeInteger(manifest.asgs_year, "asgs_year");
+    if (schemaMetadata.asgs_year === 0) throw new Error("Manifest asgs_year must be positive");
+  }
+
   const files = parseFiles(manifest.files);
   const totalRecords = parseNonNegativeInteger(manifest.total_records, "total_records");
 
@@ -194,6 +211,7 @@ export function validateAddressManifestV2(
     manifest_version: 2,
     product: "address",
     version: parseString(manifest.version, "version"),
+    ...schemaMetadata,
     created_at: parseString(manifest.created_at, "created_at"),
     pipeline: {
       repo: parseString((manifest.pipeline as Record<string, unknown>).repo, "pipeline.repo"),

@@ -7,7 +7,8 @@
 Schema 1.0.0 changes `boundaries.meshBlock`, `sa1`–`sa4`, and `gccsa` from
 ASGS 2021 to ASGS 2026 while preserving their JSON field names and types.
 Consumers must check `metadata.json` (`schemaVersion` and `asgsYear: 2026`)
-and migrate geographic joins and aggregates. `_version` still identifies the
+and migrate geographic joins and aggregates. S3 manifests expose the same
+contract as `schema_version` / `asgs_year`, and OpenSearch mappings carry it in `_meta`. `_version` still identifies the
 G-NAF quarter. See [migration implications and upgrade steps](MIGRATING-TO-ASGS-2026.md).
 
 Every line in the NDJSON output is one JSON document conforming to this schema. This document is the authoritative contract between flat-white and all downstream consumers.

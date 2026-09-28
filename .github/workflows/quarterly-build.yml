@@ -1249,6 +1249,8 @@ jobs:
           # Build the v2 manifest
           jq -n \
             --argjson manifest_version 2 \
+            --arg schema_version "$(jq -r '.version' package.json)" \
+            --argjson asgs_year 2026 \
             --arg product "address" \
             --arg version "$VERSION_DASH" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -1262,6 +1264,8 @@ jobs:
             --argjson total_records "$TOTAL_RECORDS" \
             '{
               manifest_version: $manifest_version,
+              schema_version: $schema_version,
+              asgs_year: $asgs_year,
               product: $product,
               version: $version,
               created_at: $created_at,
@@ -1300,8 +1304,10 @@ jobs:
           ')
           jq -e \
             --arg expected_source_key "$EXPECTED_SOURCE_KEY" \
+            --arg schema_version "$(jq -r '.version' package.json)" \
             --argjson expected_file_keys "$EXPECTED_FILE_KEYS" '
               .manifest_version == 2 and
+              .schema_version == $schema_version and .asgs_year == 2026 and
               (.files | type) == "array" and
               ([.files[].key] | sort) == ($expected_file_keys | sort) and
               (.index.source_keys | type) == "array" and

@@ -13,16 +13,20 @@ geography. Flatten now joins `address_principals.mb_2026_code` to
 
 ## Consumer implications
 
-| Area                          | Required action or consequence                                                                                                                                                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Version detection             | Check release `metadata.json`: `schemaVersion: "1.0.0"`, `asgsYear: 2026`. Store this metadata with imported documents. `_version` remains the G-NAF quarter; release tags remain `vYYYY.MM[.N]`.                                                    |
-| Search indexes and warehouses | Build a new complete index or partition, validate it, then switch consumers together. Recompute derived regional aggregates, filters, lookup tables and cached results. Mixing old and new geography under the same fields gives misleading results. |
-| Geographic joins              | Use 2026 boundary/reference datasets. A code that looks unchanged does not prove equivalent geometry or membership. Joining directly to 2021 Census geography is not a valid migration strategy.                                                     |
-| Historical analysis           | Changes in regional counts can reflect boundary reassignment as well as address additions/deletions. Preserve the geography vintage in time series. Use a suitable correspondence or recode original coordinates for comparisons across editions.    |
-| Scope of the contract change  | The six census fields change vintage. Address IDs, coordinates, labels, postcode and the four administrative-boundary field definitions do not change because of this migration. A new quarterly source can independently change their values.       |
-| Older releases                | Previously published files retain their original 2021 meaning. They are not rewritten. Rebuilding pre-August 2026 inputs requires the original code/schema and suitable archived source files.                                                       |
-| Operations                    | Old database dumps are invalidated (`v3-asgs2026` cache namespace). The first production run performs fresh loads; allow for that cost and duration. Missing 2026 tables/columns or wholly unmatched mesh-block codes fail validation.               |
-| Rollback                      | Keep the previous complete dataset/index and its metadata. Roll back the dataset and consuming queries together; do not relabel 2026 output as schema 0.x or restore old database dumps into schema 1.x.                                             |
+| Area                          | Required action or consequence                                                                                                                                                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Version detection             | Check release `metadata.json`: `schemaVersion: "1.0.0"`, `asgsYear: 2026`. S3 manifests also carry `schema_version` / `asgs_year`; OpenSearch mapping `_meta` carries `schemaVersion` / `asgsYear`. Store the vintage with imported documents. `_version` remains the G-NAF quarter; release tags remain `vYYYY.MM[.N]`. |
+| Search indexes and warehouses | Build a new complete index or partition, validate it, then switch consumers together. Recompute derived regional aggregates, filters, lookup tables and cached results. Mixing old and new geography under the same fields gives misleading results.                                                                     |
+| Geographic joins              | Use 2026 boundary/reference datasets. A code that looks unchanged does not prove equivalent geometry or membership. Joining directly to 2021 Census geography is not a valid migration strategy.                                                                                                                         |
+| Historical analysis           | Changes in regional counts can reflect boundary reassignment as well as address additions/deletions. Preserve the geography vintage in time series. Use a suitable correspondence or recode original coordinates for comparisons across editions.                                                                        |
+| Scope of the contract change  | The six census fields change vintage. Address IDs, coordinates, labels, postcode and the four administrative-boundary field definitions do not change because of this migration. A new quarterly source can independently change their values.                                                                           |
+| Older releases                | Previously published files retain their original 2021 meaning. They are not rewritten. Rebuilding pre-August 2026 inputs requires the original code/schema and suitable archived source files.                                                                                                                           |
+| Operations                    | Old database dumps are invalidated (`v3-asgs2026` cache namespace). The first production run performs fresh loads; allow for that cost and duration. Missing 2026 tables/columns or wholly unmatched mesh-block codes fail validation.                                                                                   |
+| Rollback                      | Keep the previous complete dataset/index and its metadata. Roll back the dataset and consuming queries together; do not relabel 2026 output as schema 0.x or restore old database dumps into schema 1.x.                                                                                                                 |
+
+The S3 `manifest_version: 2` describes the transport envelope; it is independent
+of the NDJSON `schema_version: "1.0.0"`. Older manifests may omit the new markers
+and must not be inferred to contain the current geography.
 
 ABS provides [2021-to-2026 correspondences](https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs/edition-4-july-2026-june-2031/access-and-downloads/correspondences)
 for mesh blocks, SA1–SA4 and GCCSA. These include conversion weights and quality
@@ -33,7 +37,8 @@ changes geographic classifications, not the vintage of demographic statistics.
 
 1. Retain the previous release and record its schema/geography vintage.
 2. Make the importer require the expected `schemaVersion` and `asgsYear` before
-   ingesting schema 1.x. Consumers needing ASGS 2021 must remain on a compatible
+   ingesting schema 1.x (or the equivalent S3 manifest fields). Metadata alone does
+   not block a consumer that ignores it. Consumers needing ASGS 2021 must remain on a compatible
    release until they explicitly migrate or implement their own conversion.
 3. Load a complete schema 1.x release into a separate index/partition with 2026
    reference data. Review counts, census-field completeness and key regional

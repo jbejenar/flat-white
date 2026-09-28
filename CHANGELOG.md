@@ -18,7 +18,8 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 ### Breaking changes
 
 - Schema **1.0.0** uses ASGS 2026 for mesh block, SA1–SA4 and GCCSA, retaining
-  the JSON field names/types. Release metadata includes `asgsYear: 2026`.
+  the JSON field names/types. Release metadata includes `asgsYear: 2026`; S3
+  manifests and OpenSearch mapping metadata also identify the schema and geography.
   Consumers must migrate geographic joins, rebuild derived indexes/aggregates,
   and preserve geography vintage in historical comparisons. See
   [the migration guide](docs/MIGRATING-TO-ASGS-2026.md).
