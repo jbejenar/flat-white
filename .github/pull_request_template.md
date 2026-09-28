@@ -16,6 +16,6 @@
 - [ ] Breaking field meanings or types have a major schema version and a README-linked migration guide
 - [ ] Examples, release metadata, S3 manifests and OpenSearch mapping metadata agree where affected
 - [ ] Changed guidance is highlighted; historical examples are clearly labelled
-- [ ] Generated fixture changes were reviewed using an explicit text or semantic diff; byte-for-byte checks still cover the full file
+- [ ] Fixture changes are focused and reviewed in full; byte-for-byte checks still cover every document
 - [ ] No gnaf-loader source changes; any reviewed submodule pin update is explained
 - [ ] No secrets or credentials in committed files

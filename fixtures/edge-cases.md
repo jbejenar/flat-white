@@ -12,24 +12,27 @@ example that can be found in the baseline.
 
 ## Covered cases
 
-| Case                          | Documents | Example PID      | What is exercised                                                          |
-| ----------------------------- | --------- | ---------------- | -------------------------------------------------------------------------- |
-| Simple addresses              | 197       | `GAVIC411670057` | No flat, level or primary/secondary classification.                        |
-| Units or flats                | 185       | `GAVIC411087566` | Flat number present; tests type and number composition.                    |
-| Levels                        | 52        | `GAVIC423623835` | Level number present.                                                      |
-| Melbourne 3000                | 28        | `GAVIC412717346` | One side of the dual-postcode locality case.                               |
-| Melbourne 3004                | 25        | `GAVIC411803305` | The same locality name with a different postcode.                          |
-| Address aliases               | 74        | `GAVIC411809712` | Non-empty aliases array.                                                   |
-| Secondary addresses           | 193       | `GAVIC411087566` | Child-address classification.                                              |
-| Parent with exported children | 1         | `GAVIC423911067` | Primary classification and a non-empty secondaries array.                  |
-| Multiple geocodes             | 408       | `GAVIC411087566` | At least two exported geocodes; tests aggregation and best-code selection. |
-| Ward assignment               | 449       | `GAVIC411087566` | Non-null ward after administrative spatial processing.                     |
-| Lot without street number     | 30        | `GAVIC411935231` | Lot present and numberFirst null.                                          |
-| Building name                 | 33        | `GAVIC411670057` | Named building.                                                            |
-| 2026 census hierarchy         | 451       | `GAVIC411087566` | All six census fields populated by the synthetic 2026 lookup.              |
+| Case                              | Documents | Example PID      | What is exercised                                                          |
+| --------------------------------- | --------- | ---------------- | -------------------------------------------------------------------------- |
+| Simple addresses                  | 197       | `GAVIC411670057` | No flat, level or primary/secondary classification.                        |
+| Units or flats                    | 185       | `GAVIC411087566` | Flat number present; tests type and number composition.                    |
+| Levels                            | 52        | `GAVIC423623835` | Level number present.                                                      |
+| Melbourne 3000                    | 28        | `GAVIC412717346` | One side of the dual-postcode locality case.                               |
+| Melbourne 3004                    | 25        | `GAVIC411803305` | The same locality name with a different postcode.                          |
+| Address aliases                   | 74        | `GAVIC411809712` | Non-empty aliases array.                                                   |
+| Secondary addresses               | 193       | `GAVIC411087566` | Child-address classification.                                              |
+| Parent with exported children     | 1         | `GAVIC423911067` | Primary classification and a non-empty secondaries array.                  |
+| Multiple geocodes                 | 408       | `GAVIC411087566` | At least two exported geocodes; tests aggregation and best-code selection. |
+| Ward assignment                   | 449       | `GAVIC411087566` | Non-null ward after administrative spatial processing.                     |
+| Lot without street number         | 30        | `GAVIC411935231` | Lot present and numberFirst null.                                          |
+| Building name                     | 33        | `GAVIC411670057` | Named building.                                                            |
+| 2026 census hierarchy             | 451       | `GAVIC411087566` | All six census fields populated by the synthetic 2026 lookup.              |
+| Changed census code and hierarchy | 1         | `GAVIC411087566` | A new mesh-block code and hierarchy must come from the 2026 source.        |
+| Reassigned census hierarchy       | 1         | `GAVIC411441273` | The mesh-block code is retained, but SA1–SA4 and GCCSA change.             |
 
-The census values deliberately differ from the old 2021 lookup. This catches an
-accidental return to the old join even though both tables exist in the fixture.
+The two migration cases deliberately differ from the old 2021 lookup. This catches
+an accidental return to the old join even though both tables exist in the fixture.
+The other census values are reused as synthetic test data, not real 2026 assignments.
 Administrative fields are derived from small synthetic polygons, rather than
 accepted as precomputed tags.
 

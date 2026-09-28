@@ -250,8 +250,10 @@ The same overlay adds `mb_2026_code bigint` to principal and alias addresses.
 | `gc_code_26`, `gc_name_26` | GCCSA code and name                                                   |
 | `geom`                     | Synthetic MultiPolygon, SRID 7844; census enrichment uses code lookup |
 
-These are deliberately synthetic 2026 codes/names. The following 2021 tables
-are retained as historical source data and regression decoys, not runtime joins.
+These are synthetic 2026 assignments. Most reuse historical values to keep the
+fixture varied; two deliberate changes test a new mesh-block code and a reassigned
+hierarchy. See the [complete change inventory](SCHEMA-1.0-CHANGES.md).
+The following 2021 tables remain as source data and regression decoys, not runtime joins.
 
 ### abs_2021_mb (430 rows)
 

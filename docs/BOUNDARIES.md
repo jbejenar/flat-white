@@ -119,7 +119,7 @@ The fixture keeps 451 VIC addresses from February 2026. Its setup:
 5. Runs the same administrative boundary prelude, both flatten query paths,
    output verification and byte-for-byte comparison with the committed baseline.
 
-Old 2021 tables remain as decoys. The synthetic 2026 codes and names differ so a
+Old 2021 tables remain as decoys. Two explicit migration cases differ so a
 regression to the old lookup changes the output and fails comparison. They test
 the transformation; they do not assert real ABS assignments for those addresses.
 The fixture does not run the full national loader or establish production capacity.

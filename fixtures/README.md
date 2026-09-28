@@ -42,8 +42,8 @@ assignments, runs both flatten paths and verifies the output.
 
 ## Review generated output changes
 
-The full NDJSON baseline remains committed and tested byte for byte. Its large
-whole-line diff is suppressed by Git attributes. Read the
+The full NDJSON baseline remains committed, visible in text diffs and tested byte
+for byte. Only two deliberate migration cases change. Read the
 [schema 1.0.0 change inventory](SCHEMA-1.0-CHANGES.md) for every changed field,
 snapshot hashes and commands to inspect all before/after values.
 
@@ -60,9 +60,16 @@ The fixture therefore tests the upstream preparation contract rather than merely
 seeding the final lookup table.
 
 The 2021 tables remain in the base seed as historical data and regression decoys.
-The 2026 codes and names intentionally differ. Rejoining a 2021 table must change
-the output and fail regression. The baseline migration changes only the six
-census fields; the frozen address data and other output fields are preserved.
+Two cases deliberately differ: one changes its mesh-block code and hierarchy;
+the other keeps its mesh-block code but changes its hierarchy. Rejoining a 2021
+table changes these results and fails regression. The other 449 documents reuse
+historical census values as synthetic test inputs, preserving varied hierarchy
+values without unnecessary baseline changes. This reuse is only a fixture design;
+it does not convert real 2021 geography into 2026 geography.
+
+All 451 addresses use the 2026 lookup and undergo complete byte-for-byte checks.
+Only census fields change; the frozen address data and other output fields remain
+identical. The [change inventory](SCHEMA-1.0-CHANGES.md) lists every changed value.
 
 ## What stays frozen?
 

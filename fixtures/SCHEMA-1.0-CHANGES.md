@@ -1,75 +1,83 @@
 # Review the schema 1.0.0 fixture migration
 
-This records the change from the ASGS 2021 baseline at commit
-`59756008148f89b2ee1c54ed7bbf9bb77abc036d` to the synthetic ASGS 2026 baseline
-introduced by this migration. It is a review aid, not a replacement for the
-[complete committed fixture](expected-output.ndjson).
+The complete [NDJSON baseline](expected-output.ndjson) still contains **451
+addresses**, with the same IDs and full byte-for-byte regression checks. Compared
+with the pre-migration commit `59756008148f89b2ee1c54ed7bbf9bb77abc036d`,
+**449 records are byte-identical**. Only the two migration cases below change.
+Every changed value is listed here; all other fields, including mesh-block
+category, are unchanged.
 
-The fixture has **451 documents with the same address IDs** before and after.
-Every change is inside the six census boundary fields. All other field values,
-including mesh-block category, are unchanged. The 2026 codes and names are
-**synthetic test values**, not actual ABS assignments for these addresses.
+## Why only two records change
 
-## Complete change inventory
+The fixture loads all 430 mesh-block rows through the real ASGS 2026 column layout
+and the pinned upstream preparation SQL. It reuses historical values as synthetic
+inputs for most rows, retaining varied boundaries instead of replacing every
+hierarchy with the same test values. These are **not real 2026 assignments** and
+this technique must not be used to migrate production data.
 
-Each of these ten leaf paths changes in all 451 documents. No other paths change.
+One case has a new mesh-block code and hierarchy. The other keeps its code but
+changes its hierarchy. The retained 2021 lookup gives different results for both,
+so an accidental legacy join still fails the complete regression comparison.
+The [seed](seed-census-2026.sql) makes both cases explicit; the
+[readable sample](expected-output-sample.json) contains the first case.
 
-| Path inside `boundaries` | Change                                            |
-| ------------------------ | ------------------------------------------------- |
-| `meshBlock.code`         | Historical mesh-block code → synthetic 2026 code. |
-| `sa1`                    | Historical SA1 code → synthetic 2026 code.        |
-| `sa2.code`               | Historical code → `299010001`.                    |
-| `sa2.name`               | Historical name → `Fixture 2026 SA2`.             |
-| `sa3.code`               | Historical code → `29901`.                        |
-| `sa3.name`               | Historical name → `Fixture 2026 SA3`.             |
-| `sa4.code`               | Historical code → `299`.                          |
-| `sa4.name`               | Historical name → `Fixture 2026 SA4`.             |
-| `gccsa.code`             | Historical code → `2TEST`.                        |
-| `gccsa.name`             | Historical name → `Fixture 2026 GCCSA`.           |
+## New mesh-block code and hierarchy
 
-There are 430 distinct mesh-block code transitions and 430 distinct SA1 code
-transitions. The 451 addresses share some mesh blocks. The assignments come from
-[seed-census-2026.sql](seed-census-2026.sql) and the pinned upstream preparation SQL;
-the [readable sample](expected-output-sample.json) shows one complete result.
+Address: `GAVIC411087566`.
+
+| Path inside `boundaries` | Before                    | After                |
+| ------------------------ | ------------------------- | -------------------- |
+| `meshBlock.code`         | `20192490000`             | `29900000083`        |
+| `sa1`                    | `20802117831`             | `29901000103`        |
+| `sa2.code`               | `208021178`               | `299010001`          |
+| `sa2.name`               | `Caulfield - South`       | `Fixture 2026 SA2`   |
+| `sa3.code`               | `20802`                   | `29901`              |
+| `sa3.name`               | `Glen Eira`               | `Fixture 2026 SA3`   |
+| `sa4.code`               | `208`                     | `299`                |
+| `sa4.name`               | `Melbourne - Inner South` | `Fixture 2026 SA4`   |
+| `gccsa.code`             | `2GMEL`                   | `2TEST`              |
+| `gccsa.name`             | `Greater Melbourne`       | `Fixture 2026 GCCSA` |
+
+## Same mesh-block code, reassigned hierarchy
+
+Address: `GAVIC411441273`.
+
+| Path inside `boundaries` | Before                    | After                       |
+| ------------------------ | ------------------------- | --------------------------- |
+| `sa1`                    | `20804119443`             | `29901000201`               |
+| `sa2.code`               | `208041194`               | `299010002`                 |
+| `sa2.name`               | `Malvern - Glen Iris`     | `Fixture 2026 reassignment` |
+| `sa3.code`               | `20804`                   | `29901`                     |
+| `sa3.name`               | `Stonnington - East`      | `Fixture 2026 SA3`          |
+| `sa4.code`               | `208`                     | `299`                       |
+| `sa4.name`               | `Melbourne - Inner South` | `Fixture 2026 SA4`          |
+| `gccsa.code`             | `2GMEL`                   | `2TEST`                     |
+| `gccsa.name`             | `Greater Melbourne`       | `Fixture 2026 GCCSA`        |
+
+Its mesh-block code remains `20555940000`. An unchanged code does not prove
+that the hierarchy is unchanged.
+
+## Reproduce the review
+
+The ordinary GitHub and local text diffs now show just these two changed records.
+No binary flags or hidden replacement baseline are needed. To inspect the full
+changes locally:
+
+```bash
+git diff 59756008148f89b2ee1c54ed7bbf9bb77abc036d...HEAD \
+  -- fixtures/expected-output.ndjson
+```
 
 The exact snapshots have these SHA-256 hashes:
 
 | Snapshot         | SHA-256                                                            |
 | ---------------- | ------------------------------------------------------------------ |
 | Before migration | `69a31fdc0b4a10a3fef660ed696a6045e4a9a002a50a7edd9f9df90e9d18b4b7` |
-| After migration  | `95506512752505de3b6fe92cfc09157be4b819352ea71639cc9f67035f6472a2` |
+| After migration  | `e19b5fcfa3be74d4e41521d06fc532dc536edcb29760e3e8eae180f15a8ebfba` |
 
-## See every changed value
-
-Git's normal line diff repeats each complete address twice, including unchanged
-labels, aliases and geocodes. That alone made the PR about 1.45 MB larger.
-[.gitattributes](../.gitattributes) marks only this generated baseline as generated
-and disables its default text diff. The file remains complete NDJSON; schema and
-byte-for-byte regression checks still read all 451 documents.
-
-To inspect the complete, unabridged diff, explicitly opt into text output:
-
-```bash
-git diff --text 59756008148f89b2ee1c54ed7bbf9bb77abc036d...HEAD \
-  -- fixtures/expected-output.ndjson
-```
-
-For a smaller diff of every before/after census value, run this in Bash or Zsh
-from the repository root. Each row contains the PID followed by mesh block, SA1,
-SA2, SA3, SA4 and GCCSA. This command is for the small committed fixture:
-
-```bash
-BASE=59756008148f89b2ee1c54ed7bbf9bb77abc036d
-CENSUS='[._id, .boundaries.meshBlock, .boundaries.sa1, .boundaries.sa2, .boundaries.sa3, .boundaries.sa4, .boundaries.gccsa]'
-diff -u \
-  <(git show "${BASE}:fixtures/expected-output.ndjson" | jq -c "$CENSUS") \
-  <(jq -c "$CENSUS" fixtures/expected-output.ndjson)
-```
-
-`diff` returning 1 is expected here: the census values intentionally differ.
-The production regression check still uses the whole NDJSON file, not this
-projection. For future baseline changes, inspect the full or semantic diff again;
-this inventory describes only the schema 1.0.0 migration.
+Run `./scripts/build-fixture-only.sh` to regenerate all 451 documents, compare both
+SQL paths and check the complete baseline byte for byte. This inventory explains
+the change; it does not replace that check.
 
 See the [fixture guide](README.md) for development and the
 [consumer migration guide](../docs/MIGRATING-TO-ASGS-2026.md) for upgrade implications.
