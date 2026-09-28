@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       preflight_only:
-        description: "Validate release discovery and schema compatibility without building or publishing"
+        description: "Validate source-version metadata without downloading, building or publishing"
         type: boolean
         default: false
       gnaf_version:
@@ -12,7 +12,7 @@ on:
         required: false
         default: ""
       patch_version:
-        description: "Patch version for hotfix releases (e.g. '1' produces v2026.04.1). Leave empty for normal quarterly builds. See E1.13 for the design rationale."
+        description: "Patch number for the selected G-NAF quarter (e.g. gnaf_version=2026.08 plus '1' produces v2026.08.1). Leave empty for a quarterly release."
         required: false
         default: ""
       download_url_gnaf:
@@ -24,7 +24,7 @@ on:
         required: false
         default: ""
       admin_bdys_extracted_dir:
-        description: "Optional manual override for the extracted Admin Boundaries directory name inside /data (e.g. APR26_AdminBounds_GDA_2020_SHP). Only needed with manual URL overrides."
+        description: "Optional manual override for the extracted Admin Boundaries directory name inside /data (e.g. AUG26_AdminBounds_GDA_2020_SHP). Only needed with manual URL overrides."
         required: false
         default: ""
       runner:

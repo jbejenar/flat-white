@@ -1,5 +1,12 @@
 # DEC-007 — GitHub Releases Distribution
 
+> **Schema 1.0.0 change — current clarification.**
+> GitHub Releases remains the primary download channel. The optional S3 mirror is
+> implemented and runs after public release. Release metadata and the S3 manifest
+> identify schema 1.0.0 and ASGS 2026; the manifest envelope remains version 2. The
+> combined national file is a workflow artifact and S3 output rather than a GitHub
+> release asset. See [distribution details](../RELEASING.md#what-gets-published).
+
 ## Status
 
 Accepted
@@ -14,16 +21,16 @@ Publish per-state `.ndjson.gz` files as GitHub Release assets. Each quarterly re
 
 ## Alternatives Considered
 
-- **S3 + CloudFront:** Better for high-traffic distribution (CDN caching, range requests). But introduces AWS costs, IAM management, and infrastructure complexity. Deferred to P5 as an optional mirror.
+- **S3 + CloudFront:** Better for high-traffic distribution (CDN caching, range requests). But introduces AWS costs, IAM management, and infrastructure complexity. Originally deferred to P5; now implemented as an optional mirror.
 - **npm registry:** Wrong tool — npm is for code packages, not multi-GB data files. Size limits would require splitting.
 - **data.gov.au hosting:** The source data is already there. flat-white's value is the transformation, not re-hosting. Also, data.gov.au upload is manual and slow.
 - **Git LFS:** GitHub's LFS has bandwidth limits on free tier (1GB/month). A single popular state file could exhaust the quota.
 
 ## Consequences
 
-- Free hosting with no bandwidth limits for public repositories.
-- Programmatic download: `gh release download v2026.02 --pattern '*-vic.ndjson.gz'`.
-- GitHub Release asset limit is 2GB per file — total compressed output (~1.2GB) fits comfortably.
+- Distribution remains subject to GitHub's current service terms and limits.
+- Programmatic downloads should pin one published tag for metadata and data; see the [README](../../README.md#quick-start).
+- The GitHub release size limit applies per asset. Per-state files are release assets; the combined national output is distributed separately.
 - Version history is maintained via Git tags — consumers can pin to a specific release.
 - `repository_dispatch` enables downstream automation (e.g. geocode-au auto-ingestion).
 - No CDN — downloads come directly from GitHub's asset servers. Acceptable for quarterly releases with modest download volume.

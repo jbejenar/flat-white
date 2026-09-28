@@ -182,7 +182,11 @@ export const HELP_TEXT = `flat-white — Australian address data, flattened and 
 Usage:
   docker run flat-white --help
   docker run flat-white --fixture-only --output /output/
-  docker run -v $(pwd)/output:/output flat-white --states VIC --compress --output /output/
+  docker run -e GNAF_VERSION=2026.08 -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
+
+Environment:
+  GNAF_VERSION       Required for production builds (e.g. 2026.08).
+                     Schema 1.x needs ASGS 2026 sources; fixtures default to 2026.02.
 
 Flags:
   --help, -h          Show this help

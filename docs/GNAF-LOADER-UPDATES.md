@@ -1,5 +1,9 @@
 # gnaf-loader update checks
 
+> **Schema 1.0.0 change:** the current pin is upstream release `202608`, which
+> supplies the ASGS 2026 preparation contract. A newer tag alone is not evidence
+> that its output remains compatible. See the [migration guide](MIGRATING-TO-ASGS-2026.md).
+
 The `gnaf-loader Update Check` workflow checks `minus34/gnaf-loader` every Monday at 09:00 UTC. It reads the committed submodule pin, discovers the latest upstream release (or a tag when no release exists), and fetches that exact tag from upstream. The configured submodule `origin` may be a fork whose tags have not been synchronized.
 
 ## Safe checks and update PRs
@@ -52,3 +56,16 @@ actionlint .github/workflows/gnaf-loader-update.yml
 ```
 
 The tests use temporary Git repositories and mocked GitHub responses. They cover missing fork tags, annotated/lightweight tags, conflicting local tags, retaining fork fixes, upstream merges, divergence, shallow history, and API failures. They never modify the committed `gnaf-loader/` checkout.
+
+## Review census compatibility before accepting a pin
+
+Check the raw mesh-block layout, `mb_2026_code` assignment and prepared
+`abs_2026_mb` hierarchy against flat-white's SQL. The fixture executes the pinned
+upstream mesh-block preparation section; keep that coverage when the upstream
+file changes. Retained 2021 fixture tables must not become runtime fallbacks.
+
+Run the fixture and relevant unit/integration checks, and review the document
+contract, schema version, ASGS metadata, OpenSearch mapping and fixture baseline
+if output meanings change. Use small committed test inputs for new compatibility
+cases. Fixture CI does not prove a complete national load; record that limit in
+the update PR and assess production evidence separately.

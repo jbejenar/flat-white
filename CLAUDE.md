@@ -4,6 +4,11 @@
 
 These rules address observed failure patterns in autonomous sessions. They supplement AGENTS.md (imported above).
 
+> **Schema 1.0.0 change:** read the [migration guide](docs/MIGRATING-TO-ASGS-2026.md)
+> and current [fixture reference](fixtures/SCHEMA-REFERENCE.md). `202602` fixture
+> schema names and retained 2021 decoy tables are intentional; current census
+> joins use the synthetic 2026 overlay.
+
 ## Sandbox Boundaries (claude-loop)
 
 When running under `claude-loop`, you **CANNOT** run:

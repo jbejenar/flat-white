@@ -1,15 +1,20 @@
 ## Summary
 
-<!-- What does this PR do? -->
+<!-- Describe the problem, resulting behaviour and any consumer impact. -->
 
-## Test plan
+## Validation
 
-- [ ] Fixture build passes: `./scripts/build-fixture-only.sh`
-- [ ] Regression test passes: `npm test`
-- [ ] Schema contract preserved (or intentionally updated with version bump)
+<!-- Include the checks you ran and their results. For documentation-only work,
+     explain which links, examples and source contracts you checked. -->
 
-## Checklist
+- [ ] Relevant tests and checks pass; output changes include the fixture build and regression checks
+- [ ] Validation limits are stated (a fixture or metadata preflight is not a production load)
 
-- [ ] No changes to `gnaf-loader/` submodule
-- [ ] If output schema changed: updated `docs/DOCUMENT-SCHEMA.md`, `src/schema.ts`, and `fixtures/expected-output.ndjson` together
+## Contract and documentation
+
+- [ ] Any output change updates `docs/DOCUMENT-SCHEMA.md`, `src/schema.ts` and `fixtures/expected-output.ndjson` together
+- [ ] Breaking field meanings or types have a major schema version and a README-linked migration guide
+- [ ] Examples, release metadata, S3 manifests and OpenSearch mapping metadata agree where affected
+- [ ] Changed guidance is highlighted; historical examples are clearly labelled
+- [ ] No gnaf-loader source changes; any reviewed submodule pin update is explained
 - [ ] No secrets or credentials in committed files

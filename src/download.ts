@@ -9,7 +9,7 @@
  *
  * Or as a module:
  *   import { download } from './download.js';
- *   await download({ version: '2026.05', outputDir: './data' });
+ *   await download({ version: '2026.08', outputDir: './data' });
  */
 
 import {
@@ -44,14 +44,15 @@ function adminSentinelPaths(): DataSource["sentinelPaths"] {
 
 /**
  * Default data sources for the Feb 2026 G-NAF release.
- * URLs verified via HEAD request — see memory/project_data_sources.md.
+ * Historical URL constants for the frozen February source; schema 1.x production
+ * requires compatible ASGS 2026 input. See docs/RELEASING.md.
  *
  * sentinelPaths are well-known files/dirs within each extracted dataset.
  * Their presence confirms a complete extraction vs. a partial/interrupted one.
  *
- * For newer releases, override via DOWNLOAD_URL_GNAF / DOWNLOAD_URL_ADMIN_BDYS
- * env vars — each Geoscape release publishes new dataset UUIDs on data.gov.au,
- * so URLs are not templatable.
+ * Newer releases are discovered from CKAN metadata. Manual overrides use
+ * DOWNLOAD_URL_GNAF / DOWNLOAD_URL_ADMIN_BDYS. Resource UUIDs change, so URLs
+ * are not templatable. See docs/RELEASING.md for the full override contract.
  */
 export const DEFAULT_DATA_SOURCES: DataSource[] = [
   {

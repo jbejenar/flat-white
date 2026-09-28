@@ -1,5 +1,11 @@
 # Next Session — flat-white
 
+> **Historical session notes.** These entries record April 2026 work and old
+> pending items. Start with [NEXT-WORK.md](NEXT-WORK.md) for the current task list.
+> **Schema 1.0.0 change:** census joins now use ASGS 2026; see the
+> [migration guide](docs/MIGRATING-TO-ASGS-2026.md). Old schedules, loader-pin advice
+> and production test plans below are not current instructions.
+
 ## Session: 2026-04-08 (session 21)
 
 Phase: E1 (ongoing) — all remaining items blocked

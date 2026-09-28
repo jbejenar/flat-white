@@ -1,5 +1,11 @@
 # DEC-001 — NDJSON Over Parquet
 
+> **Schema 1.0.0 change — current clarification.**
+> The primary published format remains NDJSON. Optional Parquet and GeoParquet
+> conversion modules now exist; they carry the same census meanings. Read the
+> [current format contract](../DOCUMENT-SCHEMA.md#output-formats), including the
+> existing GeoParquet CRS limitation. Older size estimates below predate this migration.
+
 ## Status
 
 Accepted
@@ -23,5 +29,5 @@ Use NDJSON as the primary output format. Each line is one self-contained JSON do
 - Any tool that reads JSON can consume the output — `jq`, `DuckDB`, Python `json`, Node.js `readline`, etc.
 - Streaming writes keep memory bounded regardless of dataset size.
 - Gzipped NDJSON achieves ~85-90% compression, fitting within GitHub Release limits.
-- Columnar queries (e.g. "all postcodes in VIC") are slower than Parquet. Mitigated by offering Parquet as a future enhancement (E1.01).
-- Per-line validation is trivial — parse each line independently.
+- Columnar queries (e.g. "all postcodes in VIC") are slower than Parquet. Optional Parquet conversion is now available; see the current clarification above.
+- Lines can be parsed independently. JSON parsing alone is not schema validation; use the matching Zod schema or verifier.

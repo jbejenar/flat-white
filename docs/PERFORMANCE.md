@@ -1,5 +1,11 @@
 # Performance Baseline
 
+> **Historical measurements — before schema 1.0.0.** These April 2026 results
+> and estimates use earlier code/data and ASGS 2021. They are not a production
+> benchmark or capacity guarantee for ASGS 2026. **Schema 1.0.0 change:** old
+> database caches are invalidated, so measure the first compatible cold load.
+> See [current release guidance](RELEASING.md) and [migration implications](MIGRATING-TO-ASGS-2026.md).
+
 > Established: 2026-04-04 from first full VIC build (P1.11).
 
 ## Hardware
@@ -31,7 +37,7 @@
 | Postgres shared_buffers         | 128 MB (Docker default) |
 | Total container memory          | <500 MB                 |
 
-Cursor-based streaming (batch size 500) keeps Node.js memory constant regardless of dataset size. The 65 MB RSS is independent of whether the dataset is 451 fixtures or 3.9M production rows.
+Cursor-based streaming (batch size 500) bounds the rows buffered by flatten. The reported 65 MB is a measurement from this run, not a fixed memory guarantee for every dataset or pipeline stage.
 
 ### Output
 
@@ -77,13 +83,13 @@ Cursor-based streaming (batch size 500) keeps Node.js memory constant regardless
 
 ### Memory (Free Runners)
 
-| Component                | Estimate    | Notes                                                  |
-| ------------------------ | ----------- | ------------------------------------------------------ |
-| Node.js flatten RSS      | ~65 MB      | Constant regardless of dataset size (cursor streaming) |
-| PostgreSQL (with tuning) | ~500-700 MB | shared_buffers=256MB + work_mem + overhead             |
-| gnaf-loader (Python)     | ~1-3 GB     | Varies by state; NSW is worst case                     |
-| OS + system              | ~500 MB     | Baseline                                               |
-| **NSW peak (estimated)** | **~3-5 GB** | Within 7 GB limit with ~2-4 GB margin                  |
+| Component                | Estimate    | Notes                                                    |
+| ------------------------ | ----------- | -------------------------------------------------------- |
+| Node.js flatten RSS      | ~65 MB      | Measured historical flatten process; other stages differ |
+| PostgreSQL (with tuning) | ~500-700 MB | shared_buffers=256MB + work_mem + overhead               |
+| gnaf-loader (Python)     | ~1-3 GB     | Varies by state; NSW is worst case                       |
+| OS + system              | ~500 MB     | Baseline                                                 |
+| **NSW peak (estimated)** | **~3-5 GB** | Within 7 GB limit with ~2-4 GB margin                    |
 
 See [NSW-MEMORY-ANALYSIS.md](NSW-MEMORY-ANALYSIS.md) for detailed margin analysis.
 
@@ -93,4 +99,4 @@ All 9 states passed: row count, PID uniqueness, schema validation, quality check
 
 ## Updating This Baseline
 
-When new measurements are taken (especially after PostgreSQL tuning changes), update the tables above. Keep the Apple Silicon M2 Max baseline as a reference point.
+Keep these historical measurements intact. Add a separately dated ASGS 2026 baseline with the commit, source quarters, schema version, ASGS year, runner resources, cache state, state counts, stage timings, peak memory/disk and workflow link. Distinguish measurements from estimates.

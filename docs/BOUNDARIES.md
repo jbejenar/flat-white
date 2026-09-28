@@ -1,659 +1,141 @@
-# Boundaries — How They're Calculated, Where They Come From, What Goes Wrong
+# How boundary enrichment works
 
-> **Schema 1.0.0:** census enrichment now uses ASGS 2026, including the new
-> `mb_2026_code` and `abs_2026_mb` hierarchy. Missing 2026 census data fails
-> validation. See [migration implications](MIGRATING-TO-ASGS-2026.md).
+> **Schema 1.0.0 change:** census enrichment now uses ASGS 2026 through
+> `mb_2026_code` and `abs_2026_mb`. There is no 2021 fallback. See the
+> [migration guide](MIGRATING-TO-ASGS-2026.md) for consumer implications.
 
-> **2026-04-09 (E1.23): Path 1 and Path 2 have been collapsed into a single path.** flat-white now always passes `--no-boundary-tag` to gnaf-loader and uses its own spatial join fallback (`address_full_prep.sql`). The retry infrastructure (`scripts/detect-load-failure.sh`, the `--no-boundary-tag` retry branch in `docker-entrypoint.sh`) has been deleted. The sections below that describe the dual-path architecture are preserved as historical documentation.
+An address has two kinds of geographic enrichment. Administrative areas are
+assigned by intersecting an address point with polygons. Census areas are looked
+up through the address's mesh-block code. Both appear in the same `boundaries`
+object, but their derivation and expected gaps differ.
 
-> **Audience:** anyone reading the quarterly build logs and trying to figure out why "LGA" appears in scary red text. Also: future contributors who need to change anything in the boundary path.
->
-> **TL;DR:** boundary enrichment is layered. There's an upstream gnaf-loader path that's currently broken for 7 of 9 states, and our own spatial-join fallback that picks up the slack. The scary `lga_pid SQL FAILED` lines you see in the logs are the **upstream bug being caught and rerouted**, not a flat-white failure.
+## The ten output fields
 
----
+| Field                    | Method               | Prepared source                        |
+| ------------------------ | -------------------- | -------------------------------------- |
+| `lga`                    | Spatial join         | `local_government_areas`               |
+| `ward`                   | Spatial join         | `local_government_wards`               |
+| `stateElectorate`        | Spatial join         | `state_lower_house_electorates`        |
+| `commonwealthElectorate` | Spatial join         | `commonwealth_electorates`             |
+| `meshBlock`              | **2026 code lookup** | `abs_2026_mb.mb_code_26`, `mb_cat_26`  |
+| `sa1`                    | **2026 code lookup** | `abs_2026_mb.s1_code_26`               |
+| `sa2`                    | **2026 code lookup** | `abs_2026_mb.s2_code_26`, `s2_name_26` |
+| `sa3`                    | **2026 code lookup** | `abs_2026_mb.s3_code_26`, `s3_name_26` |
+| `sa4`                    | **2026 code lookup** | `abs_2026_mb.s4_code_26`, `s4_name_26` |
+| `gccsa`                  | **2026 code lookup** | `abs_2026_mb.gc_code_26`, `gc_name_26` |
 
-## What "boundaries" are
+All ten fields are nullable. Types and object shapes are defined in the
+[document schema](DOCUMENT-SCHEMA.md#boundaries). `lga.code` is a Geoscape LGA
+identifier; it is not one of the six ASGS census codes changed by this migration.
 
-Every address in the output gets enriched with the administrative and statistical areas it sits inside. The output schema (`src/schema.ts`) defines **ten boundary fields** split between two derivation paths:
+## The current pipeline
 
-| Field                    | What it is                                      | How it's derived                                                             |
-| ------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| `lga`                    | Local Government Area (council)                 | spatial join — `admin_bdys.local_government_areas`                           |
-| `ward`                   | Sub-council voting area                         | spatial join — `admin_bdys.local_government_wards`                           |
-| `stateElectorate`        | State lower-house electorate                    | spatial join — `admin_bdys.state_lower_house_electorates`                    |
-| `commonwealthElectorate` | Federal electorate                              | spatial join — `admin_bdys.commonwealth_electorates`                         |
-| `meshBlock`              | ABS Mesh Block (smallest stat geography)        | code lookup — `admin_bdys.abs_2026_mb` via `address_principals.mb_2026_code` |
-| `sa1`                    | ABS Statistical Area 1 (~200-800 people)        | derived from mesh-block lookup (`abs_2026_mb.s1_code_26`)                    |
-| `sa2`                    | ABS Statistical Area 2 (~3k-25k people, suburb) | derived from mesh-block lookup (`abs_2026_mb.s2_code_26` + `s2_name_26`)     |
-| `sa3`                    | ABS Statistical Area 3 (~30k-130k people)       | derived from mesh-block lookup                                               |
-| `sa4`                    | ABS Statistical Area 4 (~100k-500k people)      | derived from mesh-block lookup                                               |
-| `gccsa`                  | Greater Capital City Statistical Area           | derived from mesh-block lookup                                               |
+1. **Load and prepare.** The pinned loader imports G-NAF and raw administrative
+   shapefiles and prepares boundary tables. flat-white always passes
+   `--no-boundary-tag`; it owns the subsequent address-to-administrative-area join.
+2. **Validate the input.** After a fresh load or cache restore,
+   [`validate-db-cache.sh`](../scripts/validate-db-cache.sh) checks the expected
+   schemas, populated tables and state-specific boundaries. It also requires
+   2026 census columns and at least one matching address mesh-block code.
+3. **Assign administrative areas.** The boundary prelude in
+   [`address_full_prep.sql`](../sql/address_full_prep.sql) creates/populates
+   `address_principal_admin_boundaries` when needed. It uses bulk spatial joins
+   and polygon subdivision. Deterministic selection and a unique address-PID
+   index prevent overlapping polygons from multiplying address rows.
+4. **Flatten.** [`address_full.sql`](../sql/address_full.sql) joins each principal
+   address to its administrative assignments and the 2026 mesh-block hierarchy.
+   Production pre-materializes aggregations before streaming. Its generated main
+   query must agree with the canonical CTE query.
+5. **Verify output.** Schema, row-count, PID and data-quality checks run on the
+   documents. Administrative coverage gates apply per state. Reported mesh-block,
+   SA1 and SA2 coverage helps detect census gaps.
 
-**Two derivation paths, very different characters:**
+Names such as `gnaf_202608` use the **source quarter** as the schema suffix. The
+`2026` in `abs_2026_mb` identifies the **ASGS edition**. These are different
+concepts; changing one does not change the other.
 
-The **first four fields** (`lga`, `ward`, `stateElectorate`, `commonwealthElectorate`) come from a **point-in-polygon spatial join** — for each address point, find which polygon it sits inside. This is where all the complexity lives.
+## Census validation is deliberately strict about the edition
 
-The **other six fields** (`meshBlock` + `sa1` through `gccsa`) come from a much simpler **non-spatial code lookup**. `address_principals.mb_2026_code` is already populated by gnaf-loader during the load stage (Parts 1-4, before Part 5 boundary tagging). Flatten just joins it against `abs_2026_mb` to expand one mesh block code into category, SA1, SA2, SA2 name, SA3, SA3 name, SA4, SA4 name, GCC, GCC name. No `ST_Intersects`, no polygon math, no performance issue.
+Schema 1.0.0 follows this path:
 
-So when this doc talks about "the boundary problem", it almost always means **the spatial join for the four polygon-derived fields**. Mesh block / SA1 / SA2 / SA3 / SA4 / gccsa use code lookup, but the lookup vintage and loader schema must match. The schema 1.0.0 migration updates that contract explicitly.
-
----
-
-## The two paths boundaries can be populated
-
-There are **two completely independent code paths** that can populate `address_principal_admin_boundaries` (the table that flatten reads from). They're alternatives — only one needs to run.
-
-```
-                        ┌──────────────────────────────────┐
-download admin bdys ──→ │ gnaf-loader Part 5               │
-                        │   "boundary tagging"             │ ◄── Path 1
-                        │   ST_Subdivide + bulk hash join  │     (upstream)
-                        │   ~2 min for VIC                 │
-                        └────────────────┬─────────────────┘
-                                         │
-                                         ▼
-              gnaf_*.address_principal_admin_boundaries
-                                         │
-                                         ▼
-                        ┌──────────────────────────────────┐
-                        │ flat-white flatten               │
-                        │ address_full_prep.sql            │ ◄── Path 2
-                        │   IF table empty: spatial join   │     (our fallback)
-                        │   LEFT JOIN LATERAL ... LIMIT 1  │
-                        │   ~30 min - 3 hr for NSW         │
-                        └────────────────┬─────────────────┘
-                                         │
-                                         ▼
-                                   NDJSON output
+```text
+address_principals.mb_2026_code
+  → abs_2026_mb.mb_code_26
+  → mesh-block category, SA1, SA2, SA3, SA4 and GCCSA
 ```
 
-### Path 1 — gnaf-loader's Part 5 (upstream, fast)
-
-Upstream gnaf-loader's `load-gnaf.py` runs a stage called `Part 5 of 6 : Start boundary tagging addresses`. It does the spatial join in two stacked optimisations:
-
-**(a) `ST_Subdivide` pre-processing.** Before tagging, gnaf-loader runs `02-03-create-admin-bdy-analysis-tables_template.sql` to build "analysis" copies of every boundary table. The actual template uses `{0}` (table name) and `{1}` (pid column) placeholders; below is the LGA-case expansion:
-
-```sql
-INSERT INTO admin_bdys.local_government_areas_analysis (lga_pid, name, state, geom)
-SELECT lga_pid, name, state,
-       ST_Subdivide((ST_Dump(ST_Buffer(geom, 0.0))).geom, 512)
-  FROM admin_bdys.local_government_areas;
-```
-
-This is the single biggest speedup. LGA polygons can be enormous — Western Australia's Outer Ngaanyatjarraku LGA is the size of Greece. PostGIS spatial indexes work on bounding boxes, so a giant LGA polygon's bbox covers most of WA, and the GiST index is useless: every address in WA becomes a candidate for that LGA, forcing PostGIS to do an expensive `ST_Within` check on the actual polygon for each one.
-
-`ST_Subdivide` chops each polygon into pieces of at most 512 vertices. A giant LGA becomes hundreds of small tiles, each with a tight bounding box. Now the GiST index is razor-sharp: a point in Perth only matches the ~5 tiles around Perth, not all of WA. **Spatial index hit rate goes from ~1% to ~99%** — typically a 10–50× speedup.
-
-**(b) Bulk hash join (one big SQL).** Then it does one `INSERT ... SELECT` per boundary table. The actual upstream template uses `{0}` (boundary table name) and `{1}` (PID column name) placeholders:
-
-```sql
--- gnaf-loader/postgres-scripts/04-01b-bdy-tag-template.sql
-INSERT INTO gnaf.temp_{0}_tags (gnaf_pid, gnaf_state, alias_principal, bdy_pid, bdy_name, bdy_state)
-SELECT pnts.gnaf_pid, pnts.state, 'P', bdys.{1}, bdys.name, bdys.state
-  FROM gnaf.address_principals AS pnts
-  INNER JOIN admin_bdys.{0} AS bdys
-  ON ST_Within(pnts.geom, bdys.geom);
-```
-
-For an LGA tag, `{0}` becomes `local_government_areas_analysis` (the subdivided table — see `load-gnaf.py:684-690`, with the literal comment "WARNING: this can add hours to the processing" if the subdivided table isn't available) and `{1}` becomes `lga_pid`. Note the destination columns are **generic** (`bdy_pid`, `bdy_name`) — gnaf-loader uses one templated table per boundary type and joins them later.
-
-One INSERT, one query plan, the planner picks a hash join with the GiST index, processes all 4.6M NSW addresses in one shot. PostgreSQL is excellent at this kind of single big set-oriented operation.
-
-**(c) Multiprocessing across boundary types.** The 5 boundary type tags (LGA, ward, ce, se_lower, se_upper) run **in parallel** on separate CPUs via Python `multiprocessing`. Time per boundary type stays roughly constant; total time = max(per-type time), not sum.
-
-**Result:** NSW boundary tagging in ~2 minutes when it works. The result is a row per address in `address_principal_admin_boundaries`, populated with `lga_pid`, `lga_name`, `ward_pid`, `ward_name`, `ce_pid`, `ce_name`, `se_lower_pid`, `se_lower_name`, `se_upper_pid`, `se_upper_name`.
-
-### Path 2 — flat-white's spatial-join fallback (`address_full_prep.sql`, slow)
-
-Our fallback lives in `sql/address_full_prep.sql` and runs as a flatten-time prelude. It only fires when `address_principal_admin_boundaries` is empty (i.e. Path 1 was skipped or failed):
-
-```sql
-DO $$
-BEGIN
-  SELECT COUNT(*) INTO bdy_count FROM gnaf_*.address_principal_admin_boundaries;
-  IF bdy_count > 0 THEN
-    RAISE NOTICE 'admin_boundaries already populated — skipping spatial join fallback';
-    RETURN;
-  END IF;
-  -- ... otherwise, build it ourselves ...
-END $$;
-```
-
-If the table is empty, the fallback inserts via:
-
-```sql
-INSERT INTO gnaf_*.address_principal_admin_boundaries (...)
-SELECT
-  ap.gnaf_pid, ap.locality_pid, ...,
-  lga.lga_pid, lga.full_name, ...
-FROM gnaf_*.address_principals ap
-LEFT JOIN LATERAL (
-  SELECT lga_pid, full_name
-    FROM admin_bdys_*.local_government_areas
-    WHERE ST_Intersects(ap.geom, geom)
-    ORDER BY lga_pid LIMIT 1
-) lga ON true
-LEFT JOIN LATERAL (... ward) ward ON true
-LEFT JOIN LATERAL (... ce) ce ON true
-LEFT JOIN LATERAL (... se_lower) se ON true
-LEFT JOIN LATERAL (... se_upper) se_up ON true;
-```
-
-**Why `LATERAL ... LIMIT 1`?** This is the [PR #66 / E1.15](../ROADMAP.md) fix for **multi-polygon row multiplication**. `ST_Intersects` returns true for points on a polygon edge, so a single point on the shared boundary between two adjacent LGAs would match BOTH polygons. With four `LEFT JOIN ... ON ST_Intersects(...)` joins cartesian-multiplied, that produced up to 16 duplicate rows per address (one per combination of matching CE × LGA × ward × SE polygons). The `LATERAL` form guarantees **at most one row per (address, boundary table)**, and the `ORDER BY pid` ensures the choice is deterministic across runs (same point always picks the same polygon).
-
-**Why it WAS slow (historical, pre-E1.21).** The original `LATERAL ... LIMIT 1` form did not bulk-optimise like a hash join — PostgreSQL conceptually re-ran the inner query for each outer row. 4.6M re-executions for NSW. We were hitting the **un-subdivided** raw polygons so the GiST index was much less selective. Five LATERAL joins serially per row.
-
-**Empirical impact (historical):** NSW spatial-join fallback took **30 minutes to 3 hours**, depending on runner luck. The local M5 64GB measurement of the OLD code was ~67 minutes for the spatial join alone. This was the elephant in the room and the single biggest source of "the quarterly run takes forever".
-
-**FIXED in PR #106 / E1.21 (2026-04-09).** The fallback was rewritten as **insert-then-5-updates against unsubdivided polygon tables** — bulk INSERT shell rows, then five INDEPENDENT UPDATE passes (one per boundary table) using `DISTINCT ON (gnaf_pid) ORDER BY gnaf_pid, {pid}`. Plain INNER JOIN (no LATERAL wrapper) frees the planner to pick its preferred parallel-aware spatial join shape — the same plan gnaf-loader Part 5 gets.
-
-**Empirical impact (post-E1.21):**
-
-- NSW spatial join: 67 min → **7.5 min on M5 64GB** (~9× speedup)
-- NSW total job time on CI: 1h56m (failed) → **29m20s with cache hit** (run 24163471133), **43m55s fresh build** (run 24159739501)
-- Quarterly run 24163471133 (2026-04-09): all 9 states green for the first time, v2026.02.1 published
-
-**Why FIVE independent UPDATE passes** instead of one joint INSERT with 5 LEFT JOINs: a single joint form computes the cartesian product of all five boundary tables, then DISTINCT ON picks the lowest-cartesian-tuple. For an address sitting on a polygon edge in multiple boundary tables, the joint tiebreak can choose a different (lga, ward) combination than the prior LATERAL form (which picked each table's lowest pid INDEPENDENTLY). Five separate UPDATE passes preserve per-table independence exactly, so byte-for-byte regression against `fixtures/expected-output.ndjson` stays clean.
-
-**Why NOT subdivided `_analysis` tables** (rev 2 of the implementation plan, rejected): two blockers found in audit. (a) `local_government_areas_analysis` only carries the abbreviated `name` column, not `full_name` — would silently change every output's `lga_name` from long form to abbreviation. (b) The analysis template runs `ST_Buffer(geom, 0.0)` + `ST_Dump` + `ST_Subdivide` which can shift edge vertices by floating-point ulps; production data could silently shift in ways the fixture wouldn't catch.
-
-The full implementation reasoning is in PR #106 and ROADMAP entry E1.21.
-
-**Edge case worth knowing:** a polygon from one state intersecting an address in another (data error in source) tags the address with the wrong-state polygon. Both LATERAL and the new bulk-join shape have this property; not introduced by E1.21.
-
-### Mesh block / SA1 / SA2 — neither path
-
-These don't use spatial joins at all. `address_principals.mb_2026_code` is populated by gnaf-loader during the **load** stage (Part 1-4, before Part 5), when the source supports ASGS 2026. The cache validator checks that it exists and joins to the census table. Flatten reads it and does a non-spatial join against `admin_bdys.abs_2026_mb`:
-
-```sql
-LEFT JOIN admin_bdys_*.abs_2026_mb mb
-  ON mb.mb_code_26 = ap.mb_2026_code
-```
-
-That join expands the mesh block code into category, SA1, SA2, SA2 name, SA3, SA4, GCC. No `ST_Intersects`, no polygon math, no performance issue. **The mesh block / SA1 / SA2 fields have never been a source of trouble.** When this doc talks about "boundary problems" you can mentally exclude these.
-
----
-
-## How a build chooses which path to run
-
-> **Historical (pre-E1.23).** The decision logic below was removed in E1.23. Builds now always use the spatial-join fallback path.
-
-The decision lives in `docker-entrypoint.sh` and `scripts/detect-load-failure.sh`:
-
-```
-1. Run gnaf-loader (Path 1).
-2. If it succeeds: done. address_principal_admin_boundaries is populated.
-3. If it fails AND the failure happened during/after Part 5 boundary tagging:
-     - WARNING — retry gnaf-loader with --no-boundary-tag
-     - The retry skips Part 5 entirely. address_principal_admin_boundaries
-       gets created (by gnaf-loader's earlier steps) but stays empty.
-4. At flatten time, address_full_prep.sql sees an empty table and fires
-   Path 2 (the spatial-join fallback) to populate it.
-5. flatten reads from the now-populated table.
-```
-
-The detection logic is in `scripts/detect-load-failure.sh`. It's intentionally **broad**: any non-zero exit from gnaf-loader where the log contains `"Part 5 of 6 : Start boundary tagging"` AND does NOT contain the success marker `"Part 5 of 6 : Addresses boundary tagged"` is treated as Part-5-eligible. Broad-by-design so any future upstream regression in Part 5 (not just the specific column-mismatch bug below) auto-recovers without code changes.
-
-The detection has 10 test fixtures covering all known failure modes plus negative cases — see `test/integration/load-detection/`.
-
----
-
-## The current upstream bug (Problem A) — why every quarterly run is loud
-
-This is the source of the scary `lga_pid SQL FAILED` messages you keep seeing in the quarterly build logs.
-
-### What's broken
-
-`gnaf-loader/postgres-scripts/04-06-bdy-tags-for-alias-addresses.sql` is **hardcoded** to reference all 5 boundary `*_pid`/`*_name` columns:
-
-```sql
-INSERT INTO gnaf.address_alias_admin_boundaries (
-  gnaf_pid, ...,
-  ce_pid, ce_name, lga_pid, lga_name, ward_pid, ward_name,
-  se_lower_pid, se_lower_name, se_upper_pid, se_upper_name
-)
-SELECT ...
-```
-
-But `gnaf-loader/settings.py` filters which boundaries get loaded **per state**:
-
-```python
-if states_to_load != ["OT"]:
-    admin_bdy_list.append(["commonwealth_electorates", "ce_pid"])
-if states_to_load != ["ACT"]:
-    admin_bdy_list.append(["local_government_areas", "lga_pid"])
-if "NT" in states_to_load or "SA" in states_to_load or "VIC" in states_to_load or "WA" in states_to_load:
-    admin_bdy_list.append(["local_government_wards", "ward_pid"])
-if states_to_load != ["OT"]:
-    admin_bdy_list.append(["state_lower_house_electorates", "se_lower_pid"])
-if "TAS" in states_to_load or "VIC" in states_to_load or "WA" in states_to_load:
-    admin_bdy_list.append(["state_upper_house_electorates", "se_upper_pid"])
-```
-
-When a single-state build excludes any boundary type, the dynamic `CREATE TABLE address_alias_admin_boundaries` doesn't make those columns. The hardcoded `INSERT` then crashes with `psycopg.errors.UndefinedColumn`.
-
-### Affected states
-
-This is the matrix derived directly from `gnaf-loader/settings.py:208-217`. Each row lists the boundary types that are NOT loaded into `admin_bdy_list` for a single-state build of that state, which means the dynamic `CREATE TABLE address_alias_admin_boundaries` doesn't include those columns. Any single missing boundary type is enough to make the hardcoded `INSERT` in `04-06-bdy-tags-for-alias-addresses.sql` crash.
-
-| State (single-state build) | Boundary types missing from `admin_bdy_list` | Path 1 status |
-| -------------------------- | -------------------------------------------- | ------------- |
-| ACT                        | lga, ward, se_upper                          | FAIL          |
-| NSW                        | ward, se_upper                               | FAIL          |
-| NT                         | se_upper                                     | FAIL          |
-| OT                         | ce, ward, se_lower, se_upper                 | FAIL          |
-| QLD                        | ward, se_upper                               | FAIL          |
-| SA                         | se_upper                                     | FAIL          |
-| TAS                        | ward                                         | FAIL          |
-| VIC                        | (none)                                       | OK            |
-| WA                         | (none)                                       | OK            |
-
-That's **7 of 9 states fail Path 1 with a scary-looking SQL error on every quarterly run.** Only **VIC and WA** are spared (they have all 5 boundary types in `admin_bdy_list`).
-
-Note: PostgreSQL's `UndefinedColumn` error reports one of the missing columns (typically the first one the planner encounters), so the exact error text varies between states. The fixture log files in `test/integration/load-detection/fixtures/` (e.g. `failure-tas-se_upper_pid.log`) are **synthetic** — the filenames don't always match what would actually fail for that state in production. The detection in `detect-load-failure.sh` is broad-by-design and catches them all regardless of which specific column the planner reports.
-
-The detection in `detect-load-failure.sh` catches all 7, the entrypoint retries with `--no-boundary-tag`, and Path 2 takes over at flatten time.
-
-### What you see in the logs
-
-What it looks like when it's working as designed:
-
-```
-root        : INFO     Part 5 of 6 : Start boundary tagging addresses
-root        : INFO     SQL FAILED! : ----------------------------------
-       bdy.lga_pid,
-       lga.lga_name AS lga_name,
-   INNER JOIN raw_admin_bdys_202602.aus_lga AS lga ON bdy.lga_pid = lga.lga_pid
-psycopg.errors.UndefinedColumn: column "ward_pid" of relation
-"address_alias_admin_boundaries" does not exist
-
-[load] ERROR: gnaf-loader exited with code 1 after 5.0 minutes
-[entrypoint] WARNING: gnaf-loader boundary tagging failed; retrying with --no-boundary-tag
-             so flat-white fallback can populate boundaries
-[load] Python: python3 /app/gnaf-loader/load-gnaf.py ... --states QLD --no-boundary-tag
-root        : INFO     	- no_boundary_tag : True
-...
-root        : WARNING  Part 5 of 6 : Addresses NOT boundary tagged
-[entrypoint] ✓ Stage: load completed
-```
-
-**That `SQL FAILED` block is the upstream bug being caught and rerouted, not a flat-white failure.** The thing to look for is the WARNING line that follows. If you see the warning after the SQL error, the system is doing the right thing.
-
-### Why this isn't fixed upstream
-
-It is, eventually (ROADMAP entry **E1.20** — "push gnaf-loader settings.py / 04-06 fix upstream"). It's low priority because:
-
-1. The broad Part-5 detection in `detect-load-failure.sh` handles it transparently.
-2. Path 2 produces correct output.
-3. Upstream gnaf-loader is a community-maintained project; PR review cadence is unpredictable.
-
-When E1.20 lands, the SQL error stops appearing in the logs and the runtime drops by ~5 min per state (no retry needed). It's nice-to-have, not load-bearing.
-
----
-
-## The /dev/shm bug (Problem B) — fixed in #96
-
-This was a downstream consequence of Problem A.
-
-When Path 2 became the primary path for 7 of 9 states, it started exercising Postgres parallel hash joins much harder than Path 1 ever did. PostgreSQL parallel hash joins allocate dynamic shared memory chunks in `/dev/shm` by default. **Docker default `/dev/shm` is 64 MB** — exhausted by a single 64 MB parallel hash table. Flatten died with:
-
-```
-[flatten] Fatal: PostgresError: could not resize shared memory segment
-"/PostgreSQL.4093011826" to 67244032 bytes: No space left on device
-```
-
-This was the actual killer of the quarterly runs in March/April 2026 — VIC and WA both repeated this 3 times before the retry budget was exhausted.
-
-### The fix (#96)
-
-Set `dynamic_shared_memory_type = sysv` in `postgresql.conf`:
-
-```
-# docker-entrypoint.sh, postgres init
-shared_buffers = 256MB
-work_mem = 64MB
-maintenance_work_mem = 256MB
-effective_cache_size = 2GB
-max_connections = 20
-dynamic_shared_memory_type = sysv   # ← #96
-```
-
-This switches Postgres to **System V shared memory** which doesn't use `/dev/shm` at all. SysV shmem is bounded by `SHMMAX`/`SHMALL` kernel settings, which Docker leaves at host defaults (very high — gigabytes).
-
-Structural fix, not a tunable. No `--shm-size` insurance flag, no magic numbers. PR #96 added test coverage and the fix has been on `main` since 2026-04-08.
-
-### Why was this latent in v2026.04?
-
-In v2026.04, gnaf-loader was already running with `--no-boundary-tag` as a workaround for an unrelated `shp2pgsql` upstream bug. That meant **Path 2 wasn't actually doing the spatial join** — `address_principal_admin_boundaries` stayed empty all the way through. Empty table → no parallel hash joins on it → no shm pressure. The bug was lurking; it activated the moment boundary tables started getting populated again.
-
----
-
-## The silent v2026.04 incident (Problem C) — fixed by layered defence
-
-This is the **scariest class of failure** because nothing crashed. The build completed, the output shipped, and nobody noticed for a while.
-
-### What happened
-
-In v2026.04:
-
-1. gnaf-loader was running with `--no-boundary-tag` (Problem B's reason — `shp2pgsql` workaround).
-2. Path 2 didn't exist yet.
-3. So `address_principal_admin_boundaries` was just **empty**, the flatten ran fine (no error, just LEFT JOIN producing NULL boundary columns), and the shipped NDJSON had **0% LGA coverage, 0% ward, 0% electorate**.
-4. Verify didn't have boundary coverage thresholds yet.
-5. Output shipped.
-
-### The defence we now have
-
-Two parts to the model — keep them separate. The **recovery mechanism** is what makes sure the data gets populated in the first place. The **validation gates** are independent checks that can each abort the build if the data turns out to be wrong. A v2026.04-class silent ship is now structurally impossible because the gates exist; the recovery mechanism is what makes successful runs possible in the first place.
-
-#### Recovery mechanism (data population)
-
-```
-gnaf-loader Path 1 → if it populates the table, Path 2 is a no-op
-                  ↓ else (--no-boundary-tag retry)
-flat-white Path 2 → spatial-join fallback in address_full_prep.sql
-                    populates the table at flatten time
-```
-
-This is **not a gate** — it doesn't stop a bad release. It's the code path that makes correct boundary data exist when both upstream and our own SQL are working. If both Path 1 AND Path 2 silently produce wrong data (e.g. 0% coverage), nothing in this layer would notice. That's what the gates are for.
-
-#### Validation gates (each independently aborts a bad build)
-
-| #   | Gate                                | What it asserts                                                                                                   | When                             | Implemented in                                                                                     | Added           |
-| --- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- | --------------- |
-| 1   | Cache validator                     | Boundary polygon tables exist with rows in the post-load / restored DB                                            | Post-load + post-restore         | `scripts/validate-db-cache.sh`                                                                     | #99             |
-| 2   | Production verify boundary coverage | Per-state LGA / ward / electorate coverage ≥ defaults (99% / 95% / 99%)                                           | Post-flatten verify, every state | `src/verify.ts` `--check-boundary-coverage` (`DEFAULT_BOUNDARY_THRESHOLDS`)                        | E1.14 (pre-#99) |
-| 3   | PR-time shape smoke thresholds      | Fixture-scale per-state coverage ≥ tight thresholds (catches regressions in `address_full_prep.sql` before merge) | Every relevant PR                | `scripts/run-quarterly-fixture-smoke.mjs` + `verification-report.ts` `--boundary-thresholds` (#99) | #99             |
-
-**Three independent gates**, in order of when they fire:
-
-- **Gate 1** runs first (post-load and post-restore). Cheapest, narrowest. Catches "the polygon tables we need for the spatial join aren't there at all".
-- **Gate 2** runs after the flatten produces a per-state NDJSON. Catches "the spatial join produced output, but the coverage is too low to ship". This existed before #99 (E1.14 added it).
-- **Gate 3** runs at PR time on the fixture, before any quarterly data ever runs. Catches "someone changed `address_full_prep.sql` and the spatial join now silently drops a boundary type". This is the only gate that runs _before_ a quarterly build.
-
-Gate 1 is the new gate #99 added at the cache layer. Gates 2 and 3 (and the threshold-aware verification-report.ts plumbing) are the gate set #99 either added or made stricter. Pre-#99, only Gate 2 existed — which meant a regression couldn't ship, but you'd burn an entire quarterly run before hitting it. Adding Gate 1 (catches it post-load, ~25 min in) and Gate 3 (catches it at PR time, never runs) is the speed/cost win.
-
----
-
-## Per-state vs national: a subtle gnaf-loader detail
-
-There's a subtlety worth noting because it's tripped me up reading the code.
-
-`gnaf-loader/settings.py`'s `admin_bdy_list` is filtered per-state — see the table in Problem A above. **But the per-state filtering is only applied to two stages:**
-
-1. The **boundary tagging** stage (`create_admin_bdys_for_analysis` and `boundary_tag_gnaf` in `load-gnaf.py`).
-2. The **`04-06-bdy-tags-for-alias-addresses.sql`** hardcoded INSERT (this is the bug in Problem A).
-
-**It is NOT applied to the polygon prep stage** (`prep_admin_bdys` in `load-gnaf.py`). The per-state filtering for prep is commented out (lines 515–535 of `load-gnaf.py`):
-
-```python
-# # Account for bdys that are not in states to load - not yet working
-# for sql in sql_list:
-#     if settings.states_to_load == ["OT"] and ".commonwealth_electorates " in sql:
-#         sql_list.remove(sql)
-#     ...
-```
-
-So `prep_admin_bdys` runs the FULL `02-02a-prep-admin-bdys-tables.sql` regardless of state. **This means `admin_bdys_*.local_government_areas`, `local_government_wards`, `commonwealth_electorates`, `state_lower_house_electorates`, and `state_upper_house_electorates` are populated with country-wide polygon data on every state build**, even single-state builds like ACT-only or QLD-only.
-
-This is what makes `validate-db-cache.sh`'s strict polygon-table checks correct — the polygon tables ARE always present after a successful gnaf-loader load. If a future upstream change un-comments that filtering block, the validator will fail and we'll know to update both. (The validator header documents this assumption explicitly.)
-
-The polygon **analysis** tables (with `_analysis` suffix and ST_Subdivide tiles) ARE per-state filtered — they're built from `admin_bdy_list`. We don't currently use them in flat-white's fallback path (we hit the un-subdivided raw polygons, which is part of why Path 2 is slow — see "Future work" below).
-
----
-
-## Where each output field comes from
-
-This maps cleanly to what flatten reads — `sql/address_full.sql` lines 178–197:
-
-```sql
--- Admin boundaries (Path 1 or Path 2 populates this table)
-ab.lga_pid,
-ab.lga_name,
-ab.ward_name,
-ab.se_lower_name AS state_electorate_name,
-ab.ce_name       AS commonwealth_electorate_name,
-
--- ABS mesh block + statistical areas (mechanical lookup)
-ap.mb_2026_code,
-mb.mb_cat_26        AS mesh_block_category,
-mb.s1_code_26,
-mb.s2_code_26,
-mb.s2_name_26,
-mb.s3_code_26,
-mb.s3_name_26,
-mb.s4_code_26,
-mb.s4_name_26,
-mb.gc_code_26,
-mb.gc_name_26,
-```
-
-And the joins:
-
-```sql
--- Spatial-join derived
-LEFT JOIN gnaf_*.address_principal_admin_boundaries ab ON ab.gnaf_pid = ap.gnaf_pid
-
--- Mechanical code lookup
-LEFT JOIN admin_bdys_*.abs_2026_mb mb ON mb.mb_code_26 = ap.mb_2026_code
-```
-
-The schema field names (`lga`, `ward`, `stateElectorate`, `commonwealthElectorate`, `meshBlock`, `sa1`, `sa2`) are the **camelCase output names** in the NDJSON document. The `address_full.sql` columns are the **snake_case Postgres aliases**. The TypeScript flatten code (`src/flatten.ts`) does the snake-to-camel mapping when composing the document.
-
----
-
-## The fixture path
-
-The quarterly shape smoke (#99) and `scripts/build-fixture-only.sh` use a fixture-only build that exercises the same boundary code paths against committed seed data — no 6.5 GB download required.
-
-Files involved:
-
-| File                                      | Role                                                                                                                                                                                                |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fixtures/seed-postgres.sql`              | Schema DDL for `gnaf_*` and `raw_gnaf_*` schemas + ~451 edge-case addresses                                                                                                                         |
-| `fixtures/seed-admin-bdys.sql`            | Schema DDL for `raw_admin_bdys_*` schema + raw polygon tables (commonwealth electorates, LGAs, wards, state electorates, etc.)                                                                      |
-| `fixtures/prep-admin-bdys.sql`            | Transforms raw polygon tables → prepped `admin_bdys_*` tables (local_government_areas, local_government_wards, commonwealth_electorates, etc.) — equivalent to gnaf-loader's `prep_admin_bdys` step |
-| `scripts/extract-boundary-prelude.mjs`    | Extracts the spatial-join fallback DO block from `address_full_prep.sql` so it can run as a standalone prelude in fixture mode                                                                      |
-| `docker-entrypoint.sh` (`fixture` branch) | Runs the four scripts above in order, then flattens                                                                                                                                                 |
-
-The fixture path is **the only way** to exercise both the polygon prep AND the spatial-join fallback in CI without waiting for a real quarterly download. It catches `address_full_prep.sql` regressions at PR time via the `quarterly-shape-smoke` job.
-
-The committed fixture sits at near-100% boundary coverage (LGA 100%, ward 99.6%, electorates 100%, mesh block / SA1 / SA2 100%). The shape smoke uses `--boundary-thresholds lga=99,ward=99,...` so any regression that drops a boundary type entirely fails the smoke at PR time.
-
----
-
-## The detection logic (`scripts/detect-load-failure.sh`)
-
-The script that decides "is this a Part-5 retry-eligible failure or a real error". Three conditions, all must hold:
-
-```
-Part-5-eligible iff:
-  1. exit_code != 0
-  2. AND log contains "Part 5 of 6 : Start boundary tagging"
-  3. AND log does NOT contain "Part 5 of 6 : Addresses boundary tagged"
-```
-
-The third condition (success-marker absence) was added in #96 round 2 after a bot review caught a false positive: the original two-condition check would have fired for any failure AFTER Part 5 succeeded (e.g. a hypothetical Part 6 QA-table failure). With the success-marker check, a clean Part 5 followed by a Part 6 failure correctly does NOT retry — the real Part 6 error surfaces instead of being masked by an irrelevant `--no-boundary-tag` retry.
-
-10 fixture log files in `test/integration/load-detection/fixtures/` cover:
-
-- `success.log` — clean run, no retry
-- `failure-download.log` — failed before Part 4, no retry
-- `failure-prep.log` — failed in Part 4, no retry
-- `failure-act-lga_pid.log` — Problem A (ACT lga column mismatch), retry
-- `failure-qld-ward_pid.log` — Problem A (QLD ward column mismatch), retry
-- `failure-ot-ce_pid.log` — Problem A (OT ce column mismatch), retry
-- `failure-tas-se_upper_pid.log` — Problem A (TAS se_upper column mismatch), retry
-- `failure-future-part5.log` — hypothetical future Part 5 regression, broad detection still retries
-- `failure-part6-after-part5-success.log` — Part 5 OK, Part 6 fails, no retry (false-positive guard)
-- `success.log` claimed exit 1 — log shows Part 5 completed, treat as success, no retry
-
-`bash test/integration/load-detection/test.sh` runs all 10 in CI on every PR (`ci.yml` `quality` job).
-
----
-
-## The cache validator (`scripts/validate-db-cache.sh`)
-
-Added in #99. Runs **after a successful gnaf-loader load AND after a cache restore**. Checks that the database state is sane before we either propagate it via cache dump or burn time on flatten.
-
-What it catches:
-
-- **Wrong `GNAF_VERSION`** — schema name mismatch (the `gnaf_*` / `raw_gnaf_*` / `admin_bdys_*` / `raw_admin_bdys_*` schemas don't exist).
-- **Truncated / corrupt restore** — core G-NAF tables missing rows.
-- **Missing admin_bdys polygon tables** — the spatial-join fallback would silently produce 0% boundary coverage. **This is the v2026.04 incident class.**
-- **Missing `raw_admin_bdys.aus_lga`** — used by `fixtures/prep-admin-bdys.sql` and as a debugging fallback in production.
-
-What it does NOT catch (intentionally):
-
-- Whether `address_principal_admin_boundaries` is populated. By design, this table can legitimately be empty after a `--no-boundary-tag` retry — the spatial-join fallback in `address_full_prep.sql` fills it at flatten time. The verify.ts boundary coverage check (`--check-boundary-coverage`) is the gate for that, after flatten.
-
-The strict polygon-table checks rely on the "per-state filtering of polygon prep is commented out in upstream gnaf-loader" assumption documented in the validator header.
-
----
-
-## The boundary coverage thresholds (`verify.ts` and `verification-report.ts`)
-
-Two gates with **different defaults**:
-
-### `verify.ts` — flatten-time per-state gate
-
-Default thresholds in `src/verify.ts`:
-
-```ts
-export const DEFAULT_BOUNDARY_THRESHOLDS: Required<BoundaryCoverageThresholds> = {
-  lga: 0.99, // 99%
-  ward: 0.95, // 95% — wards legitimately don't cover all addresses
-  stateElectorate: 0.99, // 99%
-  commonwealthElectorate: 0.99, // 99%
-};
-```
-
-Wards are lower (95%) because some addresses legitimately fall outside any ward polygon — not every council has wards, and even within ward councils some boundary edges have gaps.
-
-Run via the `--check-boundary-coverage` flag in the entrypoint's verify stage. If any boundary type drops below threshold, exit code 4 (verification failure).
-
-### `verification-report.ts` — release-asset / shape-smoke gate
-
-The verification-report tool produces the markdown report that ships as a release asset, AND is used by the quarterly shape smoke. As of #99, it accepts a `--boundary-thresholds lga=99,ward=99,sa1=99,...` flag and fails (exit 4) if any state falls below.
-
-The shape smoke uses **tighter** thresholds than the production verify because the fixture has predictable, near-100% coverage:
-
-```js
-// scripts/run-quarterly-fixture-smoke.mjs
-const FIXTURE_BOUNDARY_THRESHOLDS =
-  "lga=99,ward=99,stateElectorate=99,commonwealthElectorate=99,meshBlock=99,sa1=99,sa2=99";
-```
-
-Production runs use the `verify.ts` defaults via `--check-boundary-coverage`. Both end up running on every release — the verify.ts gate at flatten time, then the verification-report regenerated at release-asset upload time.
-
-### Empty-file safety
-
-The verification-report's `passed` calculation requires `rowCount > 0` AND zero threshold failures (empty files would otherwise be vacuously passing every quality check). The threshold check itself runs even when `rowCount === 0`, treating missing values as 0% so an empty NSW with `lga=99` configured fails with `{field: lga, actual: 0, threshold: 99}`. Both safety nets added in #99 round 2 (review-bot finding).
-
----
-
-## What can still go wrong
-
-A non-exhaustive list of "things that have happened or could plausibly happen", with their current detection/mitigation:
-
-| Failure mode                                                     | Detection                                                   | Mitigation                                     |
-| ---------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------- |
-| gnaf-loader Part 5 fails on column mismatch (Problem A)          | `detect-load-failure.sh`                                    | Retry with `--no-boundary-tag` → Path 2        |
-| Future upstream Part 5 regression (different shape)              | Broad Part-5 detection (`detect-load-failure.sh`)           | Retry with `--no-boundary-tag` → Path 2        |
-| Postgres `/dev/shm` exhaustion in flatten (Problem B)            | Already happened; #96 fixed structurally                    | `dynamic_shared_memory_type = sysv`            |
-| OOM kill in flatten (Path 2 LATERAL eats memory on NSW)          | `run-quarterly-state.sh` classifies exit 137 as transient   | Retry; #99 retry-from-dump skips reload        |
-| Path 2 takes longer than the 360-min runner timeout              | Timeout exit                                                | Self-hosted runner via `runner` workflow input |
-| Polygon tables silently empty after gnaf-loader (v2026.04 class) | `validate-db-cache.sh` (#99)                                | Build aborts with `[cache-validate] FAIL` line |
-| `address_full_prep.sql` regression breaks Path 2                 | `quarterly-shape-smoke` thresholds (#99)                    | PR-time fail before merge                      |
-| Empty per-state output file ships                                | `verification-report.ts` `passed = rowCount > 0` (#99)      | verification-report exit 4                     |
-| Boundary coverage drops below threshold in production            | `verify.ts --check-boundary-coverage`                       | Build aborts at flatten verify stage           |
-| Multi-polygon row multiplication on boundary points              | E1.15 `LATERAL ... LIMIT 1` form in `address_full_prep.sql` | Already structurally prevented                 |
-| Cache restore from corrupt dump                                  | `validate-db-cache.sh` runs on restore too                  | `restoreValidationFailed` retry path           |
-
----
-
-## Future work
-
-### E1.21 — replace Path 2 LATERAL with bulk hash joins ✅ DONE 2026-04-09 (PR #106)
-
-The original `LEFT JOIN LATERAL ... ORDER BY pid LIMIT 1` form was rewritten as **insert-then-5-updates against unsubdivided polygon tables**. Empirical NSW spatial join: 67 min → 7.5 min on M5 64GB. Quarterly run 24163471133 published v2026.02.1 with all 9 states green for the first time.
-
-The actual final shape is described in the "Why it WAS slow" section above and in ROADMAP entry E1.21. Notably, the implementation rejected both the `DISTINCT ON` joint-INSERT approach AND the `_analysis`-tables-with-ST_Subdivide approach that the original ticket suggested — see ROADMAP for the audit findings that drove the rejection.
-
-### E1.20 — push gnaf-loader column-mismatch fix upstream (deferred, p4-defer)
-
-**Status:** deferred 2026-04-09. Was originally a "nice-to-have community contribution"; now obsoleted by E1.21 + E1.23. Once E1.23 lands, flat-white never calls gnaf-loader Part 5, so the upstream bug is irrelevant. **Revisit only if E1.23 is cancelled** OR for community-contribution reasons. See ROADMAP entry E1.20.
-
-### E1.23 — collapse Path 1 and Path 2 into a single path ✅ DONE 2026-04-09
-
-Now actually viable. E1.21 made Path 2 as fast as Path 1, so the dual-path infrastructure has no remaining technical justification.
-
-**The plan:**
-
-- Always pass `--no-boundary-tag` to gnaf-loader. Never call Part 5.
-- `address_full_prep.sql` always populates the boundary table from scratch (drop the "if already populated, skip" early-return, or keep it as a defensive idempotence check).
-- Delete `scripts/detect-load-failure.sh` and `test/integration/load-detection/`.
-- Delete the `--no-boundary-tag` retry branch in `docker-entrypoint.sh:359-376`.
-- Rewrite the "Path 1 vs Path 2" framing in this doc as a single-path narrative.
-
-**Removes:** ~100 lines of code, the entire retry-from-dump cache validation flow, the per-state shapefile filter cascade story, the dependency on upstream gnaf-loader Part 5 behavior.
-
-**Sequencing:** depends on E1.24 (flatten-session bug fix) — do that first since E1.23 changes the surrounding code paths and E1.24's fix probably touches `src/flatten.ts` which E1.23 will also coordinate with.
-
-**Trade-off:** removes the ability to opportunistically use gnaf-loader Part 5 when it works. But since E1.21 makes Path 2 as fast as Part 5, that's no longer a meaningful loss.
-
-See ROADMAP entry E1.23.
-
-### E1.24 — flatten temp tables disappear when prep SQL runs twice (planned, p2-medium)
-
-Pre-existing latent bug discovered during the E1.21 implementation session. When the spatial join takes long enough (~67 min in the OLD LATERAL code on NSW), the cursor stream fails with `relation "tmp_address_geocodes" does not exist`. Hypothesis (unverified): `flatten.ts` uses two postgres clients and temp tables in client A aren't visible to client B; OR there's an idle-session timeout that drops the connection during the long prep SQL.
-
-**Currently masked by E1.21** making the spatial join fast enough to avoid the timing window. Will re-emerge if Path 2 ever slows again. Worth fixing structurally before E1.23 (which restructures the surrounding code paths).
-
-See ROADMAP entry E1.24.
-
-### E1.26 — WA flatten 40-75× slower when restored from cache (planned, p2-medium)
-
-Forensic finding from quarterly run 24163471133. WA cursor stream rate dropped from ~17,500 rows/sec (fresh build) to **442 rows/sec** (cache restore) on identical data. Steady throughout — no stalls. Hypothesis: `pg_dump` doesn't dump per-table statistics, the planner picks a pathological plan against the restored DB until `ANALYZE` runs. Other states don't trip this; only WA's data shape exposes it.
-
-**Should be fixed before the 2026-05-15 cron** to prevent the next quarterly from wasting ~50 min on every WA cache-hit run.
-
-See ROADMAP entry E1.26.
-
----
-
-## Appendix: code locations
-
-| Concern                       | File                                                                                                        |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Path 1 (upstream)             | `gnaf-loader/load-gnaf.py` `boundary_tag_gnaf` + `04-01b-bdy-tag-template.sql`                              |
-| Path 1 polygon prep (subdiv)  | `gnaf-loader/postgres-scripts/02-03-create-admin-bdy-analysis-tables_template.sql`                          |
-| Path 1 column-mismatch bug    | `gnaf-loader/postgres-scripts/04-06-bdy-tags-for-alias-addresses.sql`                                       |
-| Path 2 (our fallback)         | `sql/address_full_prep.sql` (header comment + DO block + unique index, lines 94-219)                        |
-| Detection / retry routing     | Removed in E1.23 — `scripts/detect-load-failure.sh` deleted, retry branch in `docker-entrypoint.sh` removed |
-| Cache validator               | `scripts/validate-db-cache.sh`                                                                              |
-| Per-state retry orchestration | `scripts/run-quarterly-state.sh`                                                                            |
-| Flatten reads boundaries      | `sql/address_full.sql` lines 178–197 + 243–248                                                              |
-| Flatten code (snake → camel)  | `src/flatten.ts`                                                                                            |
-| Output schema                 | `src/schema.ts` `boundaries` field                                                                          |
-| Production verify gate        | `src/verify.ts` `DEFAULT_BOUNDARY_THRESHOLDS`                                                               |
-| Release/PR verify gate        | `src/verification-report.ts` `parseBoundaryThresholdsArg`                                                   |
-| Shape smoke (PR-time)         | `scripts/run-quarterly-fixture-smoke.mjs` + `quarterly-shape-smoke` job in `.github/workflows/ci.yml`       |
-| Detection test fixtures       | Removed in E1.23                                                                                            |
-| Fixture seed data             | `fixtures/seed-postgres.sql`, `fixtures/seed-admin-bdys.sql`                                                |
-| Fixture prep (boundaries)     | `fixtures/prep-admin-bdys.sql`                                                                              |
-| Boundary prelude extractor    | `scripts/extract-boundary-prelude.mjs`                                                                      |
-
-## Appendix: relevant PRs and roadmap entries
-
-- **PR #66** — `feat: spatial join fallback for admin boundaries` — initial spatial-join fallback **and** the multi-polygon row multiplication fix (E1.15). The LATERAL + LIMIT 1 pattern was added before merge in commit `6bb9eea` after the multi-polygon dedup bug was caught in audit.
-- **PR #74** — `feat: e1.10 shapefile fixtures + spatial join regression test` — committed boundary polygon fixtures + the build script glue that lets the fixture path exercise the full boundary pipeline. This is the work that made the shape smoke possible.
-- **PR #96** — `fix: permanent fix for quarterly build (Bug A column-mismatch + Bug B /dev/shm)` — broad Part-5 detection in `detect-load-failure.sh` AND the `dynamic_shared_memory_type = sysv` postgresql.conf change.
-- **PR #97** — `fix: schema-validating stub for address_principal_admin_boundaries` — fixture boundary prelude wiring + db port targeting + the structural stub that prevents an empty boundaries table from breaking flatten.
-- **PR #99** — `Harden quarterly safety net` — cache validator strict polygon checks, shape-smoke coverage thresholds, retry-from-dump, path filter, log accumulation, exact-one-match guard.
-- **PR #100** — `docs: add comprehensive BOUNDARIES.md` — this document.
-- **E1.10** — fixture coverage for boundary fields (shipped in PR #74)
-- **E1.14** — restore LGA / ward / state / commonwealth electorate fields after v2026.04
-- **E1.15** — fix multi-polygon row multiplication in PR #66 spatial join fallback (shipped within PR #66 itself)
-- **E1.20** — push gnaf-loader `settings.py` / `04-06` fix upstream (not started)
-- **E1.21** — optimise spatial-join fallback for NSW scale (designed, not started — see "Future work" section)
+A populated `abs_2021_mb` table cannot satisfy the requirement. Neither can an
+empty 2026 column with no matching codes. An old restored dump fails validation
+and is rebuilt from source by the state wrapper. The cache namespace is
+`v3-asgs2026`.
+
+The input check proves that the expected columns and at least one matching code
+exist. It does **not** prove that every address has a census match. The current
+output thresholds gate administrative fields; the verifier reports mesh-block,
+SA1 and SA2 coverage but does not impose census percentage thresholds or separately
+report SA3, SA4 and GCCSA coverage. Review census coverage and representative
+hierarchy joins when assessing a production release.
+
+## Administrative gaps vary by state
+
+The pinned loader's single-state builds prepare these polygon types:
+
+| State | LGA | Ward | Lower house | Commonwealth | Upper house |
+| ----- | --- | ---- | ----------- | ------------ | ----------- |
+| ACT   | No  | No   | Yes         | Yes          | No          |
+| NSW   | Yes | No   | Yes         | Yes          | No          |
+| NT    | Yes | Yes  | Yes         | Yes          | No          |
+| OT    | Yes | No   | No          | No           | No          |
+| QLD   | Yes | No   | Yes         | Yes          | No          |
+| SA    | Yes | Yes  | Yes         | Yes          | No          |
+| TAS   | Yes | No   | Yes         | Yes          | Yes         |
+| VIC   | Yes | Yes  | Yes         | Yes          | Yes         |
+| WA    | Yes | Yes  | Yes         | Yes          | Yes         |
+
+Upper-house tables are validated/prepared where applicable, but upper-house
+membership is not an output field. A prepared polygon type also does not imply
+100% coverage: some councils have no wards, and many OT addresses have no LGA
+assignment. The exact administrative thresholds live in
+[`PER_STATE_BOUNDARY_THRESHOLDS`](../src/verify.ts), not in this table.
+
+Do not treat a legitimate state-specific absence as a load failure. Conversely,
+an empty required raw or prepared table must not be dismissed as an expected null.
+For multi-state builds, validation and coverage checks account for the states
+actually selected.
+
+## What the fixture exercises
+
+The fixture keeps 451 VIC addresses from February 2026. Its setup:
+
+1. Loads the frozen address seed.
+2. Seeds small synthetic administrative polygons and runs their preparation SQL.
+3. Adds `seed-census-2026.sql`, including 430 synthetic raw mesh-block rows and
+   2026 assignments on principal and alias addresses.
+4. Uses `extract-census-prep.mjs` to execute the mesh-block section of the **pinned
+   upstream 202608 census preparation SQL**.
+5. Runs the same administrative boundary prelude, both flatten query paths,
+   output verification and byte-for-byte comparison with the committed baseline.
+
+Old 2021 tables remain as decoys. The synthetic 2026 codes and names differ so a
+regression to the old lookup changes the output and fails comparison. They test
+the transformation; they do not assert real ABS assignments for those addresses.
+The fixture does not run the full national loader or establish production capacity.
+
+Use `./scripts/build-fixture-only.sh` and the [fixture guide](../fixtures/README.md)
+for development. Leave `GNAF_VERSION` unset so its frozen schema names stay aligned.
+
+## Where to make a change
+
+- Change flatten fields and joins in `sql/address_full.sql`, then generate the main
+  query with `npm run generate:sql`.
+- Change shared preparation in `sql/address_full_prep.sql` and preserve both-path
+  equality. Do not create a separate fixture-only repair for a production defect.
+- Make loader source changes upstream. A submodule pin update still needs
+  [compatibility review](GNAF-LOADER-UPDATES.md).
+- Review the document schema, Zod schema and expected fixture output together for
+  any output change. Breaking meanings require a major schema version.
+
+For failures, follow the [runbook](RUNBOOK.md). For the earlier two-path design,
+missing-boundary incidents and the reasons it was removed, read the
+[historical boundary guide](history/BOUNDARIES-PRE-1.0.md). Those incidents explain
+the safeguards; their old recovery steps are not current instructions.

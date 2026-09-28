@@ -58,7 +58,11 @@ flat-white — Australian address data, flattened and served.
 Usage:
   docker run flat-white --help
   docker run flat-white --fixture-only --output /output/
-  docker run -v $(pwd)/output:/output flat-white --states VIC --compress --output /output/
+  docker run -e GNAF_VERSION=2026.08 -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
+
+Environment:
+  GNAF_VERSION       Required for production builds (e.g. 2026.08).
+                     Schema 1.x needs ASGS 2026 sources; fixtures default to 2026.02.
 
 Flags:
   --help              Show this help
@@ -171,7 +175,7 @@ fi
 
 if [[ "$MODE" != "fixture" && -z "${GNAF_VERSION:-}" ]]; then
   log "ERROR: GNAF_VERSION environment variable is required for production builds."
-  log "Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.05)"
+  log "Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.08)"
   exit 1
 fi
 
@@ -375,10 +379,10 @@ else
   # Stage 3: gnaf-loader
   stage_start "load"
 
-  # Derive 6-digit geoscape version from GNAF_VERSION (e.g. "2026.05" → "202605")
+  # Derive 6-digit geoscape version from GNAF_VERSION (e.g. "2026.08" → "202608")
   GEOSCAPE_VERSION=$(echo "$GNAF_VERSION" | tr -d '.')
   if [[ ! "$GEOSCAPE_VERSION" =~ ^[0-9]{6}$ ]]; then
-    log "ERROR: GNAF_VERSION '${GNAF_VERSION}' must be in YYYY.MM format (e.g. 2026.05)"
+    log "ERROR: GNAF_VERSION '${GNAF_VERSION}' must be in YYYY.MM format (e.g. 2026.08)"
     exit 1
   fi
 

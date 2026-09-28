@@ -1,299 +1,226 @@
-# Document Schema Reference — flat-white
-
-> **Version:** 1.0.0 — ASGS 2026 (breaking change)
-> **Runtime validation:** `src/schema.ts` (Zod)
-> **Breaking changes:** require a major version bump to the project.
-
-Schema 1.0.0 changes `boundaries.meshBlock`, `sa1`–`sa4`, and `gccsa` from
-ASGS 2021 to ASGS 2026 while preserving their JSON field names and types.
-Consumers must check `metadata.json` (`schemaVersion` and `asgsYear: 2026`)
-and migrate geographic joins and aggregates. S3 manifests expose the same
-contract as `schema_version` / `asgs_year`, and OpenSearch mappings carry it in `_meta`. `_version` still identifies the
-G-NAF quarter. See [migration implications and upgrade steps](MIGRATING-TO-ASGS-2026.md).
-
-Every line in the NDJSON output is one JSON document conforming to this schema. This document is the authoritative contract between flat-white and all downstream consumers.
-
----
-
-## Top-Level Fields
-
-| Field                | Type    | Nullable | Description                                                                               | Example                                        | G-NAF Source                                                                |
-| -------------------- | ------- | -------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------- |
-| `_id`                | string  | No       | G-NAF address persistent identifier (PID)                                                 | `"GAVIC425181432"`                             | `gnaf.address_principals.address_detail_pid`                                |
-| `_version`           | string  | No       | G-NAF data release version (YYYY.MM)                                                      | `"2026.04"`                                    | Build parameter                                                             |
-| `addressLabel`       | string  | No       | Canonical address label using G-NAF abbreviations                                         | `"1 MCNAB AV, FOOTSCRAY VIC 3011"`             | Composed from address components                                            |
-| `addressLabelSearch` | string  | No       | Search-optimised label with expanded street/flat types                                    | `"1 MCNAB AVENUE FOOTSCRAY VIC 3011"`          | Composed; street type expanded via authority codes                          |
-| `addressSiteName`    | string  | Yes      | Site name (e.g. shopping centre, hospital)                                                | `"FOOTSCRAY MARKET"`                           | `gnaf.address_principals.address_site_name`                                 |
-| `buildingName`       | string  | Yes      | Building name                                                                             | `"TOWER A"`                                    | `gnaf.address_principals.building_name`                                     |
-| `flatType`           | string  | Yes      | Flat/unit type abbreviation                                                               | `"UNIT"`                                       | `gnaf.address_principals.flat_type`                                         |
-| `flatNumber`         | string  | Yes      | Flat/unit number (without type prefix)                                                    | `"G1"`                                         | `raw_gnaf.address_detail.flat_number` (composed from prefix+number+suffix)  |
-| `levelType`          | string  | Yes      | Level type                                                                                | `"LEVEL"`                                      | `gnaf.address_principals.level_type`                                        |
-| `levelNumber`        | string  | Yes      | Level number (without type prefix)                                                        | `"1"`                                          | `raw_gnaf.address_detail.level_number` (composed from prefix+number+suffix) |
-| `numberFirst`        | string  | Yes      | Street number (first/only)                                                                | `"1"`                                          | `gnaf.address_principals.number_first`                                      |
-| `numberLast`         | string  | Yes      | Street number (last, for ranges like 1-5)                                                 | `"5"`                                          | `gnaf.address_principals.number_last`                                       |
-| `lotNumber`          | string  | Yes      | Lot number (rural/unsubdivided land)                                                      | `"3"`                                          | `gnaf.address_principals.lot_number`                                        |
-| `streetName`         | string  | No       | Street name                                                                               | `"MCNAB"`                                      | `gnaf.address_principals.street_name`                                       |
-| `streetType`         | string  | Yes      | Street type (full name)                                                                   | `"AVENUE"`                                     | `gnaf.address_principals.street_type`                                       |
-| `streetSuffix`       | string  | Yes      | Street suffix (N, S, E, W, etc.)                                                          | `"N"`                                          | `gnaf.address_principals.street_suffix`                                     |
-| `localityName`       | string  | No       | Suburb/locality name                                                                      | `"FOOTSCRAY"`                                  | `gnaf.address_principals.locality_name`                                     |
-| `state`              | string  | No       | State/territory code                                                                      | `"VIC"`                                        | `gnaf.address_principals.state`                                             |
-| `postcode`           | string  | Yes      | Postcode                                                                                  | `"3011"`                                       | `gnaf.address_principals.postcode`                                          |
-| `legalParcelId`      | string  | Yes      | Legal parcel identifier                                                                   | `"1\\PS733924"`                                | `gnaf.address_principals.legal_parcel_id`                                   |
-| `confidence`         | integer | No       | Address confidence level (0 = low, 2 = high)                                              | `2`                                            | `gnaf.address_principals.confidence`                                        |
-| `aliasPrincipal`     | enum    | No       | `"PRINCIPAL"` or `"ALIAS"`                                                                | `"PRINCIPAL"`                                  | Derived from source table (address_principals vs address_aliases)           |
-| `primarySecondary`   | enum    | Yes      | `"PRIMARY"`, `"SECONDARY"`, or null                                                       | `"PRIMARY"`                                    | `gnaf.address_principals.primary_secondary`                                 |
-| `geocode`            | object  | Yes      | Best geocode for this address, or null if no geocode exists (see Geocode)                 | _(see below)_                                  | `gnaf.address_site_geocodes` (highest reliability, preferring FCS)          |
-| `location`           | object  | Yes      | OpenSearch-ready geo point `{ lat, lon }`, or null if no geocode exists                   | `{ "lat": -37.79815294, "lon": 144.89719303 }` | Derived from `geocode.latitude` + `geocode.longitude`                       |
-| `allGeocodes`        | array   | No       | All geocode types for this address (see AllGeocodesItem)                                  | _(see below)_                                  | `gnaf.address_site_geocodes` (all rows)                                     |
-| `locality`           | object  | No       | Locality context with neighbours and aliases (see Locality)                               | _(see below)_                                  | `gnaf.localities` + `gnaf.locality_neighbours` + `gnaf.locality_aliases`    |
-| `street`             | object  | No       | Street metadata (see Street)                                                              | _(see below)_                                  | `gnaf.streets` + `gnaf.street_aliases`                                      |
-| `boundaries`         | object  | No       | Administrative and statistical boundaries (see Boundaries)                                | _(see below)_                                  | `gnaf.address_principal_admin_boundaries` + ABS lookup tables               |
-| `aliases`            | array   | No       | Alternative address names (see Alias). Empty array if none.                               | _(see below)_                                  | `gnaf.address_aliases`                                                      |
-| `secondaries`        | array   | No       | Child addresses (units/flats) for primary addresses (see Secondary). Empty array if none. | _(see below)_                                  | `gnaf.address_principals` where `primary_secondary = 'SECONDARY'`           |
-
----
-
-## Nested Object: Geocode
-
-The best available geocode for this address, selected by highest reliability then type preference (FCS > PC > PAP).
-
-| Field         | Type    | Nullable | Description                                             | Example                     | G-NAF Source                                                             |
-| ------------- | ------- | -------- | ------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------ |
-| `latitude`    | number  | No       | WGS84 latitude                                          | `-37.79815294`              | `gnaf.address_site_geocodes.latitude`                                    |
-| `longitude`   | number  | No       | WGS84 longitude                                         | `144.89719303`              | `gnaf.address_site_geocodes.longitude`                                   |
-| `type`        | string  | No       | Geocode type description                                | `"FRONTAGE CENTRE SETBACK"` | `gnaf.address_site_geocodes.geocode_type` (expanded from authority code) |
-| `reliability` | integer | No       | Reliability level (1 = survey, 6 = region). Range: 1-6. | `2`                         | `gnaf.address_site_geocodes.reliability`                                 |
-
----
-
-## Nested Object: AllGeocodesItem
-
-One entry per geocode type available for this address. Every address has at least one.
-
-| Field         | Type    | Nullable | Description                                                          | Example                     | G-NAF Source                                                             |
-| ------------- | ------- | -------- | -------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------ |
-| `lat`         | number  | No       | WGS84 latitude                                                       | `-37.79815294`              | `gnaf.address_site_geocodes.latitude`                                    |
-| `lng`         | number  | No       | WGS84 longitude                                                      | `144.89719303`              | `gnaf.address_site_geocodes.longitude`                                   |
-| `type`        | string  | No       | Geocode type description (long form, consistent with `geocode.type`) | `"FRONTAGE CENTRE SETBACK"` | `gnaf.address_site_geocodes.geocode_type` (expanded from authority code) |
-| `reliability` | integer | No       | Reliability level (1-6)                                              | `2`                         | `gnaf.address_site_geocodes.reliability`                                 |
-
----
-
-## Nested Object: Location
-
-OpenSearch-ready geo point derived from the primary `geocode` object.
-
-| Field | Type   | Nullable | Description     | Example        | Source              |
-| ----- | ------ | -------- | --------------- | -------------- | ------------------- |
-| `lat` | number | No       | WGS84 latitude  | `-37.79815294` | `geocode.latitude`  |
-| `lon` | number | No       | WGS84 longitude | `144.89719303` | `geocode.longitude` |
-
----
-
-## Nested Object: Locality
-
-Locality (suburb) context including neighbouring localities and known aliases.
-
-| Field        | Type     | Nullable | Description                                        | Example                        | G-NAF Source                                       |
-| ------------ | -------- | -------- | -------------------------------------------------- | ------------------------------ | -------------------------------------------------- |
-| `pid`        | string   | No       | Locality persistent identifier                     | `"loc67a11408d754"`            | `gnaf.localities.locality_pid`                     |
-| `class`      | string   | No       | Locality classification                            | `"GAZETTED LOCALITY"`          | `gnaf.localities.locality_class_code` (expanded)   |
-| `neighbours` | string[] | No       | Names of adjacent localities. Empty array if none. | `["ASCOT VALE", "FLEMINGTON"]` | `gnaf.locality_neighbours.neighbour_locality_name` |
-| `aliases`    | string[] | No       | Alternative locality names. Empty array if none.   | `["FOOTSCRAY WEST"]`           | `gnaf.locality_aliases.alias_name`                 |
-
----
-
-## Nested Object: Street
-
-Street-level metadata and aliases.
-
-| Field     | Type     | Nullable | Description                                    | Example        | G-NAF Source                                |
-| --------- | -------- | -------- | ---------------------------------------------- | -------------- | ------------------------------------------- |
-| `pid`     | string   | No       | Street persistent identifier                   | `"VIC2104831"` | `gnaf.streets.street_locality_pid`          |
-| `class`   | string   | No       | Street confirmation status                     | `"CONFIRMED"`  | `gnaf.streets.street_class_code` (expanded) |
-| `aliases` | string[] | No       | Alternative street names. Empty array if none. | `[]`           | `gnaf.street_aliases`                       |
-
----
-
-## Nested Object: Boundaries
-
-Administrative boundaries and ASGS 2026 statistical areas. The examples below illustrate field structure; they are not authoritative geographic assignments. All sub-fields are nullable — an address may lack boundary data if it falls outside mapped boundaries (e.g. some rural/remote areas).
-
-| Field                    | Type   | Nullable | Description                                             | Example                                               | G-NAF Source                                                                                   |
-| ------------------------ | ------ | -------- | ------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `lga`                    | object | Yes      | Local Government Area: `{ name, code }`                 | `{ "name": "MARIBYRNONG", "code": "LGA24650" }`       | `admin_bdys.address_principal_admin_boundaries.lga_name`, `.lga_code`                          |
-| `ward`                   | object | Yes      | Council ward: `{ name }`                                | `{ "name": "RIVER WARD" }`                            | `admin_bdys.address_principal_admin_boundaries.ward_name`                                      |
-| `stateElectorate`        | object | Yes      | State electorate: `{ name }`                            | `{ "name": "FOOTSCRAY" }`                             | `admin_bdys.address_principal_admin_boundaries.state_electorate_name`                          |
-| `commonwealthElectorate` | object | Yes      | Federal electorate: `{ name }`                          | `{ "name": "GELLIBRAND" }`                            | `admin_bdys.address_principal_admin_boundaries.commonwealth_electorate_name`                   |
-| `meshBlock`              | object | Yes      | ABS Mesh Block: `{ code, category }`                    | `{ "code": "20663890000", "category": "COMMERCIAL" }` | ASGS 2026 lookup: `gnaf.address_principals.mb_2026_code` → `admin_bdys.abs_2026_mb.mb_code_26` |
-| `sa1`                    | string | Yes      | ABS Statistical Area Level 1 code                       | `"20604102614"`                                       | ASGS 2026 lookup via mesh block                                                                |
-| `sa2`                    | object | Yes      | ABS Statistical Area Level 2: `{ code, name }`          | `{ "code": "20604", "name": "FOOTSCRAY" }`            | ASGS 2026 lookup via mesh block                                                                |
-| `sa3`                    | object | Yes      | ABS Statistical Area Level 3: `{ code, name }`          | `{ "code": "206", "name": "MARIBYRNONG" }`            | ASGS 2026 lookup via mesh block                                                                |
-| `sa4`                    | object | Yes      | ABS Statistical Area Level 4: `{ code, name }`          | `{ "code": "2", "name": "MELBOURNE - WEST" }`         | ASGS 2026 lookup via mesh block                                                                |
-| `gccsa`                  | object | Yes      | Greater Capital City Statistical Area: `{ code, name }` | `{ "code": "2GMEL", "name": "GREATER MELBOURNE" }`    | ASGS 2026 lookup via mesh block                                                                |
-
----
-
-## Nested Object: Alias
-
-An alternative name for this address. Present in the `aliases[]` array.
-
-| Field   | Type   | Nullable | Description              | Example                                          | G-NAF Source                              |
-| ------- | ------ | -------- | ------------------------ | ------------------------------------------------ | ----------------------------------------- |
-| `pid`   | string | No       | Alias address PID        | `"MA13517230"`                                   | `gnaf.address_aliases.address_detail_pid` |
-| `label` | string | No       | Full alias address label | `"SHOP 1 GROUND 1 MCNAB AV, FOOTSCRAY VIC 3011"` | Composed from alias address components    |
-| `type`  | string | No       | Alias type               | `"SYNONYM"`                                      | `gnaf.address_aliases.alias_type`         |
-
----
-
-## Nested Object: Secondary
-
-A child address (unit/flat) belonging to a primary (building) address. Present in the `secondaries[]` array.
-
-| Field   | Type   | Nullable | Description                  | Example                                   | G-NAF Source                                 |
-| ------- | ------ | -------- | ---------------------------- | ----------------------------------------- | -------------------------------------------- |
-| `pid`   | string | No       | Secondary address PID        | `"GAVIC425495838"`                        | `gnaf.address_principals.address_detail_pid` |
-| `label` | string | No       | Full secondary address label | `"SHOP 1 1 MCNAB AV, FOOTSCRAY VIC 3011"` | Composed from address components             |
-
----
-
-## Enums
-
-### `aliasPrincipal`
-
-| Value       | Description                                     |
-| ----------- | ----------------------------------------------- |
-| `PRINCIPAL` | This is the primary/canonical address record    |
-| `ALIAS`     | This is an alternative name for another address |
-
-### `primarySecondary`
-
-| Value       | Description                             |
-| ----------- | --------------------------------------- |
-| `PRIMARY`   | This is a parent/building-level address |
-| `SECONDARY` | This is a child/unit-level address      |
-| `null`      | Relationship not classified             |
-
-### `confidence`
-
-| Value | Description       |
-| ----- | ----------------- |
-| `0`   | Low confidence    |
-| `1`   | Medium confidence |
-| `2`   | High confidence   |
-
-### `geocode.reliability`
-
-| Value | Description                     |
-| ----- | ------------------------------- |
-| `1`   | Surveyed (highest accuracy)     |
-| `2`   | GNSS or within-address-site     |
-| `3`   | Within locality                 |
-| `4`   | Within neighbourhood            |
-| `5`   | Within LGA                      |
-| `6`   | Within region (lowest accuracy) |
-
----
-
----
-
-## Locality-Only Document Schema
-
-When running with `--locality-only`, flat-white produces a `localities.ndjson` file with one document per unique locality. This is a lightweight alternative to the full address dataset for use cases like suburb search, service area lookup, or locality-to-electorate mapping.
-
-### Locality Document Fields
-
-| Field          | Type     | Nullable | Description                                                    | Example                        | G-NAF Source                                    |
-| -------------- | -------- | -------- | -------------------------------------------------------------- | ------------------------------ | ----------------------------------------------- |
-| `_id`          | string   | No       | Locality persistent identifier                                 | `"loc67a11408d754"`            | `gnaf.localities.locality_pid`                  |
-| `_version`     | string   | No       | G-NAF data release version (YYYY.MM)                           | `"2026.04"`                    | Build parameter                                 |
-| `localityName` | string   | No       | Suburb/locality name                                           | `"FOOTSCRAY"`                  | `gnaf.localities.locality_name`                 |
-| `state`        | string   | No       | State/territory code                                           | `"VIC"`                        | `gnaf.localities.state`                         |
-| `postcode`     | string   | Yes      | Postcode                                                       | `"3011"`                       | `gnaf.localities.postcode`                      |
-| `class`        | string   | No       | Locality classification                                        | `"GAZETTED LOCALITY"`          | `gnaf.localities.locality_class` (expanded)     |
-| `neighbours`   | string[] | No       | Names of adjacent localities. Empty array if none.             | `["ASCOT VALE", "FLEMINGTON"]` | `gnaf.locality_neighbour_lookup` + `localities` |
-| `aliases`      | string[] | No       | Alternative locality names. Empty array if none.               | `["FOOTSCRAY WEST"]`           | `gnaf.locality_aliases`                         |
-| `latitude`     | number   | Yes      | WGS84 latitude of locality centroid, or null if not available  | `-37.7998`                     | `gnaf.localities.latitude`                      |
-| `longitude`    | number   | Yes      | WGS84 longitude of locality centroid, or null if not available | `144.8991`                     | `gnaf.localities.longitude`                     |
-
----
-
-## Output Formats
-
-### NDJSON (default)
-
-The default output format. One JSON document per line, conforming to the schema above. Produced by `--format ndjson` (or omitting `--format`).
-
-### Parquet
-
-Available via `--format parquet`. Produces an Apache Parquet file with the same data as the NDJSON output.
-
-**Column mapping:**
-
-- Scalar fields (`_id`, `addressLabel`, `state`, `confidence`, etc.) are stored as native Parquet types (`UTF8`, `INT32`).
-- Nullable scalar fields use Parquet's optional repetition level.
-- Complex fields (`geocode`, `location`, `allGeocodes`, `locality`, `street`, `boundaries`, `aliases`, `secondaries`) are serialized as **JSON strings** (UTF8 columns) for maximum compatibility across Parquet readers.
-
-**Reading complex fields from Parquet:**
-
-```python
-import pandas as pd
-import json
-
-df = pd.read_parquet("flat-white-2026.04.parquet")
-# Scalar fields work directly
-print(df["state"].value_counts())
-
-# Complex fields need JSON parsing
-df["geocode_parsed"] = df["geocode"].apply(lambda x: json.loads(x) if x else None)
-```
-
-```sql
--- DuckDB
-SELECT _id, state, json_extract(geocode, '$.latitude') as lat
-FROM 'flat-white-2026.04.parquet';
-```
-
-### Geoparquet
-
-Available via `--format geoparquet`. Produces a [Geoparquet v1.1.0](https://geoparquet.org/releases/v1.1.0/) file — a standard Parquet file with an additional `geometry` column containing WKB-encoded POINT geometries and spec-compliant file-level metadata.
-
-**What's different from standard Parquet:**
-
-- Adds a `geometry` column (BYTE_ARRAY) with WKB-encoded POINT for each address geocode.
-- Addresses without a geocode have a null geometry.
-- File-level `"geo"` metadata declares WGS 84 (EPSG:4326) CRS, encoding, geometry types, and bounding box.
-- All other columns remain identical to the standard Parquet format.
-
-**Reading Geoparquet:**
-
-```python
-import geopandas as gpd
-
-gdf = gpd.read_parquet("flat-white-2026.04.geoparquet")
-# geometry column is automatically parsed as shapely Points
-print(gdf.geometry.head())
-# Spatial queries work natively
-melbourne = gdf.cx[144.9:145.0, -37.9:-37.7]
-```
-
-```sql
--- DuckDB with spatial extension
-INSTALL spatial; LOAD spatial;
-SELECT _id, state, ST_AsText(geometry) as wkt
-FROM 'flat-white-2026.04.geoparquet'
-WHERE ST_Within(geometry, ST_GeomFromText('POLYGON((144 -38, 145 -38, 145 -37, 144 -37, 144 -38))'));
-```
-
-```
-# QGIS: Open directly as a vector layer via drag-and-drop or Layer → Add Layer → Add Vector Layer
-```
-
----
-
-## Data Licensing
-
-All data sourced from data.gov.au under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Source datasets:
-
-- **G-NAF** (Geocoded National Address File) — PSMA Australia
-- **Administrative Boundaries** — PSMA Australia / ABS
+# Document schema
+
+**Contract version: 1.0.0 · Census geography: ASGS 2026**
+
+> **Schema 1.0.0 change:** `boundaries.meshBlock`, `sa1`, `sa2`, `sa3`, `sa4`
+> and `gccsa` now refer to ASGS 2026. Their names, types and nullability are
+> unchanged. This is a breaking change in meaning. Follow the
+> [migration guide](MIGRATING-TO-ASGS-2026.md) before replacing schema 0.x data.
+
+Each NDJSON line contains one principal address. The runtime contract is
+[`src/schema.ts`](../src/schema.ts); [field provenance](FIELD-PROVENANCE.md)
+explains how values are derived. The
+[committed sample](../fixtures/expected-output-sample.json) shows a complete document
+from the frozen address fixture with **synthetic** 2026 census assignments.
+
+## Reading this contract
+
+All properties listed below are required. **Nullable** means that the property
+is present with the value `null` when unavailable; it does not mean the property
+can be omitted. Arrays can be empty and are never `null`. A nullable boundary
+object is either a complete object with the stated string fields, or `null`.
+
+Codes, postcodes and address numbers are strings. Preserve leading zeros and
+letter suffixes. The Zod schema checks structure and types, including the numeric
+ranges and enums below. It does not validate every string against a geographic
+code list. The verifier adds data-quality checks; external reference joins still
+need the correct geography edition.
+
+## Top-level fields
+
+| Field                | Type    | Nullable | Meaning                                                                                         |
+| -------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `_id`                | string  | No       | G-NAF persistent address identifier.                                                            |
+| `_version`           | string  | No       | G-NAF data quarter, conventionally `YYYY.MM`; never the schema version or release patch number. |
+| `addressLabel`       | string  | No       | Composed address label from the loader.                                                         |
+| `addressLabelSearch` | string  | No       | Search label composed from expanded address components.                                         |
+| `addressSiteName`    | string  | Yes      | Name of the address site.                                                                       |
+| `buildingName`       | string  | Yes      | Building name.                                                                                  |
+| `flatType`           | string  | Yes      | Expanded flat or unit type.                                                                     |
+| `flatNumber`         | string  | Yes      | Flat number, including prefix or suffix where supplied.                                         |
+| `levelType`          | string  | Yes      | Expanded level type.                                                                            |
+| `levelNumber`        | string  | Yes      | Level number, including prefix or suffix where supplied.                                        |
+| `numberFirst`        | string  | Yes      | Street number, or start of a number range.                                                      |
+| `numberLast`         | string  | Yes      | End of a street-number range.                                                                   |
+| `lotNumber`          | string  | Yes      | Lot number.                                                                                     |
+| `streetName`         | string  | No       | Street name.                                                                                    |
+| `streetType`         | string  | Yes      | Expanded street type, such as `AVENUE`.                                                         |
+| `streetSuffix`       | string  | Yes      | Street suffix from the processed address.                                                       |
+| `localityName`       | string  | No       | Locality or suburb name.                                                                        |
+| `state`              | string  | No       | State or territory abbreviation.                                                                |
+| `postcode`           | string  | Yes      | Postcode.                                                                                       |
+| `legalParcelId`      | string  | Yes      | Legal parcel identifier.                                                                        |
+| `confidence`         | integer | No       | Source confidence value, from 0 to 2.                                                           |
+| `aliasPrincipal`     | enum    | No       | `PRINCIPAL` or `ALIAS`; the current address export emits `PRINCIPAL`.                           |
+| `primarySecondary`   | enum    | Yes      | `PRIMARY` for a parent address, `SECONDARY` for a child, or `null` if unclassified.             |
+| `geocode`            | object  | Yes      | Selected geocode; see below.                                                                    |
+| `location`           | object  | Yes      | Selected geocode as `{ lat, lon }`.                                                             |
+| `allGeocodes`        | array   | No       | Available non-retired site geocodes; can be empty.                                              |
+| `locality`           | object  | No       | Locality identity, class, neighbours and aliases.                                               |
+| `street`             | object  | No       | Street identity, class and aliases.                                                             |
+| `boundaries`         | object  | No       | Ten nullable administrative and census fields.                                                  |
+| `aliases`            | array   | No       | Alternative address records.                                                                    |
+| `secondaries`        | array   | No       | Child addresses linked to this principal address.                                               |
+
+## Geocode and location
+
+`geocode` contains the best available non-retired site geocode. Selection prefers
+the lowest reliability number, then `FCS`, `PC`, `PAP`, then other types. If the
+selected geocode is missing or its coordinates cannot be read as finite numbers,
+`geocode` and `location` are both `null`. No zero-coordinate placeholder is added.
+
+| Field within `geocode` | Type    | Meaning                                                                          |
+| ---------------------- | ------- | -------------------------------------------------------------------------------- |
+| `latitude`             | number  | Source latitude in decimal degrees.                                              |
+| `longitude`            | number  | Source longitude in decimal degrees.                                             |
+| `type`                 | string  | Expanded geocode type; the source code is retained if no authority name matches. |
+| `reliability`          | integer | Source accuracy category, 1–6.                                                   |
+
+`location.lat` copies `geocode.latitude`; `location.lon` copies
+`geocode.longitude`. Its shape is suitable for an OpenSearch `geo_point` mapping.
+
+Each `allGeocodes` item has `lat` and `lng` (numbers), `type` (string), and
+`reliability` (integer, 1–6). Notice the different longitude key: **`lng`** here,
+**`lon`** in `location`, and **`longitude`** in `geocode`. Items are ordered by
+reliability, then source geocode type code. This array can be empty.
+
+The source accuracy categories are:
+
+| Value | Meaning                                                 |
+| ----- | ------------------------------------------------------- |
+| 1     | Surveying standard.                                     |
+| 2     | Within the address site boundary or at an access point. |
+| 3     | Near, or possibly within, the address site boundary.    |
+| 4     | Associated with a unique road feature.                  |
+| 5     | Associated with a unique locality or neighbourhood.     |
+| 6     | Associated with a unique region.                        |
+
+**Coordinate reference:** builds use GDA2020 source data. Flattening copies the
+source coordinate numbers; it does not reproject them. The ASGS migration changes
+census area assignments, not the coordinate datum. See the GeoParquet limitation
+under [output formats](#output-formats) if your use case needs precise CRS handling.
+
+## Locality
+
+All four fields in `locality` are non-null:
+
+| Field        | Type     | Meaning                                         |
+| ------------ | -------- | ----------------------------------------------- |
+| `pid`        | string   | G-NAF locality identifier.                      |
+| `class`      | string   | Expanded locality classification, or `UNKNOWN`. |
+| `neighbours` | string[] | Adjacent locality names, sorted by name.        |
+| `aliases`    | string[] | Alternative locality names, sorted by name.     |
+
+## Street
+
+All three fields in `street` are non-null:
+
+| Field     | Type     | Meaning                                        |
+| --------- | -------- | ---------------------------------------------- |
+| `pid`     | string   | G-NAF street-locality identifier.              |
+| `class`   | string   | Expanded street classification, or `UNKNOWN`.  |
+| `aliases` | string[] | Alternative full street names, sorted by name. |
+
+## Boundaries
+
+The `boundaries` object always contains all ten fields. **Every field in this
+table is nullable.** State-specific boundary availability and unmatched addresses
+can produce nulls. A missing assignment is different from an incompatible source
+dataset, which fails the build's input validation.
+
+| Field                    | Shape when present                   | Meaning and source                                                                                     |
+| ------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `lga`                    | `{ name: string, code: string }`     | Council area, assigned by spatial join. `code` is the Geoscape LGA identifier, not an ABS census code. |
+| `ward`                   | `{ name: string }`                   | Local government ward, assigned by spatial join.                                                       |
+| `stateElectorate`        | `{ name: string }`                   | State lower-house electorate, assigned by spatial join.                                                |
+| `commonwealthElectorate` | `{ name: string }`                   | Federal electorate, assigned by spatial join.                                                          |
+| `meshBlock`              | `{ code: string, category: string }` | **Changed in 1.0.0:** ASGS 2026 mesh block and category.                                               |
+| `sa1`                    | string                               | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 1 code.                                         |
+| `sa2`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 2.                                              |
+| `sa3`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 3.                                              |
+| `sa4`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 4.                                              |
+| `gccsa`                  | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Greater Capital City Statistical Area.                                 |
+
+Census enrichment follows `address_principals.mb_2026_code` to
+`abs_2026_mb.mb_code_26`. It does not fall back to the 2021 lookup. These fields
+contain geography, not population or other Census statistics.
+
+See [boundary processing](BOUNDARIES.md) for the current pipeline and
+[migration implications](MIGRATING-TO-ASGS-2026.md) for joins and historical analysis.
+
+## Aliases and secondaries
+
+Each `aliases` item contains three required strings: `pid` (alias address ID),
+`label` (address label), and `type` (alias relationship type). The array is sorted
+by alias PID.
+
+Each `secondaries` item contains two required strings: `pid` (child address ID)
+and `label` (address label). The array is sorted by secondary PID. Both arrays
+are empty when there are no corresponding joined records.
+
+## Locality-only document schema
+
+The separate [`flattenLocalities`](../src/flatten-localities.ts) module produces
+one document per locality. Its shape is unchanged in 1.0.0 and contains **no census
+boundaries or electoral assignments**. The Docker entrypoint does not expose a
+`--locality-only` flag; call the module from code when using this export.
+
+| Field          | Type     | Nullable | Meaning                                         |
+| -------------- | -------- | -------- | ----------------------------------------------- |
+| `_id`          | string   | No       | G-NAF locality identifier.                      |
+| `_version`     | string   | No       | G-NAF data quarter.                             |
+| `localityName` | string   | No       | Locality name.                                  |
+| `state`        | string   | No       | State or territory abbreviation.                |
+| `postcode`     | string   | Yes      | Locality postcode.                              |
+| `class`        | string   | No       | Expanded locality classification, or `UNKNOWN`. |
+| `neighbours`   | string[] | No       | Adjacent locality names.                        |
+| `aliases`      | string[] | No       | Alternative locality names.                     |
+| `latitude`     | number   | Yes      | Source locality latitude.                       |
+| `longitude`    | number   | Yes      | Source locality longitude.                      |
+
+## Version metadata
+
+A document's `_version` identifies the G-NAF quarter. It does not identify the
+schema, ASGS year, administrative source quarter or release patch. Keep the
+release metadata with downloaded files.
+
+| Surface                        | Contract fields                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub release `metadata.json` | `schemaVersion`, `asgsYear`; also `version`, `gnafVersion`, `adminBoundariesVersion`, `buildTimestamp`, `states`, `totalCount`. |
+| S3 `manifest.json`             | `schema_version`, `asgs_year`; `manifest_version: 2` describes the manifest envelope.                                           |
+| OpenSearch mapping `_meta`     | `schemaVersion`, `asgsYear`.                                                                                                    |
+
+The local [`BuildMetadata`](../src/metadata.ts) helper is a separate shape: it
+emits `version`, `schemaVersion`, `asgsYear`, `buildTimestamp`, `gnafLoaderVersion`,
+`states`, `totalCount` and `outputFiles`. Do not assume it contains every field
+that the GitHub release workflow adds.
+
+See [version examples and compatibility checks](MIGRATING-TO-ASGS-2026.md#know-which-version-you-are-checking).
+Missing geography metadata in an older artifact is not evidence of ASGS 2026.
+
+## Output formats
+
+**NDJSON** is the default and the published quarterly format. Each UTF-8 line
+contains one JSON document. State files are gzip-compressed for distribution.
+The [README](../README.md#verify-your-download) explains integrity and schema checks.
+
+**Parquet** conversion is available through [`convertToParquet`](../src/parquet.ts).
+Scalar fields use native columns. Nested objects and arrays, including
+`boundaries`, are JSON strings; decode them before querying nested fields. Nullable
+objects use Parquet nulls. These representations retain the same ASGS 2026 meanings.
+
+**GeoParquet** conversion is available through
+[`convertToGeoparquet`](../src/geoparquet.ts), with the same columns plus a WKB Point
+geometry when a geocode exists. **Existing limitation:** the converter declares
+WGS 84 metadata but copies the source coordinate numbers without a datum
+transformation. Do not treat that declaration as proof that GDA2020 coordinates
+were reprojected. This is separate from the ASGS migration and is tracked in
+[current work](../NEXT-WORK.md).
+
+The Docker entrypoint and quarterly workflow publish NDJSON; a `--format` option
+in the TypeScript argument parser does not make it a supported Docker flag.
+
+## Attribution
+
+See [source data and attribution](../README.md#data-sources-and-attribution).
+The code licence does not replace the source data's licensing terms.

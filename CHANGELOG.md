@@ -11,9 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Minor (0.2.0):** New fields, new output formats, new states, additive changes
 - **Patch (0.1.1):** Bug fixes, performance improvements, internal refactors, documentation
 
-The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
+The NDJSON schema is the contract. See [the document schema](docs/DOCUMENT-SCHEMA.md).
+Data-release tags such as `v2026.08.1` are separate from semantic schema versions.
+Historical entries retain the contract and source versions published at the time.
 
 ## [Unreleased]
+
+### Documentation
+
+- Audit current guides for schema 1.0.0 and ASGS 2026; highlight affected guidance
+  and all six changed census fields. Link the expanded migration guide from the
+  README navigation and documentation index.
+- Add metadata checks, consumer upgrade/rollback steps, current release/cache
+  recovery guidance and a recorded ASGS decision. Label earlier plans, incidents
+  and performance measurements as historical.
+- Correct field nullability, geocode reliability meanings, source-column
+  provenance, unsupported Docker flags and overstated fixture coverage. Document
+  the existing GeoParquet CRS limitation separately from this migration.
 
 ### Breaking changes
 

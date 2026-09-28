@@ -1,5 +1,12 @@
 # DEC-006 — Matrix Build on Free Runners
 
+> **Schema 1.0.0 change — current clarification.**
+> The nine-state matrix remains. Discovery now checks weekly and builds new
+> quarterly data only when needed. The first ASGS 2026 build cannot reuse older
+> incompatible database caches. Runner capacity, timings and costs must be checked
+> for the selected environment; the original estimates below are not guarantees.
+> See [release procedure](../RELEASING.md) and [runner planning](../SELF-HOSTED-RUNNER.md).
+
 ## Status
 
 Accepted
@@ -20,8 +27,8 @@ Use a GitHub Actions matrix strategy with 9 parallel jobs (VIC, NSW, QLD, SA, WA
 
 ## Consequences
 
-- 9 parallel jobs complete in ~50 minutes total wall-clock time. Cost: $0.
+- State jobs run independently. The original timing and free-runner budget were planning assumptions; measure the ASGS 2026 run before relying on them.
 - Each job is independent — a failed state can be re-run without re-running others.
 - NSW (~4.5M addresses, ~5-6GB RAM) is the tightest fit on 7GB runners. Requires memory optimisation (P4.07).
-- The release job concatenates per-state artifacts into an all-states file after all matrix jobs complete.
+- A separate concatenation job combines the state artifacts after the matrix completes.
 - Each state produces an independent gzipped NDJSON file — consumers can download only their state.
