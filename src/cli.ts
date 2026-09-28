@@ -2,8 +2,8 @@
  * flat-white — CLI argument parser and validator.
  *
  * Parses command-line flags for the flat-white pipeline.
- * Used by the TypeScript build orchestrator and tested independently.
- * The Docker entrypoint (bash) has its own parser that mirrors these flags.
+ * Exposes a testable parser for TypeScript integrations; it does not run a build.
+ * The Docker entrypoint has a separate parser. Its --help defines Docker flags.
  */
 
 /** Supported output formats. */
@@ -179,6 +179,8 @@ export class CliError extends Error {
 /** Help text for the flat-white CLI. */
 export const HELP_TEXT = `flat-white — Australian address data, flattened and served.
 
+TypeScript parser reference. For Docker options, run: docker run flat-white --help
+
 Usage:
   docker run flat-white --help
   docker run flat-white --fixture-only --output /output/
@@ -193,7 +195,7 @@ Flags:
   --fixture-only      Run fixture build only (no download, no gnaf-loader)
   --states STATES     States to process (e.g. VIC, VIC NSW)
   --output DIR        Output directory (default: /output)
-  --format FORMAT     Output format: ndjson (default), parquet, or geoparquet
+  --format FORMAT     ndjson (default), parquet, or geoparquet (TypeScript integrations only)
   --compress          Gzip output files
   --split-states      Split output into per-state files
   --skip-download     Skip data download (assumes data at --gnaf-path / --admin-path)
