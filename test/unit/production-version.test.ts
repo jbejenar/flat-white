@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -35,6 +44,83 @@ describe("production version guards", () => {
     return { status: result.status, output: result.stdout + result.stderr };
   }
 
+  function runMini(input: string, discovered = "2026.08") {
+    // Execute the actual workflow step, with only remote discovery replaced.
+    const workflow = readFileSync(resolve(".github/workflows/mini-quarterly.yml"), "utf8");
+    const match = workflow.match(
+      /- name: Determine version[\s\S]*?run: \|\n((?: {10}[^\n]*\n|\n)+)/,
+    );
+    if (!match) throw new Error("Missing mini-workflow version step");
+    const script = match[1].replace(/^ {10}/gm, "");
+    mkdirSync(join(root, "scripts"));
+    copyFileSync(
+      resolve("scripts/source_version_policy.py"),
+      join(root, "scripts/source_version_policy.py"),
+    );
+    writeFileSync(
+      join(root, "scripts/discover_latest_release.py"),
+      `
+import os
+from pathlib import Path
+Path("discovery-called").touch()
+version = os.environ["DISCOVERED_VERSION"]
+if version == "FAIL":
+    raise RuntimeError("simulated discovery failure")
+print(version)
+`,
+    );
+    const output = join(root, "outputs");
+    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GNAF_INPUT: input,
+        DISCOVERED_VERSION: discovered,
+        GITHUB_OUTPUT: output,
+      },
+    });
+    if (result.error) throw result.error;
+    return {
+      status: result.status,
+      published: existsSync(output) ? readFileSync(output, "utf8") : "",
+      discovered: existsSync(join(root, "discovery-called")),
+    };
+  }
+
+  describe("mini quarterly preflight", () => {
+    it.each(["2026.13", "2027.01", "2026.05", "--help", "2026.08.1"])(
+      "does not publish an invalid explicit quarter: %s",
+      (version) => {
+        const result = runMini(version);
+        expect(result.status).toBe(1);
+        expect(result.published).toBe("");
+        expect(result.discovered).toBe(false);
+      },
+    );
+    it.each(["2026.08", "2026.11"])("publishes a valid explicit quarter: %s", (version) => {
+      const result = runMini(version);
+      expect(result.status).toBe(0);
+      expect(result.published).toBe(`version=${version}\n`);
+      expect(result.discovered).toBe(false);
+    });
+    it.each(["2026.13", "2027.01", "2026.05", "", "FAIL"])(
+      "does not publish an unusable discovered quarter: %s",
+      (version) => {
+        const result = runMini("", version);
+        expect(result.status).toBe(1);
+        expect(result.published).toBe("");
+        expect(result.discovered).toBe(true);
+      },
+    );
+    it("publishes a valid discovered quarter", () => {
+      const result = runMini("");
+      expect(result.status).toBe(0);
+      expect(result.published).toBe("version=2026.08\n");
+      expect(result.discovered).toBe(true);
+    });
+  });
+
   for (const script of ["docker-entrypoint.sh", "scripts/build-local.sh"]) {
     describe(script, () => {
       it.each([
@@ -47,6 +133,9 @@ describe("production version guards", () => {
         "2026.00",
         "2026.13",
         "2026.08\n",
+        "--help",
+        "-h",
+        "--version",
       ])("rejects %j before output setup or infrastructure", (version) => {
         const result = run(script, version);
         expect(result.status).toBe(1);

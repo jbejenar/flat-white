@@ -189,7 +189,7 @@ else
   if [[ ! -f "$VERSION_POLICY" ]]; then
     VERSION_POLICY="/app/scripts/source_version_policy.py"
   fi
-  python3 "$VERSION_POLICY" "$GNAF_VERSION"
+  python3 "$VERSION_POLICY" -- "$GNAF_VERSION"
 fi
 
 mkdir -p "$OUTPUT_DIR"

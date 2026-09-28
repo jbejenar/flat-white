@@ -33,7 +33,7 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-python3 "$PROJECT_DIR/scripts/source_version_policy.py" "$VERSION"
+python3 "$PROJECT_DIR/scripts/source_version_policy.py" -- "$VERSION"
 
 mkdir -p "$OUTPUT_DIR"
 export POSTGRES_PORT="${POSTGRES_PORT:-$(printf '%s' "$PROJECT_DIR" | cksum | awk '{print 20000 + ($1 % 20000)}')}"

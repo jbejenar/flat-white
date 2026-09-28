@@ -24,8 +24,8 @@ or a document's `_version`. Always pin `gnaf_version` when making a patch: leavi
 it empty discovers the latest upstream data, which may be a different quarter.
 
 Production quarters use `YYYY.MM`, with month `02`, `05`, `08` or `11`, and must
-be `2026.08` or newer. The workflow resolver, Docker entrypoint and local build
-share this validation. Docker and local builds reject invalid versions before
+be `2026.08` or newer. The quarterly and mini workflow setup steps, Docker entrypoint
+and local build share this validation. Docker and local builds reject invalid versions before
 creating output directories or starting Postgres, including when reusing data
 or a database cache. The February fixture is exempt; leave its version unset.
 
