@@ -16,15 +16,10 @@ from discover_latest_release import (
     fetch_resources,
     resolve_latest_release_versions,
 )
+from source_version_policy import validate_production_version
 
 
-VERSION_RE = re.compile(r"^\d{4}\.\d{2}$")
 PATCH_RE = re.compile(r"^[1-9][0-9]*$")
-
-
-def validate_version(value: str, field_name: str) -> None:
-    if not VERSION_RE.match(value):
-        raise ValueError(f"Invalid {field_name} format: '{value}' (expected YYYY.MM)")
 
 
 def validate_patch(value: str) -> None:
@@ -74,7 +69,7 @@ def resolve_quarterly_inputs(
             raise ValueError("Manual data-source overrides require gnaf_version to be set")
 
     if gnaf_version:
-        validate_version(gnaf_version, "gnaf_version")
+        validate_production_version(gnaf_version, "gnaf_version")
     if patch_version:
         validate_patch(patch_version)
 
@@ -100,11 +95,9 @@ def resolve_quarterly_inputs(
 
     # Schema 1.x emits ASGS 2026, introduced in the August 2026 data release.
     # Older data must be rebuilt with the corresponding pre-migration code.
-    if version < "2026.08" or (admin_bdys_version != "manual" and admin_bdys_version < "2026.08"):
-        raise ValueError(
-            "Schema 1.x requires G-NAF and Admin Boundaries 2026.08 or newer (ASGS 2026). "
-            "Use the original release's code/schema to rebuild older data."
-        )
+    validate_production_version(version, "gnaf_version")
+    if admin_bdys_version != "manual":
+        validate_production_version(admin_bdys_version, "admin_bdys_version")
 
     return {
         "version": version,

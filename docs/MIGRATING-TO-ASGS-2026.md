@@ -164,7 +164,10 @@ corrections should receive a new release version.
 ## If you operate the build
 
 Schema 1.0.0 pins the unmodified gnaf-loader `202608` release. The quarterly
-workflow rejects source versions older than August 2026. Manual URL overrides
+workflow, Docker entrypoint and local build require a production quarter in
+`YYYY.MM` format, August 2026 or newer (months `02`, `05`, `08` or `11`).
+Invalid or older quarters fail before a build starts, including cached builds.
+Manual URL overrides
 still have to pass the loaded 2026 schema checks; a URL or folder name alone is
 not proof of compatibility.
 
@@ -184,9 +187,12 @@ migration testing. The fixture keeps its **February 2026 address snapshot** and
 `_version: "2026.02"`. A separate, deliberately synthetic census overlay exercises
 ASGS 2026 column names and the pinned upstream mesh-block preparation SQL.
 
-The old 2021 tables remain as regression decoys. Their presence must never make
-an incorrect 2021 join pass. Synthetic 2026 codes and names are test values, not
-actual ABS assignments for those addresses. See the [fixture guide](../fixtures/README.md).
+The old 2021 tables remain as regression decoys. Two explicit migration cases
+ensure an incorrect 2021 join fails: one changes the mesh-block code and hierarchy,
+and one keeps the code but changes the hierarchy. Other historical values are
+reused only as synthetic fixture data. None of these assignments establish real
+ASGS 2026 geography. All 451 documents still undergo complete byte-for-byte checks.
+See the [fixture guide](../fixtures/README.md).
 
 ## Where the documentation changed
 

@@ -49,6 +49,9 @@ Historical entries retain the contract and source versions published at the time
   schema failures as generic download failures.
 - Discover quarterly releases weekly and skip already published/draft quarters;
   add a metadata-only `preflight_only` workflow mode.
+- Validate production quarters consistently in the workflow, Docker entrypoint
+  and local build, before downloads or database startup. Cached builds cannot
+  bypass the minimum; the frozen fixture remains exempt.
 
 ## [v2026.05] - 2026-05-18
 

@@ -53,6 +53,10 @@ Do not rename an older quarter to satisfy the check. Use the old release's code
 for an old-data rebuild, or select compatible sources. Manual overrides require
 both URLs, the extracted boundary directory and an explicit G-NAF version.
 
+Docker and local production builds apply the same quarter check before starting
+Postgres or downloading anything. Use `YYYY.MM` with month `02`, `05`, `08` or
+`11`; a release patch such as `2026.08.1` is not a valid `GNAF_VERSION`.
+
 ## Download or extraction failed
 
 Read the error immediately before `Download failed`:

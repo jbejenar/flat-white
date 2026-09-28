@@ -176,4 +176,24 @@ describe("resolve_quarterly_inputs.py", () => {
       }),
     ).toContain("2026.08 or newer");
   });
+
+  it.each(["2026.8", "2026.08.1", "2026.09", "2026.13"])(
+    "rejects malformed or non-quarterly explicit versions: %s",
+    (version) => {
+      expect(resolveInputsFailure({ gnaf_version: version })).toContain("expected YYYY.MM");
+    },
+  );
+
+  it.each(["gnaf_version", "admin_bdys_version"])("also validates auto-discovered %s", (field) => {
+    expect(
+      resolveInputsFailure(
+        {},
+        {
+          gnaf_version: "2026.08",
+          admin_bdys_version: "2026.08",
+          [field]: "2026.13",
+        },
+      ),
+    ).toContain(`Invalid ${field}`);
+  });
 });

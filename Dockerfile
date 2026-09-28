@@ -75,6 +75,7 @@ COPY scripts/build-fixture-only.sh ./scripts/build-fixture-only.sh
 COPY scripts/build-local.sh ./scripts/build-local.sh
 COPY scripts/extract-boundary-prelude.mjs ./scripts/extract-boundary-prelude.mjs
 COPY scripts/extract-census-prep.mjs ./scripts/extract-census-prep.mjs
+COPY scripts/source_version_policy.py ./scripts/source_version_policy.py
 COPY scripts/validate-db-cache.sh ./scripts/validate-db-cache.sh
 RUN chmod +x ./scripts/validate-db-cache.sh
 

@@ -1,6 +1,6 @@
 # Release a data build
 
-> **Schema 1.0.0 change:** production workflow inputs must use G-NAF and Admin
+> **Schema 1.0.0 change:** production builds must use G-NAF and Admin
 > Boundaries August 2026 or newer, with ASGS 2026 census data. Older quarters need
 > their original code and schema. Read the [migration guide](MIGRATING-TO-ASGS-2026.md)
 > before publishing or consuming the new contract.
@@ -22,6 +22,12 @@ choosing a tag.
 `patch_version` is a positive integer. It never becomes part of the G-NAF version
 or a document's `_version`. Always pin `gnaf_version` when making a patch: leaving
 it empty discovers the latest upstream data, which may be a different quarter.
+
+Production quarters use `YYYY.MM`, with month `02`, `05`, `08` or `11`, and must
+be `2026.08` or newer. The workflow resolver, Docker entrypoint and local build
+share this validation. Docker and local builds reject invalid versions before
+creating output directories or starting Postgres, including when reusing data
+or a database cache. The February fixture is exempt; leave its version unset.
 
 The scheduled check runs **Monday at 02:00 UTC**. It skips quarters that already
 have a draft or published release. The data remains quarterly; checking weekly

@@ -4,7 +4,7 @@
 
 flat-white transforms Australian Government G-NAF address data into pre-joined, boundary-enriched NDJSON files. It starts ephemeral Postgres + PostGIS, uses the pinned gnaf-loader submodule (`gnaf-loader/`) to load and prepare data, derives administrative spatial assignments in flat-white, joins the ASGS 2026 census hierarchy, and streams one NDJSON document per principal address. Then Postgres stops.
 
-> **Schema 1.0.0 change:** census fields use ASGS 2026. Production workflow
+> **Schema 1.0.0 change:** census fields use ASGS 2026. Production build
 > sources must be August 2026 or newer; the address fixture remains February
 > 2026 with a synthetic census overlay. See the
 > [migration guide](docs/MIGRATING-TO-ASGS-2026.md) and [document contract](docs/DOCUMENT-SCHEMA.md).
@@ -62,7 +62,7 @@ npm run typecheck               # Type-check (tsc --noEmit)
 docker compose up db            # Start local Postgres + PostGIS
 ```
 
-**GNAF_VERSION:** Production builds (docker-entrypoint.sh, build-local.sh) require `GNAF_VERSION` env var (e.g. `GNAF_VERSION=2026.08`). Fixture builds default to `2026.02` (the frozen fixture snapshot). Leave `GNAF_VERSION` unset for fixture builds. See [releasing](docs/RELEASING.md) for source configuration.
+**GNAF_VERSION:** Production builds require a quarter in `YYYY.MM` format, `2026.08` or newer (months `02`, `05`, `08`, `11`). Set `GNAF_VERSION` for Docker; `build-local.sh` also accepts `--version`. Invalid or older quarters fail before build side effects. Fixture builds default to `2026.02` (the frozen fixture snapshot). Leave `GNAF_VERSION` unset for fixture builds. See [releasing](docs/RELEASING.md) for source configuration.
 
 ## Principles (MUST follow)
 

@@ -61,8 +61,8 @@ Usage:
   docker run -e GNAF_VERSION=2026.08 -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
 
 Environment:
-  GNAF_VERSION       Required for production builds (e.g. 2026.08).
-                     Schema 1.x needs ASGS 2026 sources; fixtures default to 2026.02.
+  GNAF_VERSION       Required production quarter, YYYY.MM, 2026.08 or newer.
+                     Release months: 02, 05, 08, 11. Fixtures default to 2026.02.
 
 Flags:
   --help              Show this help
@@ -169,7 +169,7 @@ if [[ -n "$RESTORE_DB" && "$SKIP_DOWNLOAD" == "true" ]]; then
   exit 1
 fi
 
-# ── Require GNAF_VERSION for non-fixture builds ──────────────────────────────
+# ── Validate GNAF_VERSION before any build side effects ──────────────────────
 # The version must be supplied explicitly to prevent shipping stale data.
 # Fixture mode uses frozen 202602 data from seed-postgres.sql, so it defaults.
 
@@ -182,6 +182,14 @@ fi
 # Fixture mode: default to the frozen fixture version
 if [[ "$MODE" == "fixture" ]]; then
   export GNAF_VERSION="${GNAF_VERSION:-2026.02}"
+else
+  # The same policy protects the quarterly resolver and build-local.sh.
+  # Resolve relative to this file locally and /app in the runtime image.
+  VERSION_POLICY="$(dirname "${BASH_SOURCE[0]}")/scripts/source_version_policy.py"
+  if [[ ! -f "$VERSION_POLICY" ]]; then
+    VERSION_POLICY="/app/scripts/source_version_policy.py"
+  fi
+  python3 "$VERSION_POLICY" "$GNAF_VERSION"
 fi
 
 mkdir -p "$OUTPUT_DIR"
