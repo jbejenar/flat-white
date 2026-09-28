@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 
@@ -33,10 +34,11 @@ def main() -> int:
     for log_path in args.log:
         for raw_line in Path(log_path).read_text(encoding="utf-8", errors="replace").splitlines():
             line = raw_line.strip()
+            line_lower = line.lower()
             if "retrying with --no-boundary-tag" in line:
                 fallback_retry_count += 1
             if any(
-                token in line
+                token.lower() in line_lower
                 for token in [
                     "ETIMEDOUT",
                     "ECONNRESET",
@@ -44,14 +46,13 @@ def main() -> int:
                     "ENETUNREACH",
                     "EAI_AGAIN",
                     "ENOTFOUND",
-                    "download failed",
                     "fetch failed",
                     "socket hang up",
                 ]
-            ):
+            ) or re.search(r"HTTP (429|5[0-9][0-9])(?:[^0-9]|$)", line, re.IGNORECASE):
                 network_error_detected = True
             if any(
-                token in line
+                token in line_lower
                 for token in [
                     "could not resize shared memory",
                     "no space left on device",

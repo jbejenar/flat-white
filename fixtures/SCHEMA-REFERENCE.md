@@ -34,7 +34,7 @@ Core table — one row per principal address. **Primary driving table in address
 | confidence          | smallint             | NO       | 0-2                                    |
 | legal_parcel_id     | text                 | YES      |                                        |
 | mb_2016_code        | bigint               | YES      |                                        |
-| mb_2021_code        | bigint               | YES      | FK -> abs_2021_mb                      |
+| mb_2021_code        | bigint               | YES      | Historical 2021 fixture value          |
 | latitude            | numeric(10,8)        | NO       | GDA2020                                |
 | longitude           | numeric(11,8)        | NO       | GDA2020                                |
 | geocode_type        | text                 | NO       |                                        |
@@ -47,7 +47,7 @@ Core table — one row per principal address. **Primary driving table in address
 - -> gnaf_202602.localities ON locality_pid
 - -> gnaf_202602.streets ON street_locality_pid
 - -> address_principal_admin_boundaries ON gnaf_pid
-- -> admin_bdys_202602.abs_2021_mb ON mb_2021_code = mb21_code
+- -> admin_bdys_202602.abs_2026_mb ON mb_2026_code = mb_code_26 (added by `seed-census-2026.sql`)
 - -> address_alias_lookup ON gnaf_pid = principal_pid
 - -> address_secondary_lookup ON gnaf_pid = primary_pid
 
@@ -224,13 +224,32 @@ All authority tables have: `code` (PK), `name` (varchar 50), `description`.
 
 ## admin_bdys_202602
 
+### abs_2026_mb (430 synthetic rows; schema 1.x)
+
+Created by the mesh-block section of the pinned upstream 202608 census SQL,
+executed by `scripts/extract-census-prep.mjs`. The raw input is
+`raw_admin_bdys_202602.aus_mb_2026` from `seed-census-2026.sql`.
+The same overlay adds `mb_2026_code bigint` to principal and alias addresses.
+
+| Column                     | Purpose                                                               |
+| -------------------------- | --------------------------------------------------------------------- |
+| `mb_code_26`               | Mesh block code; joined from `address_principals.mb_2026_code`        |
+| `mb_cat_26`                | Mesh block category                                                   |
+| `s1_code_26`               | SA1 code                                                              |
+| `s2_code_26`, `s2_name_26` | SA2 code and name                                                     |
+| `s3_code_26`, `s3_name_26` | SA3 code and name                                                     |
+| `s4_code_26`, `s4_name_26` | SA4 code and name                                                     |
+| `gc_code_26`, `gc_name_26` | GCCSA code and name                                                   |
+| `geom`                     | Synthetic MultiPolygon, SRID 7844; census enrichment uses code lookup |
+
+These are deliberately synthetic 2026 codes/names. The following 2021 tables
+are retained as historical source data and regression decoys, not runtime joins.
+
 ### abs_2021_mb (430 rows)
 
-**Canonical mesh-block table** — matches the production table name created by
-gnaf-loader's `02-02d-prep-census-2021-bdys-tables.sql`. Both the fixture path
-and the production path now join this table by name. Populated at the end of
-`seed-postgres.sql` via `CREATE TABLE … AS SELECT FROM abs_2021_mb_lookup`
-(see back-compat shim below).
+**Historical mesh-block table.** Populated by `seed-postgres.sql` from the
+original lookup. Used only to construct deterministic synthetic 2026 fixture
+assignments. Production schema 1.x joins `abs_2026_mb`.
 
 | Column     | Type        | Notes                                   |
 | ---------- | ----------- | --------------------------------------- |
@@ -248,18 +267,14 @@ and the production path now join this table by name. Populated at the end of
 | gcc_21name | text        |                                         |
 | state      | text        |                                         |
 
-**Known gap (E1.22):** this fixture table has no `geom` column. The production
-table populated by gnaf-loader has a PostGIS polygon column. Anything that adds
-a spatial query on `abs_2021_mb` will silently break against the fixture.
-Tracked by ROADMAP ticket E1.22 alongside the `extract-fixtures.sh` repair.
+This historical table has no geometry. The current 2026 fixture includes
+synthetic geometry and executes upstream prep SQL.
 
 ### abs_2021_mb_lookup (430 rows — back-compat shim)
 
 Original fixture-only denormalized lookup table. Same column data as
 `abs_2021_mb` but without the synthetic `gid`. Retained as a back-compat shim
-for any external tooling that historically referenced the lookup name. **Not
-joined by any of our SQL** — both fixture and production paths read
-`abs_2021_mb` directly.
+for any external tooling that historically referenced the lookup name. Schema 1.x flatten reads `abs_2026_mb`; this table is retained only in the frozen base seed.
 
 | Column     | Type        | Notes                                       |
 | ---------- | ----------- | ------------------------------------------- |

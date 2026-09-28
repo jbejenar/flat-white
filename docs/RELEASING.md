@@ -2,25 +2,33 @@
 
 ## Quarterly releases
 
-The normal release cadence is quarterly, triggered automatically by `.github/workflows/quarterly-build.yml` on a cron schedule (15th of Feb, May, Aug, Nov at 02:00 UTC). The version is `vYYYY.MM` matching the underlying G-NAF data version.
+Data releases remain quarterly. `.github/workflows/quarterly-build.yml` checks every Monday at 02:00 UTC because upstream publication dates vary. Scheduled runs skip quarters that already have a published or draft GitHub release. A failed/draft publication needs a manual retry. The version is `vYYYY.MM` matching the underlying G-NAF data version.
+
+Schema 1.x requires G-NAF and Admin Boundaries August 2026 or newer and emits ASGS 2026. Read [the migration guide](MIGRATING-TO-ASGS-2026.md) before publishing or consuming the first schema 1.x release. Rebuild older quarters with their original code/schema.
 
 To trigger a quarterly build manually, you can either pin a specific quarter or omit `gnaf_version` and let the workflow discover the latest published one:
 
 ```bash
-gh workflow run quarterly-build.yml -f gnaf_version=2026.05
+gh workflow run quarterly-build.yml -f gnaf_version=2026.08
 ```
 
 ```bash
 gh workflow run quarterly-build.yml
 ```
 
+For metadata-only validation, with no production build or publication:
+
+```bash
+gh workflow run quarterly-build.yml -f preflight_only=true
+```
+
 ### Version configuration
 
-`GNAF_VERSION` is **required** for direct production builds — there is no hardcoded default inside the container. The workflow sets it automatically from the `gnaf_version` input, or if omitted, discovers the newest overlapping G-NAF/Admin Boundaries quarterly release from data.gov.au. For local builds, set it explicitly:
+`GNAF_VERSION` is **required** for direct production builds — there is no hardcoded default inside the container. The workflow sets it automatically from the `gnaf_version` input, or if omitted, discovers the newest G-NAF and newest Admin Boundaries releases independently from data.gov.au. For local builds, set it explicitly:
 
 ```bash
 # Local build
-GNAF_VERSION=2026.05 ./scripts/build-local.sh --version 2026.05 --states VIC
+GNAF_VERSION=2026.08 ./scripts/build-local.sh --version 2026.08 --states VIC
 
 # Fixture builds default to 2026.02 (frozen fixture data) — no GNAF_VERSION needed
 ./scripts/build-fixture-only.sh
@@ -32,18 +40,19 @@ Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so d
 
 ```bash
 # Manual overrides (optional), or docker run -e flags locally:
-DOWNLOAD_URL_GNAF="https://data.gov.au/data/dataset/.../download/g-naf_may26_....zip"
-DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/may26_adminbounds_....zip"
-ADMIN_BDYS_EXTRACTED_DIR="MAY26_AdminBounds_GDA_2020_SHP"
+DOWNLOAD_URL_GNAF="https://data.gov.au/data/dataset/.../download/g-naf_aug26_....zip"
+DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/aug26_adminbounds_....zip"
+ADMIN_BDYS_EXTRACTED_DIR="AUG26_AdminBounds_GDA_2020_SHP"
 ```
 
 Priority order for production builds:
 
 1. workflow_dispatch input
 2. automatic discovery from data.gov.au for the target `GNAF_VERSION`
-3. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02`
 
-If automatic discovery cannot find the matching G-NAF GDA2020 ZIP or Administrative Boundaries GDA2020 shapefile ZIP for the requested version, the build fails before download with a clear error. That prevents a release tagged as `2026.04` or `2026.05` from silently downloading the wrong source data.
+The old February URL constants are not a production fallback for schema 1.x. Missing discovery results fail before download. Manual URL overrides are checked for actual schema compatibility after loading.
+
+If automatic discovery cannot find the matching G-NAF GDA2020 ZIP or Administrative Boundaries GDA2020 shapefile ZIP for the requested version, the build fails before download with a clear error. That prevents a release tagged as `2026.08` or `2026.11` from silently downloading the wrong source data.
 
 Find the correct URLs by browsing the G-NAF dataset page on data.gov.au, or by querying the CKAN API:
 
@@ -52,6 +61,10 @@ curl -s 'https://data.gov.au/data/api/3/action/package_show?id=19432f89-dc3a-4ef
 ```
 
 ## Patch releases
+
+The examples below retain the historical `v2026.04` incident for context. Rebuild
+that data with its original code/schema. With schema 1.x, use a supported data
+quarter (`2026.08` or newer) and its corresponding release tag instead.
 
 When a critical bug is found in a published release between quarterly cuts, ship a patch release. **Patch releases use new asset filenames so consumers can detect that previous downloads are stale.**
 
@@ -222,12 +235,13 @@ gunzip -c /tmp/flat-white-2026.04.1-act.ndjson.gz | grep -m5 '"streetType":"STRE
 
 Independent of release versioning, the NDJSON schema has its own version in `package.json` (semver):
 
-| Schema change                   | Bump                      | Example                                  |
-| ------------------------------- | ------------------------- | ---------------------------------------- |
-| Field added                     | Minor (`0.2.0` → `0.3.0`) | E1.05 added geoparquet support           |
-| Field removed or renamed        | Major (`0.2.0` → `1.0.0`) | Would require consumer migration         |
-| Field type changed              | Major                     | Number → string                          |
-| Bug fix to existing field value | Patch (`0.2.0` → `0.2.1`) | The v2026.04.1 streetType fix is a patch |
+| Schema change                    | Bump                      | Example                                  |
+| -------------------------------- | ------------------------- | ---------------------------------------- |
+| Field added                      | Minor (`0.2.0` → `0.3.0`) | E1.05 added geoparquet support           |
+| Field removed or renamed         | Major (`0.2.0` → `1.0.0`) | Would require consumer migration         |
+| Census geography edition changed | Major (`0.3.0` → `1.0.0`) | ASGS 2021 → ASGS 2026                    |
+| Field type changed               | Major                     | Number → string                          |
+| Bug fix to existing field value  | Patch (`0.2.0` → `0.2.1`) | The v2026.04.1 streetType fix is a patch |
 
 The release tag (`vYYYY.MM[.N]`) and schema version (`X.Y.Z`) are tracked independently. A patch release can ship a schema patch bump, or no schema change at all.
 

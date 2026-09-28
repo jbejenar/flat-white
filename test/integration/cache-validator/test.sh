@@ -7,8 +7,8 @@
 # cache validator against it. Catches two regression classes:
 #
 #   1. Validator references a fixture-only table name and fails on every
-#      production state build. Original PR #99 bug — `abs_2021_mb_lookup`
-#      is fixture-only; production has `abs_2021_mb`.
+#      production state build. The original bug used the fixture-only 2021 lookup name.
+#      Schema 1.x must now require the canonical `abs_2026_mb`.
 #
 #   2. Validator's polygon-table requirements don't match gnaf-loader's
 #      per-state shapefile filtering. Single-state builds for ACT/OT/etc.
@@ -17,12 +17,13 @@
 #      validator must mirror that subset exactly via the STATES env var.
 #
 # Test cases:
-#   1-3.   Existing checks (empty-STATES strict-all-five, abs_2021_mb regression)
+#   1-3.   Existing checks (empty-STATES strict-all-five, abs_2026_mb regression)
 #   4-12.  Per-state positive cases for ALL 9 single-state builds
 #          (validates state-aware polygon requirements match settings.py)
 #   13.    Multi-state positive case (NSW VIC) — verifies OR logic
 #   14-15. Polygon-missing negative guards: validator hard-fails when an
 #          expected polygon is missing
+#   19-22. ASGS 2026 table, column, and join compatibility guards.
 #   16-18. Malformed-STATES negative guards: validator fails closed on bad
 #          input instead of silently bypassing all polygon validation
 #
@@ -161,14 +162,14 @@ FAIL=0
 
 # Test 1 — empty STATES → strict-all-five fallback → validator exits 0
 echo
-echo "[cache-validator-test] Test 1/18 — empty STATES (strict-all-five fallback)"
+echo "[cache-validator-test] Test 1/22 — empty STATES (strict-all-five fallback)"
 reseed
 set +e; run_validator >/dev/null; actual=$?; set -e
 assert_pass "validator exited 0 against full prod-shape schema (no STATES)" "$actual"
 
 # Test 2 — empty STATES, drop a polygon → validator exits 1
 echo
-echo "[cache-validator-test] Test 2/18 — empty STATES + drop local_government_areas"
+echo "[cache-validator-test] Test 2/22 — empty STATES + drop local_government_areas"
 reseed
 drop_polygons local_government_areas
 set +e; stderr_capture="$(run_validator 2>&1 1>/dev/null)"; actual=$?; set -e
@@ -177,25 +178,25 @@ assert_fail_with "validator exited 1 with local_government_areas error" \
 
 # Test 3 — REGRESSION GUARD: drop the production mesh-block table.
 # This is the original PR #101 bug — the validator referenced
-# `abs_2021_mb_lookup` (fixture-only) instead of `abs_2021_mb` (production).
+# `abs_2026_mb_lookup` (fixture-only) instead of `abs_2026_mb` (production).
 # If anyone re-introduces the wrong name, this test catches it because
-# the seed only creates `abs_2021_mb`.
+# the seed only creates `abs_2026_mb`.
 echo
-echo "[cache-validator-test] Test 3/18 — regression guard (drop abs_2021_mb)"
+echo "[cache-validator-test] Test 3/22 — regression guard (drop abs_2026_mb)"
 reseed
-drop_polygons abs_2021_mb
+drop_polygons abs_2026_mb
 set +e; stderr_capture="$(run_validator 2>&1 1>/dev/null)"; actual=$?; set -e
 if [[ "$actual" -eq 1 \
-   && "$stderr_capture" == *"abs_2021_mb"* \
-   && "$stderr_capture" != *"abs_2021_mb_lookup"* ]]; then
-  # Negation check distinguishes `abs_2021_mb` from `abs_2021_mb_lookup`.
+   && "$stderr_capture" == *"abs_2026_mb"* \
+   && "$stderr_capture" != *"abs_2026_mb_lookup"* ]]; then
+  # Negation check distinguishes `abs_2026_mb` from `abs_2026_mb_lookup`.
   # If the validator regresses to checking the fixture-only `_lookup` table,
-  # the seed (which has `abs_2021_mb` but NOT `_lookup`) makes the validator
-  # error mention `abs_2021_mb_lookup` — and the negation catches it.
-  echo "  PASS: validator exited 1 with abs_2021_mb (not _lookup) in error"
+  # the seed (which has `abs_2026_mb` but NOT `_lookup`) makes the validator
+  # error mention `abs_2026_mb_lookup` — and the negation catches it.
+  echo "  PASS: validator exited 1 with abs_2026_mb (not _lookup) in error"
   PASS=$((PASS + 1))
 else
-  echo "  FAIL: expected exit 1 with abs_2021_mb (not _lookup) in error, got exit $actual"
+  echo "  FAIL: expected exit 1 with abs_2026_mb (not _lookup) in error, got exit $actual"
   echo "  stderr: $stderr_capture"
   FAIL=$((FAIL + 1))
 fi
@@ -208,7 +209,7 @@ fi
 # Test 4 — STATES=OT (Other Territories: Christmas Island, Norfolk, etc.)
 # OT has only LGA. Drop everything else.
 echo
-echo "[cache-validator-test] Test 4/18 — STATES=OT (lga only)"
+echo "[cache-validator-test] Test 4/22 — STATES=OT (lga only)"
 reseed
 drop_polygons commonwealth_electorates local_government_wards \
   state_lower_house_electorates state_upper_house_electorates
@@ -218,7 +219,7 @@ assert_pass "STATES=OT accepts lga-only schema" "$actual"
 # Test 5 — STATES=ACT (Australian Capital Territory)
 # ACT has ce + se_lower (no lga, no ward, no se_upper).
 echo
-echo "[cache-validator-test] Test 5/18 — STATES=ACT (ce, se_lower)"
+echo "[cache-validator-test] Test 5/22 — STATES=ACT (ce, se_lower)"
 reseed
 drop_polygons local_government_areas local_government_wards state_upper_house_electorates
 set +e; run_validator ACT >/dev/null; actual=$?; set -e
@@ -228,7 +229,7 @@ assert_pass "STATES=ACT accepts ce+se_lower schema" "$actual"
 # NSW has ce + lga + se_lower (no ward, no se_upper). NSW councils don't
 # have wards in the Geoscape data set.
 echo
-echo "[cache-validator-test] Test 6/18 — STATES=NSW (ce, lga, se_lower)"
+echo "[cache-validator-test] Test 6/22 — STATES=NSW (ce, lga, se_lower)"
 reseed
 drop_polygons local_government_wards state_upper_house_electorates
 set +e; run_validator NSW >/dev/null; actual=$?; set -e
@@ -237,7 +238,7 @@ assert_pass "STATES=NSW accepts ce+lga+se_lower schema" "$actual"
 # Test 7 — STATES=NT (Northern Territory)
 # NT has ce + lga + ward + se_lower (no se_upper — NT is unicameral).
 echo
-echo "[cache-validator-test] Test 7/18 — STATES=NT (ce, lga, ward, se_lower)"
+echo "[cache-validator-test] Test 7/22 — STATES=NT (ce, lga, ward, se_lower)"
 reseed
 drop_polygons state_upper_house_electorates
 set +e; run_validator NT >/dev/null; actual=$?; set -e
@@ -247,7 +248,7 @@ assert_pass "STATES=NT accepts ce+lga+ward+se_lower schema" "$actual"
 # TAS has ce + lga + se_lower + se_upper (no ward — TAS LGAs aren't subdivided
 # into wards in the Geoscape data set).
 echo
-echo "[cache-validator-test] Test 8/18 — STATES=TAS (ce, lga, se_lower, se_upper)"
+echo "[cache-validator-test] Test 8/22 — STATES=TAS (ce, lga, se_lower, se_upper)"
 reseed
 drop_polygons local_government_wards
 set +e; run_validator TAS >/dev/null; actual=$?; set -e
@@ -257,7 +258,7 @@ assert_pass "STATES=TAS accepts ce+lga+se_lower+se_upper schema" "$actual"
 # QLD has the same polygon set as NSW (ce + lga + se_lower). Tests redundant
 # branch coverage of the truth table for the third state in this class.
 echo
-echo "[cache-validator-test] Test 9/18 — STATES=QLD (ce, lga, se_lower)"
+echo "[cache-validator-test] Test 9/22 — STATES=QLD (ce, lga, se_lower)"
 reseed
 drop_polygons local_government_wards state_upper_house_electorates
 set +e; run_validator QLD >/dev/null; actual=$?; set -e
@@ -267,7 +268,7 @@ assert_pass "STATES=QLD accepts ce+lga+se_lower schema" "$actual"
 # SA has ce + lga + ward + se_lower (no se_upper). Same polygon set as NT but
 # tests the SA branch in the OR conditions.
 echo
-echo "[cache-validator-test] Test 10/18 — STATES=SA (ce, lga, ward, se_lower)"
+echo "[cache-validator-test] Test 10/22 — STATES=SA (ce, lga, ward, se_lower)"
 reseed
 drop_polygons state_upper_house_electorates
 set +e; run_validator SA >/dev/null; actual=$?; set -e
@@ -276,7 +277,7 @@ assert_pass "STATES=SA accepts ce+lga+ward+se_lower schema" "$actual"
 # Test 11 — STATES=VIC (Victoria, full coverage)
 # VIC has all 5 polygon tables. No drops needed.
 echo
-echo "[cache-validator-test] Test 11/18 — STATES=VIC (all 5)"
+echo "[cache-validator-test] Test 11/22 — STATES=VIC (all 5)"
 reseed
 set +e; run_validator VIC >/dev/null; actual=$?; set -e
 assert_pass "STATES=VIC accepts full all-five schema" "$actual"
@@ -284,7 +285,7 @@ assert_pass "STATES=VIC accepts full all-five schema" "$actual"
 # Test 12 — STATES=WA (Western Australia, full coverage)
 # WA has all 5 polygon tables. Like VIC, no drops needed.
 echo
-echo "[cache-validator-test] Test 12/18 — STATES=WA (all 5)"
+echo "[cache-validator-test] Test 12/22 — STATES=WA (all 5)"
 reseed
 set +e; run_validator WA >/dev/null; actual=$?; set -e
 assert_pass "STATES=WA accepts full all-five schema" "$actual"
@@ -293,7 +294,7 @@ assert_pass "STATES=WA accepts full all-five schema" "$actual"
 # Union of NSW (ce, lga, se_lower) and VIC (all 5) = all 5 (because VIC
 # triggers ward and se_upper via the OR conditions in settings.py).
 echo
-echo '[cache-validator-test] Test 13/18 — STATES="NSW VIC" (multi-state, union has all 5)'
+echo '[cache-validator-test] Test 13/22 — STATES="NSW VIC" (multi-state, union has all 5)'
 reseed
 set +e; run_validator "NSW VIC" >/dev/null; actual=$?; set -e
 assert_pass 'STATES="NSW VIC" accepts full all-five schema (multi-state OR logic)' "$actual"
@@ -304,7 +305,7 @@ assert_pass 'STATES="NSW VIC" accepts full all-five schema (multi-state OR logic
 
 # Test 14 — STATES=VIC, drop ward → should fail (VIC requires ward)
 echo
-echo "[cache-validator-test] Test 14/18 — NEG: STATES=VIC missing ward"
+echo "[cache-validator-test] Test 14/22 — NEG: STATES=VIC missing ward"
 reseed
 drop_polygons local_government_wards
 set +e; stderr_capture="$(run_validator VIC 2>&1 1>/dev/null)"; actual=$?; set -e
@@ -313,7 +314,7 @@ assert_fail_with "STATES=VIC fails when ward is missing" \
 
 # Test 15 — STATES=OT, drop lga → should fail (OT requires lga)
 echo
-echo "[cache-validator-test] Test 15/18 — NEG: STATES=OT missing lga"
+echo "[cache-validator-test] Test 15/22 — NEG: STATES=OT missing lga"
 reseed
 drop_polygons commonwealth_electorates local_government_wards \
   state_lower_house_electorates state_upper_house_electorates local_government_areas
@@ -331,14 +332,14 @@ assert_fail_with "STATES=OT fails when lga is missing" \
 # so a tab-only STATES bypassed the empty check. The new implementation keys
 # off the parsed array length, which collapses any whitespace input.
 echo
-echo '[cache-validator-test] Test 16/18 — STATES=$'"'"'\t'"'"' (whitespace-only → strict fallback)'
+echo '[cache-validator-test] Test 16/22 — STATES=$'"'"'\t'"'"' (whitespace-only → strict fallback)'
 reseed
 set +e; run_validator $'\t' >/dev/null; actual=$?; set -e
 assert_pass "STATES=tab triggers strict-all-five fallback (passes against full seed)" "$actual"
 
 # Test 17 — STATES is an unknown token → fail closed with explicit error
 echo
-echo '[cache-validator-test] Test 17/18 — NEG: STATES=foo (unknown token)'
+echo '[cache-validator-test] Test 17/22 — NEG: STATES=foo (unknown token)'
 reseed
 set +e; stderr_capture="$(run_validator foo 2>&1 1>/dev/null)"; actual=$?; set -e
 assert_fail_with "STATES=foo fails closed with 'invalid STATES token' error" \
@@ -346,11 +347,37 @@ assert_fail_with "STATES=foo fails closed with 'invalid STATES token' error" \
 
 # Test 18 — STATES uses comma delimiter (gnaf-loader uses space) → fail closed
 echo
-echo '[cache-validator-test] Test 18/18 — NEG: STATES="VIC,NSW" (wrong delimiter)'
+echo '[cache-validator-test] Test 18/22 — NEG: STATES="VIC,NSW" (wrong delimiter)'
 reseed
 set +e; stderr_capture="$(run_validator "VIC,NSW" 2>&1 1>/dev/null)"; actual=$?; set -e
 assert_fail_with 'STATES="VIC,NSW" fails closed (comma is not a valid delimiter)' \
   "$actual" "$stderr_capture" "invalid STATES token"
+
+echo
+# Schema migration guards: a populated legacy cache is not a valid 1.x cache.
+echo '[cache-validator-test] Test 19/22 — legacy census table only'
+reseed
+psql_db -q -c "ALTER TABLE admin_bdys_${TEST_SCHEMA_VERSION}.abs_2026_mb RENAME TO abs_2021_mb;"
+set +e; stderr_capture="$(run_validator VIC 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "rejects legacy census table" "$actual" "$stderr_capture" "abs_2026_mb"
+
+echo '[cache-validator-test] Test 20/22 — legacy address mesh-block column'
+reseed
+psql_db -q -c "ALTER TABLE gnaf_${TEST_SCHEMA_VERSION}.address_principals RENAME COLUMN mb_2026_code TO mb_2021_code;"
+set +e; stderr_capture="$(run_validator VIC 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "rejects legacy address column" "$actual" "$stderr_capture" "required ASGS 2026 column missing"
+
+echo '[cache-validator-test] Test 21/22 — incomplete census hierarchy'
+reseed
+psql_db -q -c "ALTER TABLE admin_bdys_${TEST_SCHEMA_VERSION}.abs_2026_mb DROP COLUMN s2_name_26;"
+set +e; stderr_capture="$(run_validator VIC 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "rejects missing census hierarchy column" "$actual" "$stderr_capture" "s2_name_26"
+
+echo '[cache-validator-test] Test 22/22 — populated but mismatched mesh blocks'
+reseed
+psql_db -q -c "UPDATE gnaf_${TEST_SCHEMA_VERSION}.address_principals SET mb_2026_code = -1;"
+set +e; stderr_capture="$(run_validator VIC 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "rejects mismatched census vintage" "$actual" "$stderr_capture" "no address mesh-block codes match"
 
 echo
 echo "[cache-validator-test] Result: $PASS passed, $FAIL failed"

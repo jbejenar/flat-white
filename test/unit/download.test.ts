@@ -332,7 +332,10 @@ describe("discoverDataSources", () => {
         name: "Administrative Boundaries GDA2020",
         url: "https://example.com/may26_adminbounds_gda_2020_shp.zip",
         extractedDir: "MAY26_AdminBounds_GDA_2020_SHP",
-        sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+        sentinelPaths: [
+          ["LocalGovernmentAreas_*", "LOCAL-GOVERNMENT-AREAS_*"],
+          "StateBoundaries_*",
+        ],
       },
     ]);
   });

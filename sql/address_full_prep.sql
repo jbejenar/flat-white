@@ -6,24 +6,15 @@
 -- Schema: gnaf___SCHEMA_VERSION__, raw_gnaf___SCHEMA_VERSION__, admin_bdys___SCHEMA_VERSION__
 
 -- FIXTURE_BOUNDARY_PRELUDE_START
--- 0. Ensure admin boundary tables exist (empty stubs if --no-boundary-tag or partial load).
+-- 0. Require the ASGS 2026 lookup; an empty stub would hide a failed migration.
 -- Both schemas (gnaf___SCHEMA_VERSION__ and admin_bdys___SCHEMA_VERSION__) are created by gnaf-loader.
 CREATE SCHEMA IF NOT EXISTS admin_bdys___SCHEMA_VERSION__;
-CREATE TABLE IF NOT EXISTS admin_bdys___SCHEMA_VERSION__.abs_2021_mb (
-  gid integer,
-  mb21_code bigint,
-  mb_cat text,
-  sa1_21code character varying(11),
-  sa2_21code character varying(9),
-  sa2_21name text,
-  sa3_21code character varying(5),
-  sa3_21name text,
-  sa4_21code character varying(3),
-  sa4_21name text,
-  gcc_21code text,
-  gcc_21name text,
-  state text
-);
+DO $$
+BEGIN
+  IF to_regclass('admin_bdys___SCHEMA_VERSION__.abs_2026_mb') IS NULL THEN
+    RAISE EXCEPTION 'Schema 1.x requires the ABS 2026 mesh-block lookup; rebuild with gnaf-loader 202608 or newer';
+  END IF;
+END $$;
 
 -- 0a. address_principal_admin_boundaries: drop-and-recreate stub if the existing
 -- table has a state-filtered (incomplete) schema from a partially-failed gnaf-loader

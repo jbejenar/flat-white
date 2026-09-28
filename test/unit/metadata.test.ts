@@ -91,13 +91,14 @@ describe("generateMetadata", () => {
     const meta = await generateMetadata({
       ndjsonPath: path,
       version: "2026.02",
-      schemaVersion: "0.1.0",
+      schemaVersion: "1.0.0",
       gnafLoaderVersion: "202602-5",
       outputFiles: ["output/fixture.ndjson"],
     });
 
     expect(meta.version).toBe("2026.02");
-    expect(meta.schemaVersion).toBe("0.1.0");
+    expect(meta.schemaVersion).toBe("1.0.0");
+    expect(meta.asgsYear).toBe(2026);
     expect(meta.gnafLoaderVersion).toBe("202602-5");
     expect(meta.totalCount).toBe(2);
     expect(meta.states).toEqual({ VIC: 1, NSW: 1 });
@@ -121,7 +122,7 @@ describe("writeMetadata", () => {
       ndjsonPath,
       outputPath,
       version: "2026.02",
-      schemaVersion: "0.1.0",
+      schemaVersion: "1.0.0",
       gnafLoaderVersion: "202602-5",
     });
 

@@ -61,16 +61,20 @@ COPY --from=builder /app/sql/ ./sql/
 # Copy fixtures (for --fixture-only mode)
 COPY fixtures/seed-postgres.sql ./fixtures/seed-postgres.sql
 COPY fixtures/seed-admin-bdys.sql ./fixtures/seed-admin-bdys.sql
+COPY fixtures/seed-census-2026.sql ./fixtures/seed-census-2026.sql
 COPY fixtures/prep-admin-bdys.sql ./fixtures/prep-admin-bdys.sql
 COPY fixtures/expected-output.ndjson ./fixtures/expected-output.ndjson
 
 # Copy gnaf-loader submodule
 COPY gnaf-loader/ ./gnaf-loader/
+# Catch upstream Python syntax/runtime-version incompatibility without a data load.
+RUN python3 -m py_compile gnaf-loader/load-gnaf.py gnaf-loader/geoscape.py gnaf-loader/settings.py
 
 # Copy scripts
 COPY scripts/build-fixture-only.sh ./scripts/build-fixture-only.sh
 COPY scripts/build-local.sh ./scripts/build-local.sh
 COPY scripts/extract-boundary-prelude.mjs ./scripts/extract-boundary-prelude.mjs
+COPY scripts/extract-census-prep.mjs ./scripts/extract-census-prep.mjs
 COPY scripts/validate-db-cache.sh ./scripts/validate-db-cache.sh
 RUN chmod +x ./scripts/validate-db-cache.sh
 

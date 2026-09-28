@@ -7,13 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Versioning rules for flat-white:**
 
-- **Major (1.0.0):** Breaking changes to the NDJSON output schema (field removal, type change, rename)
+- **Major (1.0.0):** Breaking changes to the NDJSON output schema (field removal, type change, rename, semantic geography change)
 - **Minor (0.2.0):** New fields, new output formats, new states, additive changes
 - **Patch (0.1.1):** Bug fixes, performance improvements, internal refactors, documentation
 
 The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
 
 ## [Unreleased]
+
+### Breaking changes
+
+- Schema **1.0.0** uses ASGS 2026 for mesh block, SA1–SA4 and GCCSA, retaining
+  the JSON field names/types. Release metadata includes `asgsYear: 2026`.
+  Consumers must migrate geographic joins, rebuild derived indexes/aggregates,
+  and preserve geography vintage in historical comparisons. See
+  [the migration guide](docs/MIGRATING-TO-ASGS-2026.md).
+- Advance the unmodified gnaf-loader submodule to upstream release `202608`.
+  Production workflow inputs require G-NAF and Admin Boundaries August 2026 or
+  newer. Invalidate older database caches and reject incompatible census schemas.
+
+### Fixed
+
+- Accept legacy and current Administrative Boundaries directory layouts; reject
+  incomplete extractions before replacing existing data.
+- Retry transport errors and HTTP 429/5xx, without retrying permanent archive or
+  schema failures as generic download failures.
+- Discover quarterly releases weekly and skip already published/draft quarters;
+  add a metadata-only `preflight_only` workflow mode.
 
 ## [v2026.05] - 2026-05-18
 
@@ -34,7 +54,6 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
   - VIC: 3953704
   - WA: 1530620
 
-
 ## [v2026.02.7] - 2026-04-11
 
 ### Release
@@ -53,7 +72,6 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
   - TAS: 346248
   - VIC: 3940659
   - WA: 1526407
-
 
 ## [v2026.02.6] - 2026-04-11
 

@@ -1,8 +1,14 @@
 # Document Schema Reference — flat-white
 
-> **Version:** 1.0.0 (pre-release draft)
+> **Version:** 1.0.0 — ASGS 2026 (breaking change)
 > **Runtime validation:** `src/schema.ts` (Zod)
 > **Breaking changes:** require a major version bump to the project.
+
+Schema 1.0.0 changes `boundaries.meshBlock`, `sa1`–`sa4`, and `gccsa` from
+ASGS 2021 to ASGS 2026 while preserving their JSON field names and types.
+Consumers must check `metadata.json` (`schemaVersion` and `asgsYear: 2026`)
+and migrate geographic joins and aggregates. `_version` still identifies the
+G-NAF quarter. See [migration implications and upgrade steps](MIGRATING-TO-ASGS-2026.md).
 
 Every line in the NDJSON output is one JSON document conforming to this schema. This document is the authoritative contract between flat-white and all downstream consumers.
 
@@ -110,20 +116,20 @@ Street-level metadata and aliases.
 
 ## Nested Object: Boundaries
 
-Administrative and ABS statistical area boundaries. All sub-fields are nullable — an address may lack boundary data if it falls outside mapped boundaries (e.g. some rural/remote areas).
+Administrative boundaries and ASGS 2026 statistical areas. The examples below illustrate field structure; they are not authoritative geographic assignments. All sub-fields are nullable — an address may lack boundary data if it falls outside mapped boundaries (e.g. some rural/remote areas).
 
-| Field                    | Type   | Nullable | Description                                             | Example                                               | G-NAF Source                                                                                |
-| ------------------------ | ------ | -------- | ------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `lga`                    | object | Yes      | Local Government Area: `{ name, code }`                 | `{ "name": "MARIBYRNONG", "code": "LGA24650" }`       | `admin_bdys.address_principal_admin_boundaries.lga_name`, `.lga_code`                       |
-| `ward`                   | object | Yes      | Council ward: `{ name }`                                | `{ "name": "RIVER WARD" }`                            | `admin_bdys.address_principal_admin_boundaries.ward_name`                                   |
-| `stateElectorate`        | object | Yes      | State electorate: `{ name }`                            | `{ "name": "FOOTSCRAY" }`                             | `admin_bdys.address_principal_admin_boundaries.state_electorate_name`                       |
-| `commonwealthElectorate` | object | Yes      | Federal electorate: `{ name }`                          | `{ "name": "GELLIBRAND" }`                            | `admin_bdys.address_principal_admin_boundaries.commonwealth_electorate_name`                |
-| `meshBlock`              | object | Yes      | ABS Mesh Block: `{ code, category }`                    | `{ "code": "20663890000", "category": "COMMERCIAL" }` | ABS 2021 mesh block lookup via `admin_bdys.address_principal_admin_boundaries.mb_2021_code` |
-| `sa1`                    | string | Yes      | ABS Statistical Area Level 1 code                       | `"20604102614"`                                       | ABS 2021 lookup via mesh block                                                              |
-| `sa2`                    | object | Yes      | ABS Statistical Area Level 2: `{ code, name }`          | `{ "code": "20604", "name": "FOOTSCRAY" }`            | ABS 2021 lookup via mesh block                                                              |
-| `sa3`                    | object | Yes      | ABS Statistical Area Level 3: `{ code, name }`          | `{ "code": "206", "name": "MARIBYRNONG" }`            | ABS 2021 lookup via mesh block                                                              |
-| `sa4`                    | object | Yes      | ABS Statistical Area Level 4: `{ code, name }`          | `{ "code": "2", "name": "MELBOURNE - WEST" }`         | ABS 2021 lookup via mesh block                                                              |
-| `gccsa`                  | object | Yes      | Greater Capital City Statistical Area: `{ code, name }` | `{ "code": "2GMEL", "name": "GREATER MELBOURNE" }`    | ABS 2021 lookup via mesh block                                                              |
+| Field                    | Type   | Nullable | Description                                             | Example                                               | G-NAF Source                                                                                   |
+| ------------------------ | ------ | -------- | ------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `lga`                    | object | Yes      | Local Government Area: `{ name, code }`                 | `{ "name": "MARIBYRNONG", "code": "LGA24650" }`       | `admin_bdys.address_principal_admin_boundaries.lga_name`, `.lga_code`                          |
+| `ward`                   | object | Yes      | Council ward: `{ name }`                                | `{ "name": "RIVER WARD" }`                            | `admin_bdys.address_principal_admin_boundaries.ward_name`                                      |
+| `stateElectorate`        | object | Yes      | State electorate: `{ name }`                            | `{ "name": "FOOTSCRAY" }`                             | `admin_bdys.address_principal_admin_boundaries.state_electorate_name`                          |
+| `commonwealthElectorate` | object | Yes      | Federal electorate: `{ name }`                          | `{ "name": "GELLIBRAND" }`                            | `admin_bdys.address_principal_admin_boundaries.commonwealth_electorate_name`                   |
+| `meshBlock`              | object | Yes      | ABS Mesh Block: `{ code, category }`                    | `{ "code": "20663890000", "category": "COMMERCIAL" }` | ASGS 2026 lookup: `gnaf.address_principals.mb_2026_code` → `admin_bdys.abs_2026_mb.mb_code_26` |
+| `sa1`                    | string | Yes      | ABS Statistical Area Level 1 code                       | `"20604102614"`                                       | ASGS 2026 lookup via mesh block                                                                |
+| `sa2`                    | object | Yes      | ABS Statistical Area Level 2: `{ code, name }`          | `{ "code": "20604", "name": "FOOTSCRAY" }`            | ASGS 2026 lookup via mesh block                                                                |
+| `sa3`                    | object | Yes      | ABS Statistical Area Level 3: `{ code, name }`          | `{ "code": "206", "name": "MARIBYRNONG" }`            | ASGS 2026 lookup via mesh block                                                                |
+| `sa4`                    | object | Yes      | ABS Statistical Area Level 4: `{ code, name }`          | `{ "code": "2", "name": "MELBOURNE - WEST" }`         | ASGS 2026 lookup via mesh block                                                                |
+| `gccsa`                  | object | Yes      | Greater Capital City Statistical Area: `{ code, name }` | `{ "code": "2GMEL", "name": "GREATER MELBOURNE" }`    | ASGS 2026 lookup via mesh block                                                                |
 
 ---
 

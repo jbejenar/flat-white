@@ -235,17 +235,17 @@ export function composeBoundaries(row: Record<string, unknown>) {
   const wardName = row.ward_name as string | null;
   const stateElectorateName = row.state_electorate_name as string | null;
   const ceElectorateName = row.commonwealth_electorate_name as string | null;
-  const mb2021Code = row.mb_2021_code as string | number | null;
+  const mb2026Code = row.mb_2026_code as string | number | null;
   const mbCategory = row.mesh_block_category as string | null;
-  const sa1 = row.sa1_21code as string | null;
-  const sa2Code = row.sa2_21code as string | null;
-  const sa2Name = row.sa2_21name as string | null;
-  const sa3Code = row.sa3_21code as string | null;
-  const sa3Name = row.sa3_21name as string | null;
-  const sa4Code = row.sa4_21code as string | null;
-  const sa4Name = row.sa4_21name as string | null;
-  const gccsaCode = row.gcc_21code as string | null;
-  const gccsaName = row.gcc_21name as string | null;
+  const sa1 = row.s1_code_26 as string | null;
+  const sa2Code = row.s2_code_26 as string | null;
+  const sa2Name = row.s2_name_26 as string | null;
+  const sa3Code = row.s3_code_26 as string | null;
+  const sa3Name = row.s3_name_26 as string | null;
+  const sa4Code = row.s4_code_26 as string | null;
+  const sa4Name = row.s4_name_26 as string | null;
+  const gccsaCode = row.gc_code_26 as string | null;
+  const gccsaName = row.gc_name_26 as string | null;
 
   return {
     lga: lgaName && lgaPid ? { name: lgaName, code: lgaPid } : null,
@@ -253,7 +253,7 @@ export function composeBoundaries(row: Record<string, unknown>) {
     stateElectorate: stateElectorateName ? { name: stateElectorateName } : null,
     commonwealthElectorate: ceElectorateName ? { name: ceElectorateName } : null,
     meshBlock:
-      mb2021Code != null && mbCategory ? { code: String(mb2021Code), category: mbCategory } : null,
+      mb2026Code != null && mbCategory ? { code: String(mb2026Code), category: mbCategory } : null,
     sa1: sa1 ?? null,
     sa2: sa2Code && sa2Name ? { code: sa2Code, name: sa2Name } : null,
     sa3: sa3Code && sa3Name ? { code: sa3Code, name: sa3Name } : null,

@@ -33,6 +33,11 @@ Every document contains the full address, multiple geocode types, locality conte
 
 ## Quick Start
 
+**Schema 1.0.0 changes census geography to ASGS 2026.** Check release metadata
+before importing and follow the [migration guide](docs/MIGRATING-TO-ASGS-2026.md)
+for geographic joins, index rebuilds and historical comparisons. Previously
+published schema 0.x releases retain their original geography.
+
 Download your state and start querying in under 60 seconds:
 
 ```bash

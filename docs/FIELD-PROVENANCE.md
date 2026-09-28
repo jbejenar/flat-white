@@ -31,7 +31,7 @@ All tables joined by `sql/address_full.sql` (the canonical flatten query) and it
 | `raw_gnaf_202602`   | `geocode_type_aut`                   | `gt`         | 30           | Code → name expansion (e.g. `FCS` → `FRONTAGE CENTRE SETBACK`)                                                                                                                                                                                                                                                       |
 | `raw_gnaf_202602`   | `locality_class_aut`                 | `lc_aut`     | 9            | Name-based join for locality class                                                                                                                                                                                                                                                                                   |
 | `raw_gnaf_202602`   | `street_class_aut`                   | `sc_aut`     | 2            | Name-based join for street class                                                                                                                                                                                                                                                                                     |
-| `admin_bdys_202602` | `abs_2021_mb`                        | `mb`         | 430          | Mesh block → SA1/SA2/SA3/SA4/GCCSA mapping                                                                                                                                                                                                                                                                           |
+| `admin_bdys_202602` | `abs_2026_mb`                        | `mb`         | 430          | Mesh block → SA1/SA2/SA3/SA4/GCCSA mapping                                                                                                                                                                                                                                                                           |
 
 **Related but not referenced by `address_full.sql`:**
 
@@ -72,7 +72,7 @@ address_principals (ap)  ←— DRIVING TABLE
   │
   ├── LEFT JOIN address_principal_admin_boundaries (ab) ON ab.gnaf_pid = ap.gnaf_pid
   │
-  ├── LEFT JOIN abs_2021_mb (mb) ON mb.mb21_code = ap.mb_2021_code
+  ├── LEFT JOIN abs_2026_mb (mb) ON mb.mb_code_26 = ap.mb_2026_code
   │
   ├── LEFT JOIN address_alias_agg (CTE) ON principal_pid = ap.gnaf_pid
   │     └── Uses: address_alias_lookup → address_aliases
@@ -191,6 +191,8 @@ All geocode types for an address, aggregated in the `address_geocodes` CTE.
 
 ## Field Provenance — `boundaries` Object
 
+Schema 1.x uses ASGS 2026. The `202602` schema suffix below identifies the frozen address fixture; its census data is an explicit synthetic 2026 overlay. Production uses the selected G-NAF quarter as its schema suffix.
+
 All boundary fields sourced from two tables: the spatially-joined admin boundaries table and the ABS mesh block lookup.
 
 | Output Field                             | SQL Alias                      | Source Table.Column                                            | Transform                                               |
@@ -200,21 +202,21 @@ All boundary fields sourced from two tables: the spatially-joined admin boundari
 | `boundaries.ward.name`                   | `ward_name`                    | `gnaf_202602.address_principal_admin_boundaries.ward_name`     | Null if null                                            |
 | `boundaries.stateElectorate.name`        | `state_electorate_name`        | `gnaf_202602.address_principal_admin_boundaries.se_lower_name` | SQL alias: `ab.se_lower_name AS state_electorate_name`  |
 | `boundaries.commonwealthElectorate.name` | `commonwealth_electorate_name` | `gnaf_202602.address_principal_admin_boundaries.ce_name`       | SQL alias: `ab.ce_name AS commonwealth_electorate_name` |
-| `boundaries.meshBlock.code`              | `mb_2021_code`                 | `gnaf_202602.address_principals.mb_2021_code`                  | `String()` cast. Null if code or category is null.      |
-| `boundaries.meshBlock.category`          | `mesh_block_category`          | `admin_bdys_202602.abs_2021_mb.mb_cat`                         | SQL alias: `mb.mb_cat AS mesh_block_category`           |
-| `boundaries.sa1`                         | `sa1_21code`                   | `admin_bdys_202602.abs_2021_mb.sa1_21code`                     | Null-coalesce                                           |
-| `boundaries.sa2.code`                    | `sa2_21code`                   | `admin_bdys_202602.abs_2021_mb.sa2_21code`                     | Null if either code or name is null                     |
-| `boundaries.sa2.name`                    | `sa2_21name`                   | `admin_bdys_202602.abs_2021_mb.sa2_21name`                     |                                                         |
-| `boundaries.sa3.code`                    | `sa3_21code`                   | `admin_bdys_202602.abs_2021_mb.sa3_21code`                     | Null if either code or name is null                     |
-| `boundaries.sa3.name`                    | `sa3_21name`                   | `admin_bdys_202602.abs_2021_mb.sa3_21name`                     |                                                         |
-| `boundaries.sa4.code`                    | `sa4_21code`                   | `admin_bdys_202602.abs_2021_mb.sa4_21code`                     | Null if either code or name is null                     |
-| `boundaries.sa4.name`                    | `sa4_21name`                   | `admin_bdys_202602.abs_2021_mb.sa4_21name`                     |                                                         |
-| `boundaries.gccsa.code`                  | `gcc_21code`                   | `admin_bdys_202602.abs_2021_mb.gcc_21code`                     | Null if either code or name is null                     |
-| `boundaries.gccsa.name`                  | `gcc_21name`                   | `admin_bdys_202602.abs_2021_mb.gcc_21name`                     |                                                         |
+| `boundaries.meshBlock.code`              | `mb_2026_code`                 | `gnaf_202602.address_principals.mb_2026_code`                  | `String()` cast. Null if code or category is null.      |
+| `boundaries.meshBlock.category`          | `mesh_block_category`          | `admin_bdys_202602.abs_2026_mb.mb_cat_26`                      | SQL alias: `mb.mb_cat_26 AS mesh_block_category`        |
+| `boundaries.sa1`                         | `s1_code_26`                   | `admin_bdys_202602.abs_2026_mb.s1_code_26`                     | Null-coalesce                                           |
+| `boundaries.sa2.code`                    | `s2_code_26`                   | `admin_bdys_202602.abs_2026_mb.s2_code_26`                     | Null if either code or name is null                     |
+| `boundaries.sa2.name`                    | `s2_name_26`                   | `admin_bdys_202602.abs_2026_mb.s2_name_26`                     |                                                         |
+| `boundaries.sa3.code`                    | `s3_code_26`                   | `admin_bdys_202602.abs_2026_mb.s3_code_26`                     | Null if either code or name is null                     |
+| `boundaries.sa3.name`                    | `s3_name_26`                   | `admin_bdys_202602.abs_2026_mb.s3_name_26`                     |                                                         |
+| `boundaries.sa4.code`                    | `s4_code_26`                   | `admin_bdys_202602.abs_2026_mb.s4_code_26`                     | Null if either code or name is null                     |
+| `boundaries.sa4.name`                    | `s4_name_26`                   | `admin_bdys_202602.abs_2026_mb.s4_name_26`                     |                                                         |
+| `boundaries.gccsa.code`                  | `gc_code_26`                   | `admin_bdys_202602.abs_2026_mb.gc_code_26`                     | Null if either code or name is null                     |
+| `boundaries.gccsa.name`                  | `gc_name_26`                   | `admin_bdys_202602.abs_2026_mb.gc_name_26`                     |                                                         |
 
 **Join path (admin):** `address_principals.gnaf_pid` → `address_principal_admin_boundaries.gnaf_pid`
 
-**Join path (ABS):** `address_principals.mb_2021_code` → `abs_2021_mb.mb21_code`
+**Join path (ABS):** `address_principals.mb_2026_code` → `abs_2026_mb.mb_code_26`
 
 ---
 

@@ -34,8 +34,12 @@ export interface DataSource {
   name: string;
   url: string;
   extractedDir: string;
-  /** Paths relative to extractedDir that must exist for the extraction to be considered complete. */
-  sentinelPaths: string[];
+  /** Required paths relative to extractedDir. A group allows alternative upstream names. */
+  sentinelPaths: Array<string | string[]>;
+}
+
+function adminSentinelPaths(): DataSource["sentinelPaths"] {
+  return [["LocalGovernmentAreas_*", "LOCAL-GOVERNMENT-AREAS_*"], "StateBoundaries_*"];
 }
 
 /**
@@ -60,7 +64,7 @@ export const DEFAULT_DATA_SOURCES: DataSource[] = [
     name: "Administrative Boundaries GDA2020",
     url: "https://data.gov.au/data/dataset/bdcf5b09-89bc-47ec-9281-6b8e9ee147aa/resource/36cc98bd-df9b-4454-9a05-c2756ee1249e/download/feb26_adminbounds_gda_2020_shp.zip",
     extractedDir: "FEB26_AdminBounds_GDA_2020_SHP",
-    sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+    sentinelPaths: adminSentinelPaths(),
   },
 ];
 
@@ -310,7 +314,7 @@ export async function discoverDataSources(
       name: "Administrative Boundaries GDA2020",
       url: admin.url,
       extractedDir: adminTokens.adminExtractedDir,
-      sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+      sentinelPaths: adminSentinelPaths(),
     },
   ];
 }
@@ -334,7 +338,10 @@ export function resolveDataSources(_version?: string): DataSource[] {
   const adminUrl = readEnvOverride("DOWNLOAD_URL_ADMIN_BDYS");
   const adminExtractedDir = readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR");
 
-  const sources = DEFAULT_DATA_SOURCES.map((s) => ({ ...s, sentinelPaths: [...s.sentinelPaths] }));
+  const sources = DEFAULT_DATA_SOURCES.map((s) => ({
+    ...s,
+    sentinelPaths: s.sentinelPaths.map((path) => (typeof path === "string" ? path : [...path])),
+  }));
 
   if (gnafUrl) {
     const gnaf = sources.find((s) => s.name.includes("G-NAF"));
@@ -432,7 +439,10 @@ export function formatProgress(downloaded: number, total: number | null, elapsed
  * Returns true only if every sentinel file/directory exists, indicating a
  * complete extraction. Returns false for empty, partial, or missing directories.
  */
-export function isExtractionComplete(extractedPath: string, sentinelPaths: string[]): boolean {
+export function isExtractionComplete(
+  extractedPath: string,
+  sentinelPaths: DataSource["sentinelPaths"],
+): boolean {
   if (!existsSync(extractedPath)) return false;
   try {
     if (!statSync(extractedPath).isDirectory()) return false;
@@ -441,24 +451,29 @@ export function isExtractionComplete(extractedPath: string, sentinelPaths: strin
   }
   if (sentinelPaths.length === 0) return false;
   // Read directory once for glob matching (avoids repeated readdirSync per sentinel)
-  const hasGlob = sentinelPaths.some((s) => s.includes("*"));
-  const entries = hasGlob ? readdirSync(extractedPath) : [];
-  return sentinelPaths.every((sentinel) => {
+  const hasGlob = sentinelPaths.flat().some((s) => s.includes("*"));
+  const entries = hasGlob ? readdirSync(extractedPath, { withFileTypes: true }) : [];
+  function matches(sentinel: string): boolean {
     if (sentinel.includes("/") && sentinel.includes("*")) {
       // Path-segment wildcard: "G-NAF */Standard" — first segment has a wildcard, rest is literal
       const [globSegment, ...rest] = sentinel.split("/");
       const prefix = globSegment.replaceAll("*", "");
-      const matchingDirs = entries.filter((entry) => entry.startsWith(prefix));
+      const matchingDirs = entries.filter(
+        (entry) => entry.isDirectory() && entry.name.startsWith(prefix),
+      );
       const subPath = rest.join("/");
-      return matchingDirs.some((dir) => existsSync(resolve(extractedPath, dir, subPath)));
+      return matchingDirs.some((dir) => existsSync(resolve(extractedPath, dir.name, subPath)));
     }
     if (sentinel.endsWith("*")) {
       // Trailing wildcard: "LocalGovernmentAreas_*" matches any entry starting with the prefix
       const prefix = sentinel.slice(0, -1);
-      return entries.some((entry) => entry.startsWith(prefix));
+      return entries.some((entry) => entry.isDirectory() && entry.name.startsWith(prefix));
     }
     return existsSync(resolve(extractedPath, sentinel));
-  });
+  }
+  return sentinelPaths.every((sentinel) =>
+    typeof sentinel === "string" ? matches(sentinel) : sentinel.some(matches),
+  );
 }
 
 // --- Retry logic ---
@@ -669,7 +684,9 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
         // ignore
       }
       throw new Error(
-        `Extraction of ${source.name} failed sentinel validation — expected paths not found: ${source.sentinelPaths.join(", ")}`,
+        `Extraction of ${source.name} failed sentinel validation — expected paths not found: ${source.sentinelPaths
+          .map((path) => (typeof path === "string" ? path : `(${path.join(" or ")})`))
+          .join(", ")}`,
       );
     }
 

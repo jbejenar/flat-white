@@ -267,6 +267,15 @@ if [[ "$MODE" == "fixture" ]]; then
   }
 
   SCHEMA_VERSION_FLAT="${GNAF_VERSION//.}"
+  su postgres -c "psql -d $PGDB -q -f /app/fixtures/seed-census-2026.sql" || {
+    log "ERROR: ASGS 2026 fixture seeding failed"
+    exit 2
+  }
+  node /app/scripts/extract-census-prep.mjs "$SCHEMA_VERSION_FLAT" | \
+    su postgres -c "psql -v ON_ERROR_STOP=1 -d $PGDB -q" || {
+      log "ERROR: ASGS 2026 fixture preparation failed"
+      exit 2
+    }
   sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" /app/fixtures/prep-admin-bdys.sql | \
     su postgres -c "psql -d $PGDB -q" || {
       log "ERROR: Admin boundary prep SQL failed"

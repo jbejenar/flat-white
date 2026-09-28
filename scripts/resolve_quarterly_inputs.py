@@ -98,6 +98,14 @@ def resolve_quarterly_inputs(
 
     release_version = f"{version}.{patch_version}" if patch_version else version
 
+    # Schema 1.x emits ASGS 2026, introduced in the August 2026 data release.
+    # Older data must be rebuilt with the corresponding pre-migration code.
+    if version < "2026.08" or (admin_bdys_version != "manual" and admin_bdys_version < "2026.08"):
+        raise ValueError(
+            "Schema 1.x requires G-NAF and Admin Boundaries 2026.08 or newer (ASGS 2026). "
+            "Use the original release's code/schema to rebuild older data."
+        )
+
     return {
         "version": version,
         "admin_bdys_version": admin_bdys_version,

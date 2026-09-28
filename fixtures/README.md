@@ -2,26 +2,29 @@
 
 ## Overview
 
-This directory contains committed test data for fixture-first development. The fixture is a self-consistent subset of the full VIC G-NAF + Administrative Boundaries dataset — 451 addresses covering all edge case categories.
+This directory contains committed test data for fixture-first development. The address snapshot contains 451 VIC addresses from February 2026. Administrative polygons and the ASGS 2026 census overlay are synthetic test data; they are not authoritative geographic assignments.
 
 **Load time:** <30 seconds on commodity hardware (no gnaf-loader, no download required).
 
 ## Files
 
-| File                | Purpose                                                        |
-| ------------------- | -------------------------------------------------------------- |
-| `seed-postgres.sql` | Schema DDL + fixture data. Load into fresh Postgres + PostGIS. |
-| `edge-cases.md`     | Catalogue of edge case categories with specific PIDs.          |
-| `README.md`         | This file.                                                     |
+| File                     | Purpose                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `seed-postgres.sql`      | Schema DDL + fixture data. Load into fresh Postgres + PostGIS.                    |
+| `seed-census-2026.sql`   | Synthetic raw census rows and 2026 mesh-block assignments; preserves 2021 decoys. |
+| `expected-output.ndjson` | Byte-for-byte schema 1.0.0 regression baseline.                                   |
+| `edge-cases.md`          | Catalogue of edge case categories with specific PIDs.                             |
+| `README.md`              | This file.                                                                        |
 
 ## How to load
 
 ```bash
-# Requires: Docker running, Postgres + PostGIS via docker-compose
-docker compose up -d db
-docker compose exec db psql -U postgres -d gnaf -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-docker compose exec -T db psql -U postgres -d gnaf -f /fixtures/seed-postgres.sql
+# Requires Docker. Seeds raw fixtures, runs prep SQL, flattens and verifies.
+./scripts/build-fixture-only.sh
 ```
+
+Loading `seed-postgres.sql` alone only restores the historical address snapshot;
+the fixture script also applies administrative and census overlays.
 
 ## Source data
 
@@ -36,7 +39,7 @@ docker compose exec -T db psql -U postgres -d gnaf -f /fixtures/seed-postgres.sq
 
 ## Schema (gnaf-loader output)
 
-The fixture captures gnaf-loader's exact output schema. Key tables:
+The base fixture captures the historical loader output. `seed-census-2026.sql` adds the current census columns and synthetic raw rows, and `scripts/extract-census-prep.mjs` executes the mesh-block section from the pinned upstream 202608 SQL. Key base tables:
 
 | Schema      | Table                              | Rows | Description                           |
 | ----------- | ---------------------------------- | ---- | ------------------------------------- |
@@ -55,9 +58,9 @@ The fixture captures gnaf-loader's exact output schema. Key tables:
 
 This fixture detects schema drift:
 
-- If gnaf-loader changes table names, column names, or column types → `seed-postgres.sql` fails to load → CI catches it.
-- If the flatten pipeline changes output → `expected-output.ndjson` (once committed) differs → regression test catches it.
-- To regenerate: `./scripts/extract-fixtures.sh` against a full VIC load.
+- The census fixture executes upstream prep SQL, so incompatible census columns or transforms fail CI. The historical base seed does not simulate a full loader run.
+- Flatten output must match `expected-output.ndjson` byte for byte and match between the CTE and materialized SQL paths.
+- `extract-fixtures.sh` is restricted to the frozen February 2026 snapshot and its original loader/schema. Do not run a full production load for development; a new address snapshot needs a separate, reviewed fixture migration.
 
 ## FK constraints
 
@@ -105,18 +108,26 @@ The flatten pipeline code must reference these schema names. When a new G-NAF qu
 
 ## ABS statistical area lookup
 
-The fixture includes a lightweight `admin_bdys_202602.abs_2021_mb` table (430 rows, no geometry) that maps mesh block codes to the full ABS statistical area hierarchy:
+`seed-census-2026.sql` creates 430 synthetic raw mesh-block rows in
+`raw_admin_bdys_202602.aus_mb_2026`, including small synthetic polygons. It adds
+and populates `mb_2026_code` on the frozen principal/alias address tables.
+The pinned upstream `02-02e-prep-census-2026-bdys-tables.sql` creates the actual
+processed `admin_bdys_202602.abs_2026_mb` table. Both flatten paths join it:
 
 ```
-address_principals.mb_2021_code → abs_2021_mb.mb21_code
-  → mb_cat (mesh block category: Residential, Commercial, etc.)
-  → sa1_21code
-  → sa2_21code, sa2_21name
-  → sa3_21code, sa3_21name
-  → sa4_21code, sa4_21name
-  → gcc_21code, gcc_21name (GCCSA: Greater Melbourne, Rest of Vic., etc.)
+address_principals.mb_2026_code → abs_2026_mb.mb_code_26
+  → mb_cat_26
+  → s1_code_26
+  → s2_code_26, s2_name_26
+  → s3_code_26, s3_name_26
+  → s4_code_26, s4_name_26
+  → gc_code_26, gc_name_26
 ```
 
-The fixture's `abs_2021_mb` matches the production table name created by gnaf-loader's `02-02d-prep-census-2021-bdys-tables.sql`, but only carries the columns the flatten SQL actually uses (no PostGIS polygon — committing real shapefile geometry would inflate the fixture by multiple megabytes). The flatten pipeline joins on `mb21_code` to populate the `boundaries.meshBlock`, `boundaries.sa1` through `boundaries.gccsa` output fields.
+Codes and names deliberately differ from the retained 2021 tables. Accidentally
+reading `mb_2021_code` or joining `abs_2021_mb` therefore fails regression rather
+than silently passing. The original 2021 tables remain historical fixture data;
+production schema 1.x never falls back to them.
 
-A back-compat shim table `admin_bdys_202602.abs_2021_mb_lookup` is also created (same column data, no `gid`). It is not joined by any of our SQL — retained only for any external tooling that historically referenced the lookup name. ROADMAP ticket E1.22 tracks the eventual removal of the shim along with the `extract-fixtures.sh` repair.
+The G-NAF fixture `_version` remains `2026.02`. Its synthetic census overlay does
+not imply that the real February 2026 release contains ASGS 2026 geography.

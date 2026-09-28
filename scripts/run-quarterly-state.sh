@@ -88,7 +88,9 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
   elif [[ $final_exit_code -eq 143 ]]; then
     is_transient=true
     echo "::warning::${STATE}: container killed (exit 143) on attempt ${attempt}"
-  elif grep -qiE '(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|ENOTFOUND|download failed|fetch failed|socket hang up)' "${log_file}" 2>/dev/null; then
+  # The entrypoint prints "Download failed" for permanent extraction and
+  # metadata errors too. Retry only an actual transport/service failure.
+  elif grep -qiE '(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|ENOTFOUND|fetch failed|socket hang up|HTTP (429|5[0-9][0-9])([^0-9]|$))' "${log_file}" 2>/dev/null; then
     is_transient=true
     echo "::warning::${STATE}: network/download error detected on attempt ${attempt}"
   elif grep -qiE '(could not resize shared memory|no space left on device|cannot allocate memory)' "${log_file}" 2>/dev/null; then

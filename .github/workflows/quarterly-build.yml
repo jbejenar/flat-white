@@ -3,8 +3,12 @@ name: Quarterly Build
 on:
   workflow_dispatch:
     inputs:
+      preflight_only:
+        description: "Validate release discovery and schema compatibility without building or publishing"
+        type: boolean
+        default: false
       gnaf_version:
-        description: "G-NAF version (e.g. 2026.05). The underlying G-NAF data version — never has a patch suffix."
+        description: "G-NAF version (2026.08 or newer for schema 1.x). Never has a patch suffix."
         required: false
         default: ""
       patch_version:
@@ -28,15 +32,16 @@ on:
         required: false
         default: "ubuntu-latest"
   schedule:
-    # 15th of Feb, May, Aug, Nov at 02:00 UTC — shortly after quarterly G-NAF release
-    - cron: "0 2 15 2,5,8,11 *"
+    # Publication dates vary (August 2026 arrived after the former 15th cutoff).
+    # Check weekly; setup skips quarters with an existing published/draft release.
+    - cron: "0 2 * * 1"
 
 env:
   # Default inputs: latest published G-NAF plus latest published Admin Boundaries.
   # These can roll out on data.gov.au at different times, so setup discovers
   # both once and freezes them for the whole run.
   DOCKER_IMAGE: flat-white
-  DB_CACHE_VERSION: v2
+  DB_CACHE_VERSION: v3-asgs2026
   # Optional manual release-data overrides.
   # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery
   DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || '' }}
@@ -50,11 +55,14 @@ jobs:
   setup:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
       admin_bdys_version: ${{ steps.version.outputs.admin_bdys_version }}
       release_version: ${{ steps.version.outputs.release_version }}
       data_source_key: ${{ steps.version.outputs.data_source_key }}
+      build_required: ${{ steps.release-check.outputs.build_required }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -99,10 +107,20 @@ jobs:
           fi
           echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Skip already built quarters on scheduled runs
+        id: release-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: v${{ steps.version.outputs.release_version }}
+        run: bash scripts/check-quarterly-release.sh "$EVENT_NAME" "$REPOSITORY" "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
   # ---------------------------------------------------------------------------
   # Job 1: Build each state in parallel
   # ---------------------------------------------------------------------------
   build:
+    if: inputs.preflight_only != true && needs.setup.outputs.build_required == 'true'
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     needs: setup
     # 360 min is the GitHub Actions free-tier maximum. We need this generous
@@ -409,6 +427,7 @@ jobs:
             "gnafVersion": "${VERSION}",
             "adminBoundariesVersion": "${ADMIN_BDYS_VERSION}",
             "schemaVersion": "${SCHEMA_VERSION}",
+            "asgsYear": 2026,
             "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "states": ${STATES_JSON},
             "totalCount": ${TOTAL}
@@ -594,6 +613,8 @@ jobs:
           cat > "$NOTES_FILE" <<NOTESEOF
           Pre-joined, boundary-enriched Australian address data from G-NAF ${VERSION}.
           ${PATCH_NOTICE}
+
+          > **ASGS 2026 / schema 1.x:** Mesh block, SA1–SA4 and GCCSA now use the 2026 geography. Rebuild geographic indexes and aggregates and use matching reference data. See the [migration guide](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/MIGRATING-TO-ASGS-2026.md) before importing this release.
 
           ## Summary
 
@@ -940,6 +961,7 @@ jobs:
             "version": "${TAG}",
             "gnafVersion": "${VERSION}",
             "schemaVersion": "${SCHEMA_VERSION}",
+            "asgsYear": 2026,
             "totalCount": ${TOTAL},
             "releaseUrl": "${REPO_URL}/releases/tag/${TAG}",
             "assets": {

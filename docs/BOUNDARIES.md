@@ -1,5 +1,9 @@
 # Boundaries — How They're Calculated, Where They Come From, What Goes Wrong
 
+> **Schema 1.0.0:** census enrichment now uses ASGS 2026, including the new
+> `mb_2026_code` and `abs_2026_mb` hierarchy. Missing 2026 census data fails
+> validation. See [migration implications](MIGRATING-TO-ASGS-2026.md).
+
 > **2026-04-09 (E1.23): Path 1 and Path 2 have been collapsed into a single path.** flat-white now always passes `--no-boundary-tag` to gnaf-loader and uses its own spatial join fallback (`address_full_prep.sql`). The retry infrastructure (`scripts/detect-load-failure.sh`, the `--no-boundary-tag` retry branch in `docker-entrypoint.sh`) has been deleted. The sections below that describe the dual-path architecture are preserved as historical documentation.
 
 > **Audience:** anyone reading the quarterly build logs and trying to figure out why "LGA" appears in scary red text. Also: future contributors who need to change anything in the boundary path.
@@ -18,9 +22,9 @@ Every address in the output gets enriched with the administrative and statistica
 | `ward`                   | Sub-council voting area                         | spatial join — `admin_bdys.local_government_wards`                           |
 | `stateElectorate`        | State lower-house electorate                    | spatial join — `admin_bdys.state_lower_house_electorates`                    |
 | `commonwealthElectorate` | Federal electorate                              | spatial join — `admin_bdys.commonwealth_electorates`                         |
-| `meshBlock`              | ABS Mesh Block (smallest stat geography)        | code lookup — `admin_bdys.abs_2021_mb` via `address_principals.mb_2021_code` |
-| `sa1`                    | ABS Statistical Area 1 (~200-800 people)        | derived from mesh-block lookup (`abs_2021_mb.sa1_21code`)                    |
-| `sa2`                    | ABS Statistical Area 2 (~3k-25k people, suburb) | derived from mesh-block lookup (`abs_2021_mb.sa2_21code` + `sa2_21name`)     |
+| `meshBlock`              | ABS Mesh Block (smallest stat geography)        | code lookup — `admin_bdys.abs_2026_mb` via `address_principals.mb_2026_code` |
+| `sa1`                    | ABS Statistical Area 1 (~200-800 people)        | derived from mesh-block lookup (`abs_2026_mb.s1_code_26`)                    |
+| `sa2`                    | ABS Statistical Area 2 (~3k-25k people, suburb) | derived from mesh-block lookup (`abs_2026_mb.s2_code_26` + `s2_name_26`)     |
 | `sa3`                    | ABS Statistical Area 3 (~30k-130k people)       | derived from mesh-block lookup                                               |
 | `sa4`                    | ABS Statistical Area 4 (~100k-500k people)      | derived from mesh-block lookup                                               |
 | `gccsa`                  | Greater Capital City Statistical Area           | derived from mesh-block lookup                                               |
@@ -29,9 +33,9 @@ Every address in the output gets enriched with the administrative and statistica
 
 The **first four fields** (`lga`, `ward`, `stateElectorate`, `commonwealthElectorate`) come from a **point-in-polygon spatial join** — for each address point, find which polygon it sits inside. This is where all the complexity lives.
 
-The **other six fields** (`meshBlock` + `sa1` through `gccsa`) come from a much simpler **non-spatial code lookup**. `address_principals.mb_2021_code` is already populated by gnaf-loader during the load stage (Parts 1-4, before Part 5 boundary tagging). Flatten just joins it against `abs_2021_mb` to expand one mesh block code into category, SA1, SA2, SA2 name, SA3, SA3 name, SA4, SA4 name, GCC, GCC name. No `ST_Intersects`, no polygon math, no performance issue.
+The **other six fields** (`meshBlock` + `sa1` through `gccsa`) come from a much simpler **non-spatial code lookup**. `address_principals.mb_2026_code` is already populated by gnaf-loader during the load stage (Parts 1-4, before Part 5 boundary tagging). Flatten just joins it against `abs_2026_mb` to expand one mesh block code into category, SA1, SA2, SA2 name, SA3, SA3 name, SA4, SA4 name, GCC, GCC name. No `ST_Intersects`, no polygon math, no performance issue.
 
-So when this doc talks about "the boundary problem", it almost always means **the spatial join for the four polygon-derived fields**. Mesh block / SA1 / SA2 / SA3 / SA4 / gccsa are mechanical and have never been a source of trouble.
+So when this doc talks about "the boundary problem", it almost always means **the spatial join for the four polygon-derived fields**. Mesh block / SA1 / SA2 / SA3 / SA4 / gccsa use code lookup, but the lookup vintage and loader schema must match. The schema 1.0.0 migration updates that contract explicitly.
 
 ---
 
@@ -159,11 +163,11 @@ The full implementation reasoning is in PR #106 and ROADMAP entry E1.21.
 
 ### Mesh block / SA1 / SA2 — neither path
 
-These don't use spatial joins at all. `address_principals.mb_2021_code` is populated by gnaf-loader during the **load** stage (Part 1-4, before Part 5), so it's always present. Flatten reads it and does a non-spatial join against `admin_bdys.abs_2021_mb`:
+These don't use spatial joins at all. `address_principals.mb_2026_code` is populated by gnaf-loader during the **load** stage (Part 1-4, before Part 5), when the source supports ASGS 2026. The cache validator checks that it exists and joins to the census table. Flatten reads it and does a non-spatial join against `admin_bdys.abs_2026_mb`:
 
 ```sql
-LEFT JOIN admin_bdys_*.abs_2021_mb mb
-  ON mb.mb21_code = ap.mb_2021_code
+LEFT JOIN admin_bdys_*.abs_2026_mb mb
+  ON mb.mb_code_26 = ap.mb_2026_code
 ```
 
 That join expands the mesh block code into category, SA1, SA2, SA2 name, SA3, SA4, GCC. No `ST_Intersects`, no polygon math, no performance issue. **The mesh block / SA1 / SA2 fields have never been a source of trouble.** When this doc talks about "boundary problems" you can mentally exclude these.
@@ -411,17 +415,17 @@ ab.se_lower_name AS state_electorate_name,
 ab.ce_name       AS commonwealth_electorate_name,
 
 -- ABS mesh block + statistical areas (mechanical lookup)
-ap.mb_2021_code,
-mb.mb_cat        AS mesh_block_category,
-mb.sa1_21code,
-mb.sa2_21code,
-mb.sa2_21name,
-mb.sa3_21code,
-mb.sa3_21name,
-mb.sa4_21code,
-mb.sa4_21name,
-mb.gcc_21code,
-mb.gcc_21name,
+ap.mb_2026_code,
+mb.mb_cat_26        AS mesh_block_category,
+mb.s1_code_26,
+mb.s2_code_26,
+mb.s2_name_26,
+mb.s3_code_26,
+mb.s3_name_26,
+mb.s4_code_26,
+mb.s4_name_26,
+mb.gc_code_26,
+mb.gc_name_26,
 ```
 
 And the joins:
@@ -431,7 +435,7 @@ And the joins:
 LEFT JOIN gnaf_*.address_principal_admin_boundaries ab ON ab.gnaf_pid = ap.gnaf_pid
 
 -- Mechanical code lookup
-LEFT JOIN admin_bdys_*.abs_2021_mb mb ON mb.mb21_code = ap.mb_2021_code
+LEFT JOIN admin_bdys_*.abs_2026_mb mb ON mb.mb_code_26 = ap.mb_2026_code
 ```
 
 The schema field names (`lga`, `ward`, `stateElectorate`, `commonwealthElectorate`, `meshBlock`, `sa1`, `sa2`) are the **camelCase output names** in the NDJSON document. The `address_full.sql` columns are the **snake_case Postgres aliases**. The TypeScript flatten code (`src/flatten.ts`) does the snake-to-camel mapping when composing the document.

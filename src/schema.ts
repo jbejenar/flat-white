@@ -7,6 +7,9 @@
 
 import { z } from "zod";
 
+/** Schema 1.x census boundaries use ASGS Edition 4 (2026), never a 2021 fallback. */
+export const ASGS_YEAR = 2026;
+
 // --- Nested schemas ---
 
 export const GeocodeSchema = z.object({
@@ -50,23 +53,25 @@ const NameOnlySchema = z.object({
   name: z.string(),
 });
 
-export const BoundariesSchema = z.object({
-  lga: NameCodeSchema.nullable(),
-  ward: NameOnlySchema.nullable(),
-  stateElectorate: NameOnlySchema.nullable(),
-  commonwealthElectorate: NameOnlySchema.nullable(),
-  meshBlock: z
-    .object({
-      code: z.string(),
-      category: z.string(),
-    })
-    .nullable(),
-  sa1: z.string().nullable(),
-  sa2: NameCodeSchema.nullable(),
-  sa3: NameCodeSchema.nullable(),
-  sa4: NameCodeSchema.nullable(),
-  gccsa: NameCodeSchema.nullable(),
-});
+export const BoundariesSchema = z
+  .object({
+    lga: NameCodeSchema.nullable(),
+    ward: NameOnlySchema.nullable(),
+    stateElectorate: NameOnlySchema.nullable(),
+    commonwealthElectorate: NameOnlySchema.nullable(),
+    meshBlock: z
+      .object({
+        code: z.string(),
+        category: z.string(),
+      })
+      .nullable(),
+    sa1: z.string().nullable(),
+    sa2: NameCodeSchema.nullable(),
+    sa3: NameCodeSchema.nullable(),
+    sa4: NameCodeSchema.nullable(),
+    gccsa: NameCodeSchema.nullable(),
+  })
+  .describe("Census boundaries (meshBlock, SA1-SA4, GCCSA) use ASGS 2026 in schema 1.x.");
 
 export const AliasSchema = z.object({
   pid: z.string(),

@@ -2,8 +2,8 @@
 -- cache-validator integration test.
 --
 -- Purpose: catch the regression class where validate-db-cache.sh references
--- a fixture-only table name (e.g. abs_2021_mb_lookup) instead of the table
--- name gnaf-loader actually creates in production (abs_2021_mb). PR #99
+-- a fixture-only table name (e.g. abs_2026_mb_lookup) instead of the table
+-- name gnaf-loader actually creates in production (abs_2026_mb). PR #99
 -- introduced exactly this bug; this seed gives the test a reference reality
 -- that matches what gnaf-loader produces, NOT what the fixture creates.
 --
@@ -15,7 +15,7 @@
 --
 -- Source of truth for table names:
 --   - gnaf-loader/postgres-scripts/02-02a-prep-admin-bdys-tables.sql (polygon tables)
---   - gnaf-loader/postgres-scripts/02-02d-prep-census-2021-bdys-tables.sql (abs_2021_mb)
+--   - gnaf-loader/postgres-scripts/02-02e-prep-census-2026-bdys-tables.sql (abs_2026_mb)
 --   - gnaf-loader/load-gnaf.py (gnaf_*, raw_gnaf_*, raw_admin_bdys_* schemas)
 --
 -- If gnaf-loader changes a table name and this seed isn't updated to match,
@@ -38,9 +38,9 @@ CREATE TABLE gnaf_202699.address_principals (
   gnaf_pid text NOT NULL,
   state text,
   postcode text,
-  mb_2021_code bigint
+  mb_2026_code bigint
 );
-INSERT INTO gnaf_202699.address_principals (gnaf_pid, state, postcode, mb_2021_code)
+INSERT INTO gnaf_202699.address_principals (gnaf_pid, state, postcode, mb_2026_code)
   VALUES ('GAVIC000000000', 'VIC', '3000', 20001320000);
 
 CREATE TABLE gnaf_202699.localities (
@@ -89,25 +89,25 @@ INSERT INTO raw_gnaf_202699.address_site VALUES ('SITE000000', NULL);
 
 -- ─── admin_bdys schema ──────────────────────────────────────────────────────
 
--- Mesh-block table: production gnaf-loader creates `abs_2021_mb` (NO _lookup
--- suffix). The fixture path's `abs_2021_mb_lookup` is fixture-only and MUST
+-- Mesh-block table: production gnaf-loader creates `abs_2026_mb` (NO _lookup
+-- suffix). The fixture path's `abs_2026_mb_lookup` is fixture-only and MUST
 -- NOT appear here — that would defeat the regression test.
-CREATE TABLE admin_bdys_202699.abs_2021_mb (
+CREATE TABLE admin_bdys_202699.abs_2026_mb (
   gid integer,
-  mb21_code bigint,
-  mb_cat text,
-  sa1_21code varchar(11),
-  sa2_21code varchar(9),
-  sa2_21name text,
-  sa3_21code varchar(5),
-  sa3_21name text,
-  sa4_21code varchar(3),
-  sa4_21name text,
-  gcc_21code text,
-  gcc_21name text,
+  mb_code_26 bigint,
+  mb_cat_26 text,
+  s1_code_26 varchar(11),
+  s2_code_26 varchar(9),
+  s2_name_26 text,
+  s3_code_26 varchar(5),
+  s3_name_26 text,
+  s4_code_26 varchar(3),
+  s4_name_26 text,
+  gc_code_26 text,
+  gc_name_26 text,
   state text
 );
-INSERT INTO admin_bdys_202699.abs_2021_mb (gid, mb21_code, state)
+INSERT INTO admin_bdys_202699.abs_2026_mb (gid, mb_code_26, state)
   VALUES (1, 20001320000, 'VIC');
 
 -- Boundary polygon tables — what the spatial-join fallback in

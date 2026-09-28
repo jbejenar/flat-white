@@ -17,8 +17,8 @@ interface QuarterlyInputs {
 function resolveInputs(
   args: Record<string, string>,
   discovered: { gnaf_version: string; admin_bdys_version: string } | "raise" = {
-    gnaf_version: "2026.05",
-    admin_bdys_version: "2026.02",
+    gnaf_version: "2026.11",
+    admin_bdys_version: "2026.08",
   },
 ): QuarterlyInputs {
   const code = `
@@ -50,7 +50,10 @@ print(json.dumps(module.resolve_quarterly_inputs(
   return JSON.parse(execFileSync("python3", ["-c", code], { encoding: "utf8" })) as QuarterlyInputs;
 }
 
-function resolveInputsFailure(args: Record<string, string>): string {
+function resolveInputsFailure(
+  args: Record<string, string>,
+  discovered = { gnaf_version: "2026.11", admin_bdys_version: "2026.08" },
+): string {
   const code = `
 import importlib.util
 import json
@@ -61,7 +64,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 def discover():
-    return {"gnaf_version":"2026.05","admin_bdys_version":"2026.02"}
+    return ${JSON.stringify(discovered)}
 
 try:
     module.resolve_quarterly_inputs(
@@ -84,10 +87,10 @@ else:
 describe("resolve_quarterly_inputs.py", () => {
   it("auto-discovers freshest G-NAF and freshest Admin Boundaries", () => {
     expect(resolveInputs({})).toMatchObject({
-      version: "2026.05",
-      admin_bdys_version: "2026.02",
-      release_version: "2026.05",
-      data_source_key: "gnaf-2026.05-admin-2026.02",
+      version: "2026.11",
+      admin_bdys_version: "2026.08",
+      release_version: "2026.11",
+      data_source_key: "gnaf-2026.11-admin-2026.08",
       manual_source: false,
       auto_discovered_gnaf: true,
     });
@@ -96,7 +99,7 @@ describe("resolve_quarterly_inputs.py", () => {
   it("skips discovery entirely when complete manual overrides are supplied", () => {
     const result = resolveInputs(
       {
-        gnaf_version: "2026.05",
+        gnaf_version: "2026.11",
         download_url_gnaf: "https://example.com/gnaf.zip",
         download_url_admin_bdys: "https://example.com/admin.zip",
         admin_bdys_extracted_dir: "CUSTOM_AdminBounds_GDA_2020_SHP",
@@ -104,7 +107,7 @@ describe("resolve_quarterly_inputs.py", () => {
       "raise",
     );
 
-    expect(result.version).toBe("2026.05");
+    expect(result.version).toBe("2026.11");
     expect(result.admin_bdys_version).toBe("manual");
     expect(result.data_source_key).toMatch(/^manual-[a-f0-9]{64}$/);
     expect(result.manual_source).toBe(true);
@@ -124,27 +127,53 @@ describe("resolve_quarterly_inputs.py", () => {
   it("rejects incomplete manual source overrides", () => {
     expect(
       resolveInputsFailure({
-        gnaf_version: "2026.05",
+        gnaf_version: "2026.11",
         download_url_gnaf: "https://example.com/gnaf.zip",
       }),
     ).toContain("Manual data-source overrides must be provided together");
   });
 
   it("keeps Admin Boundaries aligned when gnaf_version is pinned", () => {
-    expect(resolveInputs({ gnaf_version: "2026.02" })).toMatchObject({
-      version: "2026.02",
-      admin_bdys_version: "2026.02",
-      data_source_key: "gnaf-2026.02-admin-2026.02",
+    expect(resolveInputs({ gnaf_version: "2026.08" })).toMatchObject({
+      version: "2026.08",
+      admin_bdys_version: "2026.08",
+      data_source_key: "gnaf-2026.08-admin-2026.08",
       manual_source: false,
       auto_discovered_gnaf: false,
     });
   });
 
   it("applies patch_version only to release_version", () => {
-    expect(resolveInputs({ gnaf_version: "2026.02", patch_version: "1" })).toMatchObject({
-      version: "2026.02",
-      admin_bdys_version: "2026.02",
-      release_version: "2026.02.1",
+    expect(resolveInputs({ gnaf_version: "2026.08", patch_version: "1" })).toMatchObject({
+      version: "2026.08",
+      admin_bdys_version: "2026.08",
+      release_version: "2026.08.1",
     });
+  });
+  it("rejects a pre-migration G-NAF release before download", () => {
+    expect(resolveInputsFailure({ gnaf_version: "2026.05" })).toContain("2026.08 or newer");
+  });
+
+  it("rejects old Admin Boundaries even with a current G-NAF release", () => {
+    expect(
+      resolveInputsFailure(
+        {},
+        {
+          gnaf_version: "2026.08",
+          admin_bdys_version: "2026.05",
+        },
+      ),
+    ).toContain("2026.08 or newer");
+  });
+
+  it("does not let manual URLs bypass the G-NAF vintage guard", () => {
+    expect(
+      resolveInputsFailure({
+        gnaf_version: "2026.05",
+        download_url_gnaf: "https://example.com/gnaf.zip",
+        download_url_admin_bdys: "https://example.com/admin.zip",
+        admin_bdys_extracted_dir: "admin",
+      }),
+    ).toContain("2026.08 or newer");
   });
 });

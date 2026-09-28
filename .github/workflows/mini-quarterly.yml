@@ -17,7 +17,7 @@ on:
 
 env:
   DOCKER_IMAGE: flat-white
-  DB_CACHE_VERSION: v2
+  DB_CACHE_VERSION: v3-asgs2026
 
 jobs:
   setup:
@@ -45,6 +45,10 @@ jobs:
               echo "ERROR: Failed to determine latest quarterly G-NAF release from data.gov.au"
               exit 1
             fi
+          fi
+          if [[ "${VERSION//.}" -lt 202608 ]]; then
+            echo "::error::Schema 1.x requires G-NAF 2026.08 or newer (ASGS 2026)."
+            exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 

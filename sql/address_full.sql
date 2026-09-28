@@ -183,17 +183,17 @@ SELECT
   ab.ce_name                                            AS commonwealth_electorate_name,
 
   -- ABS mesh block + statistical areas
-  ap.mb_2021_code,
-  mb.mb_cat                                             AS mesh_block_category,
-  mb.sa1_21code,
-  mb.sa2_21code,
-  mb.sa2_21name,
-  mb.sa3_21code,
-  mb.sa3_21name,
-  mb.sa4_21code,
-  mb.sa4_21name,
-  mb.gcc_21code,
-  mb.gcc_21name,
+  ap.mb_2026_code,
+  mb.mb_cat_26                                          AS mesh_block_category,
+  mb.s1_code_26,
+  mb.s2_code_26,
+  mb.s2_name_26,
+  mb.s3_code_26,
+  mb.s3_name_26,
+  mb.s4_code_26,
+  mb.s4_name_26,
+  mb.gc_code_26,
+  mb.gc_name_26,
 
   -- Aliases and secondaries (aggregated)
   COALESCE(aaa.aliases, '[]'::json)                     AS address_aliases,
@@ -243,15 +243,10 @@ LEFT JOIN street_alias_agg saa
 LEFT JOIN gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries ab
   ON ab.gnaf_pid = ap.gnaf_pid
 
--- ABS mesh block lookup
--- Mesh-block table — production gnaf-loader creates this in
--- 02-02d-prep-census-2021-bdys-tables.sql. The fixture also creates an
--- `abs_2021_mb_lookup` sibling table (no-geometry denormalized lookup) for
--- back-compat with older fixture-authoring tooling, but this join targets
--- the production name so the fixture and production paths reference the
--- same table.
-LEFT JOIN admin_bdys___SCHEMA_VERSION__.abs_2021_mb mb
-  ON mb.mb21_code = ap.mb_2021_code
+-- ASGS 2026 lookup, created by upstream 02-02e-prep-census-2026-bdys-tables.sql.
+-- Schema 1.x must never substitute the 2021 codes or hierarchy here.
+LEFT JOIN admin_bdys___SCHEMA_VERSION__.abs_2026_mb mb
+  ON mb.mb_code_26 = ap.mb_2026_code
 
 -- Aliases and secondaries
 LEFT JOIN address_alias_agg aaa

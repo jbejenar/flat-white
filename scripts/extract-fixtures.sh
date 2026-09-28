@@ -24,6 +24,13 @@ if ! [[ "$GNAF_VERSION" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
   echo "ERROR: GNAF_VERSION must be YYYY.MM format (got: $GNAF_VERSION)"
   exit 1
 fi
+# The committed address snapshot remains February 2026. Census 2026 test data
+# is applied separately by seed-census-2026.sql. A new production capture needs
+# an explicit fixture migration, not an overwrite of this frozen snapshot.
+if [[ "$GNAF_VERSION" != "2026.02" ]]; then
+  echo "ERROR: Fixture extraction is frozen at 2026.02; use its original loader/schema."
+  exit 1
+fi
 SCHEMA="gnaf_$(echo "$GNAF_VERSION" | tr -d '.')"
 RAW_SCHEMA="raw_${SCHEMA}"
 ADMIN_SCHEMA="admin_bdys_$(echo "$GNAF_VERSION" | tr -d '.')"
