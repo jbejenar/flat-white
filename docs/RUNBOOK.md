@@ -86,9 +86,15 @@ for development tests or weaken checks to accept incomplete archives.
 
 ## Load or cache validation failed
 
-The loader is a pinned, unmodified submodule. Check its commit and Python/runtime
+The loader is pinned to a committed revision. Check its commit and Python/runtime
 error first. Do not patch source files inside `gnaf-loader/`; loader changes belong
 upstream. See [loader update checks](GNAF-LOADER-UPDATES.md).
+
+The `202608` release alone skips authority cleanup. Use the documented repair pin,
+which is submitted upstream, and run the small
+[authority integration check](GNAF-LOADER-UPDATES.md#current-pin-and-upstream-repair)
+when changing it. `aut.code`/`aut.name` errors or duplicate electoral polygon IDs
+can indicate that raw DBF columns or duplicate authority rows were not normalized.
 
 For ASGS 2026, validation requires:
 

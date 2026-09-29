@@ -37,12 +37,17 @@ Historical entries retain the contract and source versions published at the time
   Consumers must migrate geographic joins, rebuild derived indexes/aggregates,
   and preserve geography vintage in historical comparisons. See
   [the migration guide](docs/MIGRATING-TO-ASGS-2026.md).
-- Advance the unmodified gnaf-loader submodule to upstream release `202608`.
+- Advance gnaf-loader to the `202608` line with the authority-cleanup fix
+  submitted in [upstream PR #103](https://github.com/minus34/gnaf-loader/pull/103).
   Production workflow inputs require G-NAF and Admin Boundaries August 2026 or
   newer. Invalidate older database caches and reject incompatible census schemas.
 
 ### Fixed
 
+- Pin the authority-cleanup repair and exercise the actual loader function plus
+  electoral preparation in seven small database tests inside the production image.
+  The original release's literal schema prefix skipped normalization, deduplication
+  and authority keys. See [pin provenance](docs/GNAF-LOADER-UPDATES.md#current-pin-and-upstream-repair).
 - Accept legacy and current Administrative Boundaries directory layouts; reject
   incomplete extractions before replacing existing data. Require actual G-NAF
   directories from the same release folder.

@@ -48,6 +48,8 @@ jobs:
           tags: flat-white:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Loader authority cleanup integration
+        run: bash test/integration/loader-authority/test.sh flat-white:ci
       - name: Run fixture container smoke test
         run: |
           mkdir -p output

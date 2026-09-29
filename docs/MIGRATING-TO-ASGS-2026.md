@@ -163,8 +163,9 @@ corrections should receive a new release version.
 
 ## If you operate the build
 
-Schema 1.0.0 pins the unmodified gnaf-loader `202608` release. The quarterly
-workflow, Docker entrypoint and local build require a production quarter in
+Schema 1.0.0 uses the gnaf-loader `202608` line with a
+[pinned authority-cleanup repair](GNAF-LOADER-UPDATES.md#current-pin-and-upstream-repair)
+submitted upstream. The quarterly workflow, Docker entrypoint and local build require a production quarter in
 `YYYY.MM` format, August 2026 or newer (months `02`, `05`, `08` or `11`).
 Invalid or older quarters fail before a build starts, including cached builds.
 Manual URL overrides

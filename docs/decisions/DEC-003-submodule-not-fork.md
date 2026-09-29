@@ -1,9 +1,10 @@
 # DEC-003 — Submodule, Not Fork
 
 > **Schema 1.0.0 change — current clarification.**
-> The migration pins the unmodified upstream `202608` release. The configured
-> submodule origin may remain a fork; the updater resolves release tags from
-> `minus34/gnaf-loader` and checks ancestry before proposing a pin change. Review
+> The migration uses the `202608` release plus the authority-cleanup contribution
+> in [upstream PR #103](https://github.com/minus34/gnaf-loader/pull/103). Its exact
+> commit is temporarily pinned through the existing fork while upstream reviews
+> it. The updater resolves upstream release tags and checks ancestry. Review
 > raw/prepared census compatibility as described in [loader updates](../GNAF-LOADER-UPDATES.md).
 
 ## Status
@@ -16,7 +17,10 @@ flat-white depends on `minus34/gnaf-loader` to load G-NAF data into Postgres and
 
 ## Decision
 
-Pin gnaf-loader as a Git submodule at a specific release tag. Never modify it in-repo. If a change is needed, contribute it upstream via PR to `minus34/gnaf-loader`.
+Pin gnaf-loader as a Git submodule at a specific release or a documented commit
+carrying a submitted upstream fix. Never modify it in-repo. If a change is needed,
+contribute it upstream via PR to `minus34/gnaf-loader`. Replace temporary fix pins
+with an upstream version containing the repair once it passes compatibility checks.
 
 ## Alternatives Considered
 

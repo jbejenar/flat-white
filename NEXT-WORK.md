@@ -1,6 +1,6 @@
 # Next work — flat-white
 
-> Updated: 2026-09-28. **Schema 1.0.0 change:** the current migration targets
+> Updated: 2026-09-29. **Schema 1.0.0 change:** the current migration targets
 > ASGS 2026. Earlier April work records are retained below as history, not the
 > active release plan.
 
@@ -14,6 +14,9 @@ do not establish a completed production release.
 - Complete review and checks for the ASGS 2026 migration. Keep the
   [contract](docs/DOCUMENT-SCHEMA.md), [migration guide](docs/MIGRATING-TO-ASGS-2026.md)
   and fixture baseline aligned.
+- Track [upstream loader PR #103](https://github.com/minus34/gnaf-loader/pull/103).
+  Replace its temporary fix pin with an upstream version containing the repair
+  once the authority integration and existing compatibility checks pass.
 - For the first production release after merge, verify all nine state outputs,
   census coverage, source/schema metadata, release status and the separate S3 mirror.
   Follow [releasing](docs/RELEASING.md); use the new cache namespace and record cold-load capacity.

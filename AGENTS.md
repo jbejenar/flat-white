@@ -21,7 +21,7 @@ src/
   flatten-localities.ts — separate locality export module
   split.ts              — split NDJSON into per-state files
   compress.ts           — streaming gzip
-  verify.ts             — counts, quality and administrative coverage
+  verify.ts             — counts, quality and per-state boundary coverage
   verification-report.ts — full schema and quality checks on compressed state artifacts
   metadata.ts           — local build metadata helper
   manifest.ts           — S3 manifest handling

@@ -77,7 +77,7 @@ flat-white/
 │       ├── quarterly-build.yml       # Matrix build → GitHub Release + S3
 │       └── notify-downstream.yml     # Post-release: repository_dispatch
 │
-├── gnaf-loader/                      # Git submodule → minus34/gnaf-loader @ pinned release
+├── gnaf-loader/                      # Git submodule → minus34/gnaf-loader @ pinned commit
 │
 ├── src/
 │   ├── build.ts                      # Orchestrator: download → load → flatten → output
@@ -510,7 +510,7 @@ flat-white is a greenfield project with a partial scaffold already committed (RE
 - [x] Repository contains full directory structure matching the Repo Structure section of this roadmap
   - `Verify:` `ls -R` matches planned structure (empty directories with `.gitkeep` where no files exist yet)
   - `Evidence:` PR #2 — src/, test/, scripts/, docs/, fixtures/, .github/workflows/ all created
-- [x] `git clone --recurse-submodules` pulls gnaf-loader at a pinned release tag
+- [x] `git clone --recurse-submodules` pulls gnaf-loader at a pinned commit
   - `Verify:` `git submodule status gnaf-loader` shows pinned commit hash
   - `Evidence:` gnaf-loader submodule at commit 65328e8 (202602-5 variant)
 - [x] `docker-compose.yml` defines Postgres 16 + PostGIS 3.5 service
