@@ -1,5 +1,11 @@
 # DEC-004 — Streaming Flatten
 
+> **Schema 1.0.0 change — current clarification.**
+> Streaming and the memory target are unchanged. Production uses prepared
+> aggregations before the cursor query, and census joins now use ASGS 2026. The
+> older sizing estimates below do not measure the new cold build. See
+> [boundary processing](../BOUNDARIES.md) and [historical performance](../PERFORMANCE.md).
+
 ## Status
 
 Accepted
@@ -20,7 +26,7 @@ Use cursor-based streaming: read one row (or small batch) from Postgres, compose
 
 ## Consequences
 
-- Memory usage is O(1) relative to dataset size — bounded by the size of one document plus cursor overhead.
+- The flatten cursor bounds buffered rows to a batch. Postgres preparation and other stages have separate memory requirements.
 - Throughput depends on Postgres cursor fetch size and JSON serialisation speed. Target: VIC (~3.8M) in under 45 minutes.
 - Error handling is per-document — a single bad row does not abort the entire build.
 - The flatten module (`src/flatten.ts`) must never accumulate documents in memory.

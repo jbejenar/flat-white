@@ -1,6 +1,45 @@
 # gnaf-loader update checks
 
+> **Schema 1.0.0 change:** the current pin builds on upstream release `202608`,
+> with the authority-cleanup repair described below. A newer tag alone is not evidence
+> that its output remains compatible. See the [migration guide](MIGRATING-TO-ASGS-2026.md).
+
 The `gnaf-loader Update Check` workflow checks `minus34/gnaf-loader` every Monday at 09:00 UTC. It reads the committed submodule pin, discovers the latest upstream release (or a tag when no release exists), and fetches that exact tag from upstream. The configured submodule `origin` may be a fork whose tags have not been synchronized.
+
+## Current pin and upstream repair
+
+The pin is [`c2f6de7`](https://github.com/jbejenar/gnaf-loader/commit/c2f6de7cc9b511cfc850ace2d06345de5169895b),
+the `202608` release plus the fix submitted in
+[upstream PR #103](https://github.com/minus34/gnaf-loader/pull/103). The release's
+authority-table query contains a literal `%` before the schema name and selects
+no tables. That skips field-name normalization, deduplication and authority keys;
+electoral preparation then fails or multiplies polygon rows.
+
+The contribution uses a parameterized exact schema comparison and a literal
+`_aut` suffix. The existing configured fork hosts this immutable commit while
+upstream review is pending. The submodule working tree stays clean; no build-time
+patch is applied. This is a temporary pin exception, not a new source contract.
+The census preparation SQL and NDJSON baseline are unchanged by this repair.
+
+CI now runs seven small database tests from the pinned loader inside the built
+production image, with networking disabled. They exercise the actual cleanup
+function for both raw schemas, legacy DBF columns, duplicate/conflicting codes,
+schema isolation and repeated cleanup. They also execute the real electoral
+preparation SQL and require populated tables with unique polygon IDs.
+
+```bash
+docker build -t flat-white:ci .
+bash test/integration/loader-authority/test.sh flat-white:ci
+```
+
+The test container creates and removes its own Postgres database. It needs no
+national data. Keep this check alongside the normal fixture regression: the
+fixture starts with normalized authority tables and cannot catch this failure.
+
+The updater should report `ahead` against the unpatched `202608` tag. Once
+upstream includes the repair, review a new pin and rerun these checks. A squash
+or rebase upstream can make histories diverge; investigate that result and move
+the pin deliberately rather than dropping the fix to satisfy ancestry checks.
 
 ## Safe checks and update PRs
 
@@ -52,3 +91,16 @@ actionlint .github/workflows/gnaf-loader-update.yml
 ```
 
 The tests use temporary Git repositories and mocked GitHub responses. They cover missing fork tags, annotated/lightweight tags, conflicting local tags, retaining fork fixes, upstream merges, divergence, shallow history, and API failures. They never modify the committed `gnaf-loader/` checkout.
+
+## Review census compatibility before accepting a pin
+
+Check the raw mesh-block layout, `mb_2026_code` assignment and prepared
+`abs_2026_mb` hierarchy against flat-white's SQL. The fixture executes the pinned
+upstream mesh-block preparation section; keep that coverage when the upstream
+file changes. Retained 2021 fixture tables must not become runtime fallbacks.
+
+Run the fixture and relevant unit/integration checks, and review the document
+contract, schema version, ASGS metadata, OpenSearch mapping and fixture baseline
+if output meanings change. Use small committed test inputs for new compatibility
+cases. Fixture CI does not prove a complete national load; record that limit in
+the update PR and assess production evidence separately.

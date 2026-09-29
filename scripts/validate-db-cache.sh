@@ -13,6 +13,7 @@ set -euo pipefail
 #   - Missing admin_bdys polygon tables → spatial-join fallback would silently
 #     produce 0% boundary coverage (the v2026.04 incident class)
 #   - Missing raw_admin_bdys source tables (used for late prep / debugging)
+#   - Incomplete ASGS 2026 census coverage in any state
 #
 # What this does NOT catch:
 #   - Whether address_principal_admin_boundaries is populated. By design, this
@@ -96,6 +97,16 @@ require_min_rows() {
   fi
 }
 
+require_column() {
+  local schema_name="$1" table_name="$2" column_name="$3"
+  local exists
+  exists="$(query_scalar "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '${schema_name}' AND table_name = '${table_name}' AND column_name = '${column_name}');")"
+  if [[ "$exists" != "t" ]]; then
+    echo "[cache-validate] FAIL: required ASGS 2026 column missing: ${schema_name}.${table_name}.${column_name}; rebuild with gnaf-loader 202608 or newer" >&2
+    exit 1
+  fi
+}
+
 # 1. Schemas exist (catches wrong GNAF_VERSION + truncated restore).
 require_schema "$GNAF_SCHEMA"
 require_schema "$RAW_SCHEMA"
@@ -115,23 +126,39 @@ require_min_rows "$RAW_SCHEMA" "address_site" 1
 #    (address_full_prep.sql boundary prelude), which runs AFTER this validator.
 #    Checking for it here would always fail on fresh builds.
 
-# 4. Mesh-block table — non-derived, populated by gnaf-loader's
-#    `02-02d-prep-census-2021-bdys-tables.sql` during the load stage. The flatten
-#    SQL joins this table by `mb21_code` to expand mesh block codes into
-#    SA1/SA2/SA3/SA4/GCCSA. If it's missing or empty, the join silently produces
-#    NULL for every mesh-block-derived field.
-#
-# WARNING — fixture/prod naming gotcha (E1.22):
-#   Production gnaf-loader creates `admin_bdys.abs_2021_mb` (no `_lookup` suffix).
-#   The fixture also creates `admin_bdys.abs_2021_mb_lookup` (a denormalized
-#   no-geometry sibling) AND a mirror `abs_2021_mb` table. The validator MUST
-#   check `abs_2021_mb` (the production name), NOT `abs_2021_mb_lookup`,
-#   otherwise it works against the fixture but fails on every production state
-#   build because the lookup table doesn't exist there. The original PR #99
-#   validator referenced the wrong name and crashed all 9 quarterly states in
-#   run #24127161800. Verified against gnaf-loader/postgres-scripts/02-02d
-#   line 7 — the table name is unambiguous.
-require_min_rows "$ADMIN_SCHEMA" "abs_2021_mb" 1
+# 4. Schema 1.x requires ASGS 2026 throughout the lookup. A populated legacy
+# table must not pass this check, nor may an empty 2026 column hide an old cache.
+require_min_rows "$ADMIN_SCHEMA" "abs_2026_mb" 1
+require_column "$GNAF_SCHEMA" "address_principals" "mb_2026_code"
+for column in mb_code_26 mb_cat_26 s1_code_26 s2_code_26 s2_name_26 s3_code_26 s3_name_26 s4_code_26 s4_name_26 gc_code_26 gc_name_26; do
+  require_column "$ADMIN_SCHEMA" "abs_2026_mb" "$column"
+done
+# Match the 99% census floor in src/verify.ts. Check each actual state, so a
+# large healthy state cannot hide a broken small state in a combined cache.
+# DISTINCT prevents duplicate reference rows inflating the match count. Only
+# codes with a complete hierarchy count; names/types are checked during flatten.
+require_column "$GNAF_SCHEMA" "address_principals" "state"
+census_shortfalls="$(query_scalar "
+WITH complete_mesh_blocks AS (
+  SELECT DISTINCT mb_code_26
+  FROM ${ADMIN_SCHEMA}.abs_2026_mb
+  WHERE NULLIF(BTRIM(s1_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(s2_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(s3_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(s4_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(gc_code_26::text), '') IS NOT NULL
+)
+SELECT COALESCE(ap.state, '(missing state)') || ': ' || COUNT(mb.mb_code_26) || '/' ||
+       COUNT(*) || ' addresses have a complete ASGS 2026 hierarchy (minimum 99%)'
+FROM ${GNAF_SCHEMA}.address_principals ap
+LEFT JOIN complete_mesh_blocks mb ON mb.mb_code_26 = ap.mb_2026_code
+GROUP BY ap.state
+HAVING COUNT(mb.mb_code_26) * 100 < COUNT(*) * 99;")"
+if [[ -n "$census_shortfalls" ]]; then
+  echo "[cache-validate] FAIL: ASGS 2026 census coverage below 99%; check source compatibility and completeness:" >&2
+  echo "$census_shortfalls" >&2
+  exit 1
+fi
 
 # 5. Boundary polygon tables — these are what the spatial-join fallback in
 #    address_full_prep.sql joins against. If any required table is missing or

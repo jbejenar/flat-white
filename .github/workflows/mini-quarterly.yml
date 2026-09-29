@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       gnaf_version:
-        description: "G-NAF version (e.g. 2026.05). Leave empty to auto-discover."
+        description: "Production quarter, YYYY.MM, 2026.08 or newer. Leave empty to auto-discover."
         required: false
         default: ""
       runner:
@@ -17,7 +17,7 @@ on:
 
 env:
   DOCKER_IMAGE: flat-white
-  DB_CACHE_VERSION: v2
+  DB_CACHE_VERSION: v3-asgs2026
 
 jobs:
   setup:
@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      admin_bdys_version: ${{ steps.version.outputs.admin_bdys_version }}
+      data_source_key: ${{ steps.version.outputs.data_source_key }}
     steps:
       - uses: actions/checkout@v6
 
@@ -34,19 +36,20 @@ jobs:
           GNAF_INPUT: ${{ inputs.gnaf_version }}
         run: |
           if [[ -n "$GNAF_INPUT" ]]; then
-            if [[ ! "$GNAF_INPUT" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
-              echo "ERROR: Invalid gnaf_version format: '$GNAF_INPUT' (expected YYYY.MM)"
-              exit 1
-            fi
             VERSION="$GNAF_INPUT"
+            ADMIN_BDYS_VERSION="$VERSION"
           else
-            VERSION="$(python3 scripts/discover_latest_release.py)"
-            if [[ -z "$VERSION" ]]; then
-              echo "ERROR: Failed to determine latest quarterly G-NAF release from data.gov.au"
-              exit 1
-            fi
+            SOURCES="$(python3 scripts/discover_latest_release.py --json)"
+            VERSION="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["gnaf_version"])' "$SOURCES")"
+            ADMIN_BDYS_VERSION="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["admin_bdys_version"])' "$SOURCES")"
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          python3 scripts/source_version_policy.py -- "$VERSION"
+          python3 scripts/source_version_policy.py -- "$ADMIN_BDYS_VERSION"
+          {
+            echo "version=$VERSION"
+            echo "admin_bdys_version=$ADMIN_BDYS_VERSION"
+            echo "data_source_key=gnaf-${VERSION}-admin-${ADMIN_BDYS_VERSION}"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
@@ -77,14 +80,15 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: cache
-          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
           restore-keys: |
-            mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-
+            mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-
 
       - name: Run pipeline for ${{ matrix.state }}
         run: |
           CACHE_HIT="${{ steps.db-cache.outputs.cache-hit }}" \
           CACHE_MATCHED_KEY="${{ steps.db-cache.outputs.cache-matched-key }}" \
+          ADMIN_BDYS_VERSION_EFFECTIVE="${{ needs.setup.outputs.admin_bdys_version }}" \
           ./scripts/run-quarterly-state.sh "${{ matrix.state }}" "${{ needs.setup.outputs.version }}" "${{ env.DOCKER_IMAGE }}:mini"
 
       - name: Decide cache save
@@ -116,7 +120,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: cache
-          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.version }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
 
       - name: Verify output
         run: |

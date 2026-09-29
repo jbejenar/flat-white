@@ -206,6 +206,9 @@ export interface BoundaryCoverage {
   meshBlock: number;
   sa1: number;
   sa2: number;
+  sa3: number;
+  sa4: number;
+  gccsa: number;
 }
 
 /**
@@ -217,7 +220,27 @@ export interface BoundaryCoverageThresholds {
   ward?: number;
   stateElectorate?: number;
   commonwealthElectorate?: number;
+  meshBlock?: number;
+  sa1?: number;
+  sa2?: number;
+  sa3?: number;
+  sa4?: number;
+  gccsa?: number;
 }
+
+/** Mesh-block, SA1 and SA2 coverage rounded to 100% in every May 2026 state.
+ * Keep a 1% allowance for legitimate nulls, while rejecting incomplete loads.
+ * This is a safety floor, not a measured ASGS 2026 coverage guarantee.
+ * Keep the database gate in scripts/validate-db-cache.sh aligned with this floor.
+ */
+export const CENSUS_BOUNDARY_THRESHOLDS = {
+  meshBlock: 0.99,
+  sa1: 0.99,
+  sa2: 0.99,
+  sa3: 0.99,
+  sa4: 0.99,
+  gccsa: 0.99,
+} as const;
 
 /**
  * Default thresholds for empty / multi-state / unknown STATES.
@@ -231,6 +254,7 @@ export interface BoundaryCoverageThresholds {
  * defaults — see the comment block on that constant.
  */
 export const DEFAULT_BOUNDARY_THRESHOLDS: Required<BoundaryCoverageThresholds> = {
+  ...CENSUS_BOUNDARY_THRESHOLDS,
   lga: 0.99,
   ward: 0.95,
   stateElectorate: 0.99,
@@ -238,7 +262,9 @@ export const DEFAULT_BOUNDARY_THRESHOLDS: Required<BoundaryCoverageThresholds> =
 };
 
 /**
- * Per-state empirical boundary coverage thresholds. Each value is set
+ * Per-state administrative coverage thresholds. Census fields share the 99%
+ * floor above, including ACT and OT; missing administrative polygons do not
+ * imply missing census geography. Each administrative value is set
  * ~5-8 percentage points BELOW the actual measured coverage from a
  * 2026.02 local build of every state on a 64 GB MacBook Pro M5,
  * providing margin for normal quarterly variation while still catching
@@ -282,15 +308,69 @@ export const DEFAULT_BOUNDARY_THRESHOLDS: Required<BoundaryCoverageThresholds> =
  * check vacuously by setting threshold to 0.
  */
 export const PER_STATE_BOUNDARY_THRESHOLDS: Record<string, Required<BoundaryCoverageThresholds>> = {
-  ACT: { lga: 0, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
-  NSW: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
-  NT: { lga: 0.99, ward: 0.55, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
-  OT: { lga: 0.3, ward: 0, stateElectorate: 0, commonwealthElectorate: 0 },
-  QLD: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
-  SA: { lga: 0.99, ward: 0.7, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
-  TAS: { lga: 0.99, ward: 0, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
-  VIC: { lga: 0.99, ward: 0.95, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
-  WA: { lga: 0.99, ward: 0.6, stateElectorate: 0.99, commonwealthElectorate: 0.99 },
+  ACT: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0,
+    ward: 0,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
+  NSW: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.99,
+    ward: 0,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
+  NT: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.99,
+    ward: 0.55,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
+  OT: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.3,
+    ward: 0,
+    stateElectorate: 0,
+    commonwealthElectorate: 0,
+  },
+  QLD: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.99,
+    ward: 0,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
+  SA: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.99,
+    ward: 0.7,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
+  TAS: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.99,
+    ward: 0,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
+  VIC: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.99,
+    ward: 0.95,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
+  WA: {
+    ...CENSUS_BOUNDARY_THRESHOLDS,
+    lga: 0.99,
+    ward: 0.6,
+    stateElectorate: 0.99,
+    commonwealthElectorate: 0.99,
+  },
 };
 
 const KNOWN_STATES = new Set(["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"]);
@@ -415,6 +495,9 @@ function emptyCoverage(): BoundaryCoverage {
     meshBlock: 0,
     sa1: 0,
     sa2: 0,
+    sa3: 0,
+    sa4: 0,
+    gccsa: 0,
   };
 }
 
@@ -428,6 +511,9 @@ function tallyBoundaries(cov: BoundaryCoverage, boundaries: Record<string, unkno
     if (boundaries.meshBlock) cov.meshBlock++;
     if (boundaries.sa1) cov.sa1++;
     if (boundaries.sa2) cov.sa2++;
+    if (boundaries.sa3) cov.sa3++;
+    if (boundaries.sa4) cov.sa4++;
+    if (boundaries.gccsa) cov.gccsa++;
   }
 }
 
@@ -585,6 +671,7 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     "ward",
     "stateElectorate",
     "commonwealthElectorate",
+    ...(Object.keys(CENSUS_BOUNDARY_THRESHOLDS) as (keyof typeof CENSUS_BOUNDARY_THRESHOLDS)[]),
   ];
 
   if (boundaryCoveragePerState) {
@@ -705,6 +792,9 @@ export function formatReport(result: VerifyResult): string {
     lines.push(`  Mesh block:            ${pct(cov.meshBlock)}%`);
     lines.push(`  SA1:                   ${pct(cov.sa1)}%`);
     lines.push(`  SA2:                   ${pct(cov.sa2)}%`);
+    lines.push(`  SA3:                   ${pct(cov.sa3)}%`);
+    lines.push(`  SA4:                   ${pct(cov.sa4)}%`);
+    lines.push(`  GCCSA:                 ${pct(cov.gccsa)}%`);
   }
 
   // Boundary coverage threshold check

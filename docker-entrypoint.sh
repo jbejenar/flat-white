@@ -58,7 +58,11 @@ flat-white — Australian address data, flattened and served.
 Usage:
   docker run flat-white --help
   docker run flat-white --fixture-only --output /output/
-  docker run -v $(pwd)/output:/output flat-white --states VIC --compress --output /output/
+  docker run -e GNAF_VERSION=2026.08 -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
+
+Environment:
+  GNAF_VERSION       Required production quarter, YYYY.MM, 2026.08 or newer.
+                     Release months: 02, 05, 08, 11. Fixtures default to 2026.02.
 
 Flags:
   --help              Show this help
@@ -165,19 +169,27 @@ if [[ -n "$RESTORE_DB" && "$SKIP_DOWNLOAD" == "true" ]]; then
   exit 1
 fi
 
-# ── Require GNAF_VERSION for non-fixture builds ──────────────────────────────
+# ── Validate GNAF_VERSION before any build side effects ──────────────────────
 # The version must be supplied explicitly to prevent shipping stale data.
 # Fixture mode uses frozen 202602 data from seed-postgres.sql, so it defaults.
 
 if [[ "$MODE" != "fixture" && -z "${GNAF_VERSION:-}" ]]; then
   log "ERROR: GNAF_VERSION environment variable is required for production builds."
-  log "Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.05)"
+  log "Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.08)"
   exit 1
 fi
 
 # Fixture mode: default to the frozen fixture version
 if [[ "$MODE" == "fixture" ]]; then
   export GNAF_VERSION="${GNAF_VERSION:-2026.02}"
+else
+  # The same policy protects the quarterly resolver and build-local.sh.
+  # Resolve relative to this file locally and /app in the runtime image.
+  VERSION_POLICY="$(dirname "${BASH_SOURCE[0]}")/scripts/source_version_policy.py"
+  if [[ ! -f "$VERSION_POLICY" ]]; then
+    VERSION_POLICY="/app/scripts/source_version_policy.py"
+  fi
+  python3 "$VERSION_POLICY" -- "$GNAF_VERSION"
 fi
 
 mkdir -p "$OUTPUT_DIR"
@@ -267,6 +279,15 @@ if [[ "$MODE" == "fixture" ]]; then
   }
 
   SCHEMA_VERSION_FLAT="${GNAF_VERSION//.}"
+  su postgres -c "psql -d $PGDB -q -f /app/fixtures/seed-census-2026.sql" || {
+    log "ERROR: ASGS 2026 fixture seeding failed"
+    exit 2
+  }
+  node /app/scripts/extract-census-prep.mjs "$SCHEMA_VERSION_FLAT" | \
+    su postgres -c "psql -v ON_ERROR_STOP=1 -d $PGDB -q" || {
+      log "ERROR: ASGS 2026 fixture preparation failed"
+      exit 2
+    }
   sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" /app/fixtures/prep-admin-bdys.sql | \
     su postgres -c "psql -d $PGDB -q" || {
       log "ERROR: Admin boundary prep SQL failed"
@@ -366,10 +387,10 @@ else
   # Stage 3: gnaf-loader
   stage_start "load"
 
-  # Derive 6-digit geoscape version from GNAF_VERSION (e.g. "2026.05" → "202605")
+  # Derive 6-digit geoscape version from GNAF_VERSION (e.g. "2026.08" → "202608")
   GEOSCAPE_VERSION=$(echo "$GNAF_VERSION" | tr -d '.')
   if [[ ! "$GEOSCAPE_VERSION" =~ ^[0-9]{6}$ ]]; then
-    log "ERROR: GNAF_VERSION '${GNAF_VERSION}' must be in YYYY.MM format (e.g. 2026.05)"
+    log "ERROR: GNAF_VERSION '${GNAF_VERSION}' must be in YYYY.MM format (e.g. 2026.08)"
     exit 1
   fi
 

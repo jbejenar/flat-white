@@ -1,10 +1,16 @@
 # NSW Memory Analysis — P4.07
 
+> **Historical measurements — before schema 1.0.0.** These April 2026 results
+> and estimates use earlier code/data and ASGS 2021. They are not a production
+> benchmark or capacity guarantee for ASGS 2026. **Schema 1.0.0 change:** old
+> database caches are invalidated, so measure the first compatible cold load.
+> See [current release guidance](RELEASING.md) and [migration implications](MIGRATING-TO-ASGS-2026.md).
+
 > Established: 2026-04-06. Based on v2026.04 production build (workflow run 24005068570).
 
 ## Context
 
-NSW is the largest Australian state by address count (~4.6M addresses, 30% of the national total). GitHub Actions free runners provide 7 GB RAM. This document analyses the memory margin for NSW builds and documents the PostgreSQL tuning applied to improve reliability.
+In the measured release, NSW had about 4.6 million addresses (30% of the total). This analysis assumed a 7 GB runner and records the estimates and tuning considered at that time. Confirm current runner resources before reusing the calculation.
 
 ## Memory Budget (7 GB Runner)
 
@@ -30,7 +36,7 @@ Memory usage is not constant — it varies by pipeline stage:
 
 ## PostgreSQL Tuning (Applied)
 
-The following settings are applied in `docker-entrypoint.sh` during initialization:
+The following settings were recorded for this analysis. Check the current `docker-entrypoint.sh` before changing runner capacity or tuning:
 
 | Setting                | Value  | Default | Rationale                                                                                                 |
 | ---------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------- |
@@ -95,7 +101,9 @@ NSW takes ~15% longer than VIC (17% more addresses) — performance scales linea
 - **Pre-v2026.04 failures**: NSW failed once (run 23993132649) with exit code 4 (verification failure, not OOM). This was a data quality issue, not memory-related.
 - **Consecutive success tracking**: 1/5 (DoD requires 5 consecutive)
 
-## Remaining Work
+## Remaining work recorded in April 2026
+
+These unchecked items are historical, not an assertion about current release status. Use [NEXT-WORK.md](../NEXT-WORK.md) for the active plan.
 
 - [ ] Accumulate 5 consecutive successful NSW runs (across v2026.05, v2026.07, etc.)
 - [ ] Validate PostgreSQL tuning in production (first build with tuning will be v2026.05)

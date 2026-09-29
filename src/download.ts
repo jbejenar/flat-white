@@ -9,7 +9,7 @@
  *
  * Or as a module:
  *   import { download } from './download.js';
- *   await download({ version: '2026.05', outputDir: './data' });
+ *   await download({ version: '2026.08', outputDir: './data' });
  */
 
 import {
@@ -34,20 +34,25 @@ export interface DataSource {
   name: string;
   url: string;
   extractedDir: string;
-  /** Paths relative to extractedDir that must exist for the extraction to be considered complete. */
-  sentinelPaths: string[];
+  /** Required directories relative to extractedDir. A group allows alternative upstream names. */
+  sentinelPaths: Array<string | string[]>;
+}
+
+function adminSentinelPaths(): DataSource["sentinelPaths"] {
+  return [["LocalGovernmentAreas_*", "LOCAL-GOVERNMENT-AREAS_*"], "StateBoundaries_*"];
 }
 
 /**
  * Default data sources for the Feb 2026 G-NAF release.
- * URLs verified via HEAD request — see memory/project_data_sources.md.
+ * Historical URL constants for the frozen February source; schema 1.x production
+ * requires compatible ASGS 2026 input. See docs/RELEASING.md.
  *
- * sentinelPaths are well-known files/dirs within each extracted dataset.
+ * sentinelPaths are well-known directories within each extracted dataset.
  * Their presence confirms a complete extraction vs. a partial/interrupted one.
  *
- * For newer releases, override via DOWNLOAD_URL_GNAF / DOWNLOAD_URL_ADMIN_BDYS
- * env vars — each Geoscape release publishes new dataset UUIDs on data.gov.au,
- * so URLs are not templatable.
+ * Newer releases are discovered from CKAN metadata. Manual overrides use
+ * DOWNLOAD_URL_GNAF / DOWNLOAD_URL_ADMIN_BDYS. Resource UUIDs change, so URLs
+ * are not templatable. See docs/RELEASING.md for the full override contract.
  */
 export const DEFAULT_DATA_SOURCES: DataSource[] = [
   {
@@ -60,7 +65,7 @@ export const DEFAULT_DATA_SOURCES: DataSource[] = [
     name: "Administrative Boundaries GDA2020",
     url: "https://data.gov.au/data/dataset/bdcf5b09-89bc-47ec-9281-6b8e9ee147aa/resource/36cc98bd-df9b-4454-9a05-c2756ee1249e/download/feb26_adminbounds_gda_2020_shp.zip",
     extractedDir: "FEB26_AdminBounds_GDA_2020_SHP",
-    sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+    sentinelPaths: adminSentinelPaths(),
   },
 ];
 
@@ -245,9 +250,16 @@ async function fetchCkanPackage(
   fetchImpl: typeof fetch = fetch,
 ): Promise<CkanResource[]> {
   const url = `https://data.gov.au/data/api/3/action/package_show?id=${packageId}`;
-  const response = await fetchImpl(url, { redirect: "follow" });
+  const response = await fetchImpl(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(DEFAULT_STALL_TIMEOUT_MS),
+  });
   if (!response.ok) {
-    throw new Error(`data.gov.au CKAN lookup failed for ${packageId}: HTTP ${response.status}`);
+    await response.body?.cancel().catch(() => undefined);
+    throw new DownloadFailure(
+      `data.gov.au CKAN lookup failed for ${packageId}: HTTP ${response.status}`,
+      isRetryableStatus(response.status),
+    );
   }
 
   const payload = (await response.json()) as CkanPackageResponse;
@@ -310,7 +322,7 @@ export async function discoverDataSources(
       name: "Administrative Boundaries GDA2020",
       url: admin.url,
       extractedDir: adminTokens.adminExtractedDir,
-      sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+      sentinelPaths: adminSentinelPaths(),
     },
   ];
 }
@@ -334,7 +346,10 @@ export function resolveDataSources(_version?: string): DataSource[] {
   const adminUrl = readEnvOverride("DOWNLOAD_URL_ADMIN_BDYS");
   const adminExtractedDir = readEnvOverride("ADMIN_BDYS_EXTRACTED_DIR");
 
-  const sources = DEFAULT_DATA_SOURCES.map((s) => ({ ...s, sentinelPaths: [...s.sentinelPaths] }));
+  const sources = DEFAULT_DATA_SOURCES.map((s) => ({
+    ...s,
+    sentinelPaths: s.sentinelPaths.map((path) => (typeof path === "string" ? path : [...path])),
+  }));
 
   if (gnafUrl) {
     const gnaf = sources.find((s) => s.name.includes("G-NAF"));
@@ -429,36 +444,43 @@ export function formatProgress(downloaded: number, total: number | null, elapsed
 
 /**
  * Check whether an extracted directory contains all expected sentinel paths.
- * Returns true only if every sentinel file/directory exists, indicating a
- * complete extraction. Returns false for empty, partial, or missing directories.
+ * Every sentinel must be a directory. Paths sharing a wildcard parent must
+ * match the same release folder, not fragments from different extractions.
  */
-export function isExtractionComplete(extractedPath: string, sentinelPaths: string[]): boolean {
-  if (!existsSync(extractedPath)) return false;
-  try {
-    if (!statSync(extractedPath).isDirectory()) return false;
-  } catch {
-    return false;
+export function isExtractionComplete(
+  extractedPath: string,
+  sentinelPaths: DataSource["sentinelPaths"],
+): boolean {
+  function isDirectory(path: string): boolean {
+    try {
+      return statSync(path).isDirectory();
+    } catch {
+      return false;
+    }
   }
+  if (!isDirectory(extractedPath)) return false;
   if (sentinelPaths.length === 0) return false;
   // Read directory once for glob matching (avoids repeated readdirSync per sentinel)
-  const hasGlob = sentinelPaths.some((s) => s.includes("*"));
-  const entries = hasGlob ? readdirSync(extractedPath) : [];
-  return sentinelPaths.every((sentinel) => {
-    if (sentinel.includes("/") && sentinel.includes("*")) {
-      // Path-segment wildcard: "G-NAF */Standard" — first segment has a wildcard, rest is literal
-      const [globSegment, ...rest] = sentinel.split("/");
-      const prefix = globSegment.replaceAll("*", "");
-      const matchingDirs = entries.filter((entry) => entry.startsWith(prefix));
-      const subPath = rest.join("/");
-      return matchingDirs.some((dir) => existsSync(resolve(extractedPath, dir, subPath)));
-    }
-    if (sentinel.endsWith("*")) {
-      // Trailing wildcard: "LocalGovernmentAreas_*" matches any entry starting with the prefix
-      const prefix = sentinel.slice(0, -1);
-      return entries.some((entry) => entry.startsWith(prefix));
-    }
-    return existsSync(resolve(extractedPath, sentinel));
-  });
+  const hasGlob = sentinelPaths.flat().some((s) => s.includes("*"));
+  const entries = hasGlob ? readdirSync(extractedPath, { withFileTypes: true }) : [];
+  function matches(index: number, parents: Map<string, string>): boolean {
+    if (index === sentinelPaths.length) return true;
+    const required = sentinelPaths[index];
+    const alternatives = typeof required === "string" ? [required] : required;
+    return alternatives.some((sentinel) => {
+      const [first, ...rest] = sentinel.split("/");
+      if (first.endsWith("*")) {
+        return entries.some((entry) => {
+          if (!entry.isDirectory() || !entry.name.startsWith(first.slice(0, -1))) return false;
+          if (parents.has(first) && parents.get(first) !== entry.name) return false;
+          if (!isDirectory(resolve(extractedPath, entry.name, ...rest))) return false;
+          return matches(index + 1, new Map([...parents, [first, entry.name]]));
+        });
+      }
+      return isDirectory(resolve(extractedPath, sentinel)) && matches(index + 1, parents);
+    });
+  }
+  return matches(0, new Map());
 }
 
 // --- Retry logic ---
@@ -467,6 +489,44 @@ const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 /** Default inactivity timeout per attempt — abort if no data received for this long. */
 export const DEFAULT_STALL_TIMEOUT_MS = 60_000;
+
+class DownloadFailure extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    cause?: unknown,
+  ) {
+    super(message, { cause });
+  }
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || (status >= 500 && status < 600);
+}
+
+const TRANSIENT_CODES = new Set([
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENETUNREACH",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+function isRetryableDownloadError(error: unknown): boolean {
+  if (error instanceof DownloadFailure) return error.retryable;
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError") return true;
+  if ("code" in error && typeof error.code === "string" && TRANSIENT_CODES.has(error.code))
+    return true;
+  if (error instanceof AggregateError) return error.errors.some(isRetryableDownloadError);
+  if (error.cause !== undefined) return isRetryableDownloadError(error.cause);
+  return error instanceof TypeError && error.message === "fetch failed";
+}
 
 export function retryDelay(attempt: number): number {
   return BASE_DELAY_MS * Math.pow(2, attempt);
@@ -485,8 +545,6 @@ async function downloadFile(
   maxRetries: number = DEFAULT_MAX_RETRIES,
   stallTimeoutMs: number = DEFAULT_STALL_TIMEOUT_MS,
 ): Promise<number> {
-  let lastError: Error | null = null;
-
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
       const delay = retryDelay(attempt - 1);
@@ -496,10 +554,12 @@ async function downloadFile(
 
     const controller = new AbortController();
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    let stalled = false;
 
     const resetStallTimer = () => {
       if (stallTimer) clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
+        stalled = true;
         console.error(
           `[download] ${name}: stalled for ${stallTimeoutMs / 1000}s — aborting attempt ${attempt + 1}`,
         );
@@ -514,7 +574,11 @@ async function downloadFile(
       const response = await fetch(url, { redirect: "follow", signal: controller.signal });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        await response.body?.cancel().catch(() => undefined);
+        throw new DownloadFailure(
+          `HTTP ${response.status}: ${response.statusText}`,
+          isRetryableStatus(response.status),
+        );
       }
 
       if (!response.body) {
@@ -562,7 +626,8 @@ async function downloadFile(
       return downloaded;
     } catch (err) {
       if (stallTimer) clearTimeout(stallTimer);
-      lastError = err instanceof Error ? err : new Error(String(err));
+      const lastError = err instanceof Error ? err : new Error(String(err));
+      controller.abort(lastError);
       console.error(`[download] ${name}: attempt ${attempt + 1} failed — ${lastError.message}`);
 
       // Clean up partial file
@@ -571,12 +636,18 @@ async function downloadFile(
       } catch {
         // ignore cleanup errors
       }
+      const retryable = stalled || isRetryableDownloadError(lastError);
+      if (!retryable || attempt === maxRetries) {
+        throw new DownloadFailure(
+          `Failed to download ${name} after ${attempt + 1} attempts: ${lastError.message}`,
+          retryable,
+          lastError,
+        );
+      }
     }
   }
 
-  throw new Error(
-    `Failed to download ${name} after ${maxRetries + 1} attempts: ${lastError?.message}`,
-  );
+  throw new Error("Download retry count must be non-negative");
 }
 
 // --- Extraction ---
@@ -669,7 +740,9 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
         // ignore
       }
       throw new Error(
-        `Extraction of ${source.name} failed sentinel validation — expected paths not found: ${source.sentinelPaths.join(", ")}`,
+        `Extraction of ${source.name} failed sentinel validation — expected paths not found: ${source.sentinelPaths
+          .map((path) => (typeof path === "string" ? path : `(${path.join(" or ")})`))
+          .join(", ")}`,
       );
     }
 
@@ -845,6 +918,9 @@ const entryFile = process.argv[1] ? resolve(process.argv[1]) : "";
 if (thisFile === entryFile || thisFile === entryFile.replace(/\.ts$/, ".js")) {
   main().catch((err) => {
     console.error("[download] Fatal:", err);
+    console.error(
+      `[download] Failure kind: ${isRetryableDownloadError(err) ? "transient" : "permanent"}`,
+    );
     process.exit(1);
   });
 }

@@ -61,17 +61,17 @@ const baseRow: Record<string, unknown> = {
   ward_name: "RIVER WARD",
   state_electorate_name: "FOOTSCRAY",
   commonwealth_electorate_name: "GELLIBRAND",
-  mb_2021_code: 20663890000,
+  mb_2026_code: 20663890000,
   mesh_block_category: "COMMERCIAL",
-  sa1_21code: "20604102614",
-  sa2_21code: "20604",
-  sa2_21name: "FOOTSCRAY",
-  sa3_21code: "206",
-  sa3_21name: "MARIBYRNONG",
-  sa4_21code: "2",
-  sa4_21name: "MELBOURNE - WEST",
-  gcc_21code: "2GMEL",
-  gcc_21name: "GREATER MELBOURNE",
+  s1_code_26: "20604102614",
+  s2_code_26: "20604",
+  s2_name_26: "FOOTSCRAY",
+  s3_code_26: "206",
+  s3_name_26: "MARIBYRNONG",
+  s4_code_26: "2",
+  s4_name_26: "MELBOURNE - WEST",
+  gc_code_26: "2GMEL",
+  gc_name_26: "GREATER MELBOURNE",
   address_aliases: [],
   address_secondaries: [],
 };
@@ -148,6 +148,26 @@ describe("composeSearchLabel", () => {
 });
 
 describe("composeDocument", () => {
+  it("uses the 2026 hierarchy when a legacy 2021 hierarchy is also present", () => {
+    const row = {
+      ...baseRow,
+      mb_2021_code: 11111111111,
+      sa1_21code: "11111111111",
+      sa2_21code: "111111111",
+      sa2_21name: "Legacy 2021",
+      sa3_21code: "11111",
+      sa3_21name: "Legacy 2021",
+      sa4_21code: "111",
+      sa4_21name: "Legacy 2021",
+      gcc_21code: "1TEST",
+      gcc_21name: "Legacy 2021",
+    };
+    const boundaries = composeDocument(row, "2026.08").boundaries;
+    expect(boundaries).toEqual(composeBoundaries(baseRow));
+    expect(boundaries.meshBlock?.code).toBe(String(baseRow.mb_2026_code));
+    expect(JSON.stringify(boundaries)).not.toContain("Legacy 2021");
+  });
+
   it("produces a valid AddressDocument from a complete row", () => {
     const doc = composeDocument(baseRow, "2026.02");
     const result = AddressDocumentSchema.safeParse(doc);
@@ -197,17 +217,17 @@ describe("composeDocument", () => {
       ward_name: null,
       state_electorate_name: null,
       commonwealth_electorate_name: null,
-      mb_2021_code: null,
+      mb_2026_code: null,
       mesh_block_category: null,
-      sa1_21code: null,
-      sa2_21code: null,
-      sa2_21name: null,
-      sa3_21code: null,
-      sa3_21name: null,
-      sa4_21code: null,
-      sa4_21name: null,
-      gcc_21code: null,
-      gcc_21name: null,
+      s1_code_26: null,
+      s2_code_26: null,
+      s2_name_26: null,
+      s3_code_26: null,
+      s3_name_26: null,
+      s4_code_26: null,
+      s4_name_26: null,
+      gc_code_26: null,
+      gc_name_26: null,
     };
     const doc = composeDocument(row, "2026.02");
     const result = AddressDocumentSchema.safeParse(doc);

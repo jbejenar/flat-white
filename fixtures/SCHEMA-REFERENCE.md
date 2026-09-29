@@ -1,7 +1,14 @@
 # Fixture Schema Reference
 
-> Generated from `fixtures/seed-postgres.sql`. Use this file instead of reading the 10k-line SQL file.
-> Three schemas: `gnaf_202602` (processed), `raw_gnaf_202602` (raw G-NAF), `admin_bdys_202602` (ABS boundaries).
+> **Schema 1.0.0 change:** this reference describes the frozen seed plus the
+> administrative and synthetic ASGS 2026 overlays. The `202602` suffix remains
+> the address snapshot version. Use the [fixture build](README.md), not the base
+> seed alone, to create the current tables.
+
+Four schemas are used: `gnaf_202602` (processed addresses), `raw_gnaf_202602`
+(raw addresses), `admin_bdys_202602` (prepared boundaries) and
+`raw_admin_bdys_202602` (raw boundary fixtures). The 2021 tables listed below are
+historical decoys; current census joins use `abs_2026_mb`.
 
 ## gnaf_202602 (processed tables)
 
@@ -9,37 +16,38 @@
 
 Core table — one row per principal address. **Primary driving table in address_full.sql.**
 
-| Column              | Type                 | Nullable | Notes                                  |
-| ------------------- | -------------------- | -------- | -------------------------------------- |
-| gid                 | integer              | NO       | PK (serial)                            |
-| gnaf_pid            | text                 | NO       | Unique address ID, e.g. GAVIC425181432 |
-| street_locality_pid | text                 | NO       | FK -> streets                          |
-| locality_pid        | text                 | NO       | FK -> localities                       |
-| alias_principal     | character(1)         | NO       | Always 'P' for principals              |
-| primary_secondary   | text                 | YES      | 'P' or 'S' (single letter)             |
-| building_name       | text                 | YES      |                                        |
-| lot_number          | text                 | YES      |                                        |
-| flat_number         | text                 | YES      |                                        |
-| level_number        | text                 | YES      |                                        |
-| number_first        | text                 | YES      |                                        |
-| number_last         | text                 | YES      |                                        |
-| street_name         | text                 | NO       |                                        |
-| street_type         | text                 | YES      | Abbreviation code, e.g. 'AV'           |
-| street_suffix       | text                 | YES      |                                        |
-| address             | text                 | NO       | Composed label                         |
-| locality_name       | text                 | NO       |                                        |
-| postcode            | text                 | YES      |                                        |
-| state               | text                 | NO       |                                        |
-| locality_postcode   | text                 | YES      |                                        |
-| confidence          | smallint             | NO       | 0-2                                    |
-| legal_parcel_id     | text                 | YES      |                                        |
-| mb_2016_code        | bigint               | YES      |                                        |
-| mb_2021_code        | bigint               | YES      | FK -> abs_2021_mb                      |
-| latitude            | numeric(10,8)        | NO       | GDA2020                                |
-| longitude           | numeric(11,8)        | NO       | GDA2020                                |
-| geocode_type        | text                 | NO       |                                        |
-| reliability         | smallint             | NO       | 1-6                                    |
-| geom                | geometry(Point,7844) | NO       | PostGIS point                          |
+| Column              | Type                 | Nullable | Notes                                                 |
+| ------------------- | -------------------- | -------- | ----------------------------------------------------- |
+| gid                 | integer              | NO       | PK (serial)                                           |
+| gnaf_pid            | text                 | NO       | Unique address ID, e.g. GAVIC425181432                |
+| street_locality_pid | text                 | NO       | FK -> streets                                         |
+| locality_pid        | text                 | NO       | FK -> localities                                      |
+| alias_principal     | character(1)         | NO       | Always 'P' for principals                             |
+| primary_secondary   | text                 | YES      | 'P' or 'S' (single letter)                            |
+| building_name       | text                 | YES      |                                                       |
+| lot_number          | text                 | YES      |                                                       |
+| flat_number         | text                 | YES      |                                                       |
+| level_number        | text                 | YES      |                                                       |
+| number_first        | text                 | YES      |                                                       |
+| number_last         | text                 | YES      |                                                       |
+| street_name         | text                 | NO       |                                                       |
+| street_type         | text                 | YES      | Expanded name, e.g. 'AVENUE'                          |
+| street_suffix       | text                 | YES      |                                                       |
+| address             | text                 | NO       | Composed label                                        |
+| locality_name       | text                 | NO       |                                                       |
+| postcode            | text                 | YES      |                                                       |
+| state               | text                 | NO       |                                                       |
+| locality_postcode   | text                 | YES      |                                                       |
+| confidence          | smallint             | NO       | 0-2                                                   |
+| legal_parcel_id     | text                 | YES      |                                                       |
+| mb_2016_code        | bigint               | YES      |                                                       |
+| mb_2021_code        | bigint               | YES      | Historical 2021 fixture value                         |
+| mb_2026_code        | bigint               | YES      | Added by the census overlay; current mesh-block join. |
+| latitude            | numeric(10,8)        | NO       | GDA2020                                               |
+| longitude           | numeric(11,8)        | NO       | GDA2020                                               |
+| geocode_type        | text                 | NO       |                                                       |
+| reliability         | smallint             | NO       | 1-6                                                   |
+| geom                | geometry(Point,7844) | NO       | PostGIS point                                         |
 
 **Joins in address_full.sql:**
 
@@ -47,7 +55,7 @@ Core table — one row per principal address. **Primary driving table in address
 - -> gnaf_202602.localities ON locality_pid
 - -> gnaf_202602.streets ON street_locality_pid
 - -> address_principal_admin_boundaries ON gnaf_pid
-- -> admin_bdys_202602.abs_2021_mb ON mb_2021_code = mb21_code
+- -> admin_bdys_202602.abs_2026_mb ON mb_2026_code = mb_code_26 (added by `seed-census-2026.sql`)
 - -> address_alias_lookup ON gnaf_pid = principal_pid
 - -> address_secondary_lookup ON gnaf_pid = primary_pid
 
@@ -74,7 +82,7 @@ Same schema as address_principals. Contains alias addresses linked via address_a
 ### address_principal_admin_boundaries (451 rows) — DERIVED
 
 **This table is now derived via spatial join (E1.10), not pre-seeded.**
-The spatial join fallback in `address_full_prep.sql` populates it from boundary polygons
+The administrative spatial join in `address_full_prep.sql` populates it from boundary polygons
 in `admin_bdys_202602.*`, which are themselves derived from `raw_admin_bdys_202602.aus_*`
 tables by `fixtures/prep-admin-bdys.sql`.
 
@@ -130,7 +138,7 @@ Same schema as address_principal_admin_boundaries.
 | street_locality_pid | text     | Unique ID                                      |
 | locality_pid        | text     | FK -> localities                               |
 | street_name         | text     |                                                |
-| street_type         | text     | Abbreviation                                   |
+| street_type         | text     | Expanded name, e.g. PARADE                     |
 | full_street_name    | text     |                                                |
 | street_class        | text     | Expanded name, e.g. 'CONFIRMED' (not the code) |
 | latitude, longitude | numeric  |                                                |
@@ -205,32 +213,53 @@ Multiple geocodes per address site.
 
 ### Authority Tables (code -> name lookups)
 
-| Table                   | Rows | Code Column       | Example                                |
-| ----------------------- | ---- | ----------------- | -------------------------------------- |
-| flat_type_aut           | 54   | code varchar(7)   | 'UNIT' -> 'UNIT'                       |
-| level_type_aut          | 16   | code varchar(4)   | 'L' -> 'LEVEL'                         |
-| street_type_aut         | 276  | code varchar(15)  | 'AV' -> 'AVENUE'                       |
-| street_suffix_aut       | 19   | code varchar(15)  | 'N' -> 'NORTH'                         |
-| geocode_type_aut        | 30   | code varchar(4)   | 'FCS' -> 'FRONTAGE CENTRE SETBACK'     |
-| geocode_reliability_aut | 6    | code numeric(1,0) | 2 -> 'WITHIN ADDRESS SITE BOUNDARY...' |
-| locality_class_aut      | 9    | code character(1) | 'G' -> 'GAZETTED LOCALITY'             |
-| street_class_aut        | 2    | code character(1) | 'C' -> 'CONFIRMED'                     |
-| address_type_aut        | 3    | code varchar(8)   |                                        |
-| address_alias_type_aut  | 8    | code varchar(10)  |                                        |
+| Table                   | Rows | Code Column       | Example                                                       |
+| ----------------------- | ---- | ----------------- | ------------------------------------------------------------- |
+| flat_type_aut           | 54   | code varchar(7)   | 'UNIT' -> 'UNIT'                                              |
+| level_type_aut          | 16   | code varchar(4)   | 'L' -> 'LEVEL'                                                |
+| street_type_aut         | 276  | code varchar(15)  | 'AVENUE' -> 'AV' (reversed convention; not joined by flatten) |
+| street_suffix_aut       | 19   | code varchar(15)  | 'N' -> 'NORTH'                                                |
+| geocode_type_aut        | 30   | code varchar(4)   | 'FCS' -> 'FRONTAGE CENTRE SETBACK'                            |
+| geocode_reliability_aut | 6    | code numeric(1,0) | 2 -> 'WITHIN ADDRESS SITE BOUNDARY...'                        |
+| locality_class_aut      | 9    | code character(1) | 'G' -> 'GAZETTED LOCALITY'                                    |
+| street_class_aut        | 2    | code character(1) | 'C' -> 'CONFIRMED'                                            |
+| address_type_aut        | 3    | code varchar(8)   |                                                               |
+| address_alias_type_aut  | 8    | code varchar(10)  |                                                               |
 
-All authority tables have: `code` (PK), `name` (varchar 50), `description`.
+Authority tables provide `code`, `name` and description columns. `street_type_aut` reverses the usual code/name meaning; do not use it to expand the already-expanded processed street type.
 
 ---
 
 ## admin_bdys_202602
 
+### abs_2026_mb (430 synthetic rows; schema 1.x)
+
+Created by the mesh-block section of the pinned upstream 202608 census SQL,
+executed by `scripts/extract-census-prep.mjs`. The raw input is
+`raw_admin_bdys_202602.aus_mb_2026` from `seed-census-2026.sql`.
+The same overlay adds `mb_2026_code bigint` to principal and alias addresses.
+
+| Column                     | Purpose                                                               |
+| -------------------------- | --------------------------------------------------------------------- |
+| `mb_code_26`               | Mesh block code; joined from `address_principals.mb_2026_code`        |
+| `mb_cat_26`                | Mesh block category                                                   |
+| `s1_code_26`               | SA1 code                                                              |
+| `s2_code_26`, `s2_name_26` | SA2 code and name                                                     |
+| `s3_code_26`, `s3_name_26` | SA3 code and name                                                     |
+| `s4_code_26`, `s4_name_26` | SA4 code and name                                                     |
+| `gc_code_26`, `gc_name_26` | GCCSA code and name                                                   |
+| `geom`                     | Synthetic MultiPolygon, SRID 7844; census enrichment uses code lookup |
+
+These are synthetic 2026 assignments. Most reuse historical values to keep the
+fixture varied; two deliberate changes test a new mesh-block code and a reassigned
+hierarchy. See the [complete change inventory](SCHEMA-1.0-CHANGES.md).
+The following 2021 tables remain as source data and regression decoys, not runtime joins.
+
 ### abs_2021_mb (430 rows)
 
-**Canonical mesh-block table** — matches the production table name created by
-gnaf-loader's `02-02d-prep-census-2021-bdys-tables.sql`. Both the fixture path
-and the production path now join this table by name. Populated at the end of
-`seed-postgres.sql` via `CREATE TABLE … AS SELECT FROM abs_2021_mb_lookup`
-(see back-compat shim below).
+**Historical mesh-block table.** Populated by `seed-postgres.sql` from the
+original lookup. Used only to construct deterministic synthetic 2026 fixture
+assignments. Production schema 1.x joins `abs_2026_mb`.
 
 | Column     | Type        | Notes                                   |
 | ---------- | ----------- | --------------------------------------- |
@@ -248,18 +277,14 @@ and the production path now join this table by name. Populated at the end of
 | gcc_21name | text        |                                         |
 | state      | text        |                                         |
 
-**Known gap (E1.22):** this fixture table has no `geom` column. The production
-table populated by gnaf-loader has a PostGIS polygon column. Anything that adds
-a spatial query on `abs_2021_mb` will silently break against the fixture.
-Tracked by ROADMAP ticket E1.22 alongside the `extract-fixtures.sh` repair.
+This historical table has no geometry. The current 2026 fixture includes
+synthetic geometry and executes upstream prep SQL.
 
 ### abs_2021_mb_lookup (430 rows — back-compat shim)
 
 Original fixture-only denormalized lookup table. Same column data as
 `abs_2021_mb` but without the synthetic `gid`. Retained as a back-compat shim
-for any external tooling that historically referenced the lookup name. **Not
-joined by any of our SQL** — both fixture and production paths read
-`abs_2021_mb` directly.
+for any external tooling that historically referenced the lookup name. Schema 1.x flatten reads `abs_2026_mb`; this table is retained only in the frozen base seed.
 
 | Column     | Type        | Notes                                       |
 | ---------- | ----------- | ------------------------------------------- |
@@ -360,3 +385,26 @@ boundary tables, which the spatial join in `address_full_prep.sql` uses to deriv
 | gid    | integer                     | PK                        |
 | se_pid | text                        | FK -> aus_state_electoral |
 | geom   | geometry(MultiPolygon,7844) | GDA2020                   |
+
+### aus_mb_2026 (430 synthetic rows; schema 1.0.0 overlay)
+
+**Schema 1.0.0 change:** seeded by `seed-census-2026.sql`, then transformed by the
+mesh-block section of the pinned upstream census preparation SQL. The resulting
+`abs_2026_mb` table is documented above. Codes and names are synthetic test values.
+
+| Raw column(s)              | Type                        | Purpose                                                                |
+| -------------------------- | --------------------------- | ---------------------------------------------------------------------- |
+| `gid`                      | integer                     | Primary key.                                                           |
+| `mb_ply_26`, `mb_pid_26`   | varchar(15)                 | Mesh-block polygon and feature identifiers.                            |
+| `dt_create`                | date                        | Synthetic creation date.                                               |
+| `mb_code_26`               | varchar(11)                 | 2026 mesh-block code; upstream prep converts the lookup key to bigint. |
+| `mb_cat_26`                | varchar(30)                 | Mesh-block category.                                                   |
+| `chn_flg_26`, `chn_lbl_26` | varchar(1), varchar(11)     | Change flag and label.                                                 |
+| `s1_pid_26`, `s1_code_26`  | varchar(15), varchar(11)    | SA1 identifier and code.                                               |
+| `s2_code_26`, `s2_name_26` | varchar(9), varchar(50)     | SA2 code and name.                                                     |
+| `s3_code_26`, `s3_name_26` | varchar(5), varchar(50)     | SA3 code and name.                                                     |
+| `s4_code_26`, `s4_name_26` | varchar(3), varchar(50)     | SA4 code and name.                                                     |
+| `gc_code_26`, `gc_name_26` | varchar(5), varchar(50)     | GCCSA code and name.                                                   |
+| `state`                    | varchar(3)                  | VIC in this fixture.                                                   |
+| `mb_ar_sqkm`               | numeric(11,2)               | Synthetic area value.                                                  |
+| `geom`                     | geometry(MultiPolygon,7844) | Synthetic GDA2020 geometry.                                            |

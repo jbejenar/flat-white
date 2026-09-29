@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-10T23:39:38.104Z",
+  "generatedAt": "2026-09-28T10:43:59.578Z",
   "schemas": {
     "AddressDocument": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -489,7 +489,8 @@
             "sa4",
             "gccsa"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Census boundaries (meshBlock, SA1-SA4, GCCSA) use ASGS 2026 in schema 1.x."
         },
         "aliases": {
           "type": "array",

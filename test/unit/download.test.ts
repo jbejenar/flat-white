@@ -332,7 +332,10 @@ describe("discoverDataSources", () => {
         name: "Administrative Boundaries GDA2020",
         url: "https://example.com/may26_adminbounds_gda_2020_shp.zip",
         extractedDir: "MAY26_AdminBounds_GDA_2020_SHP",
-        sentinelPaths: ["LocalGovernmentAreas_*", "StateBoundaries_*"],
+        sentinelPaths: [
+          ["LocalGovernmentAreas_*", "LOCAL-GOVERNMENT-AREAS_*"],
+          "StateBoundaries_*",
+        ],
       },
     ]);
   });
@@ -589,6 +592,23 @@ describe("isExtractionComplete", () => {
 
   it("returns false for path-segment wildcard when subdirectory is missing", () => {
     mkdirSync(resolve(testDir, "G-NAF MAY 2026/Standard"), { recursive: true });
+    expect(isExtractionComplete(testDir, ["G-NAF */Standard", "G-NAF */Authority Code"])).toBe(
+      false,
+    );
+  });
+
+  it("rejects files posing as required G-NAF directories", () => {
+    mkdirSync(resolve(testDir, "G-NAF AUGUST 2026"));
+    writeFileSync(resolve(testDir, "G-NAF AUGUST 2026/Standard"), "not a directory");
+    mkdirSync(resolve(testDir, "G-NAF AUGUST 2026/Authority Code"));
+    expect(isExtractionComplete(testDir, ["G-NAF */Standard", "G-NAF */Authority Code"])).toBe(
+      false,
+    );
+  });
+
+  it("requires Standard and Authority Code under the same release directory", () => {
+    mkdirSync(resolve(testDir, "G-NAF MAY 2026/Standard"), { recursive: true });
+    mkdirSync(resolve(testDir, "G-NAF AUGUST 2026/Authority Code"), { recursive: true });
     expect(isExtractionComplete(testDir, ["G-NAF */Standard", "G-NAF */Authority Code"])).toBe(
       false,
     );

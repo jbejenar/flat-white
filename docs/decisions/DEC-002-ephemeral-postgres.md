@@ -1,5 +1,11 @@
 # DEC-002 — Ephemeral Postgres
 
+> **Schema 1.0.0 change — current clarification.**
+> Postgres still runs as temporary build infrastructure. Validated database dump
+> artifacts can be cached to avoid repeating a load; this does not make the database
+> a persistent service. The ASGS migration uses cache namespace `v3-asgs2026` and
+> rejects incompatible restored dumps. See [cache recovery](../RUNBOOK.md#load-or-cache-validation-failed).
+
 ## Status
 
 Accepted
@@ -10,7 +16,7 @@ gnaf-loader requires PostgreSQL + PostGIS to load G-NAF data and perform spatial
 
 ## Decision
 
-Postgres is ephemeral. It starts inside the container, loads data, performs joins, exports NDJSON, and is destroyed. No data persists between runs. The NDJSON file is the only artifact.
+Postgres is ephemeral. It starts inside the container, loads data, performs joins, exports NDJSON, and is destroyed. The running database does not persist between production containers. Exported data, metadata and explicitly validated cache dumps can persist as build artifacts.
 
 ## Alternatives Considered
 
@@ -20,7 +26,7 @@ Postgres is ephemeral. It starts inside the container, loads data, performs join
 ## Consequences
 
 - Every build is reproducible from scratch — no hidden state.
-- No database administration, no migrations, no backups.
-- Build time includes full data load (~30-40 min per state), but this happens once per quarter.
+- No persistent production database service to administer or migrate in place. Data consumers still need schema migration and rollback plans.
+- A cold build includes a full source load; a compatible validated dump can avoid repeating that stage.
 - The Dockerfile must bundle Postgres + PostGIS + Python + Node — larger image (~2-3GB), but self-contained.
 - Development uses docker-compose with a named volume for convenience; production builds are fully ephemeral.

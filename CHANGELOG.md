@@ -7,13 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Versioning rules for flat-white:**
 
-- **Major (1.0.0):** Breaking changes to the NDJSON output schema (field removal, type change, rename)
+- **Major (1.0.0):** Breaking changes to the NDJSON output schema (field removal, type change, rename, semantic geography change)
 - **Minor (0.2.0):** New fields, new output formats, new states, additive changes
 - **Patch (0.1.1):** Bug fixes, performance improvements, internal refactors, documentation
 
-The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
+The NDJSON schema is the contract. See [the document schema](docs/DOCUMENT-SCHEMA.md).
+Data-release tags such as `v2026.08.1` are separate from semantic schema versions.
+Historical entries retain the contract and source versions published at the time.
 
 ## [Unreleased]
+
+### Documentation
+
+- Audit current guides for schema 1.0.0 and ASGS 2026; highlight affected guidance
+  and all six changed census fields. Link the expanded migration guide from the
+  README navigation and documentation index.
+- Add metadata checks, consumer upgrade/rollback steps, current release/cache
+  recovery guidance and a recorded ASGS decision. Label earlier plans, incidents
+  and performance measurements as historical.
+- Correct field nullability, geocode reliability meanings, source-column
+  provenance, unsupported Docker flags and overstated fixture coverage. Document
+  the existing GeoParquet CRS limitation separately from this migration.
+
+### Breaking changes
+
+- Schema **1.0.0** uses ASGS 2026 for mesh block, SA1–SA4 and GCCSA, retaining
+  the JSON field names/types. Release metadata includes `asgsYear: 2026`; S3
+  manifests and OpenSearch mapping metadata also identify the schema and geography.
+  Consumers must migrate geographic joins, rebuild derived indexes/aggregates,
+  and preserve geography vintage in historical comparisons. See
+  [the migration guide](docs/MIGRATING-TO-ASGS-2026.md).
+- Advance gnaf-loader to the `202608` line with the authority-cleanup fix
+  submitted in [upstream PR #103](https://github.com/minus34/gnaf-loader/pull/103).
+  Production workflow inputs require G-NAF and Admin Boundaries August 2026 or
+  newer. Invalidate older database caches and reject incompatible census schemas.
+
+### Fixed
+
+- Give quarterly setup draft visibility and reserve the exact release tag before
+  building. Reuse the built-in token when publishing after `main` advances;
+  reject missing or moved tags and keep publication checks on the built commit.
+- Preserve the supported manual-source provenance marker in mirror recovery,
+  and notify downstream repositories only after a release is public.
+- Add mirror-only recovery for an approved, published draft or a failed S3 mirror.
+  Check public asset digests and the original schema/mapping, rebuild the national
+  gzip without loading G-NAF, and share the normal publisher's immutable-manifest
+  and checksum gates. Expired workflow artifacts do not block recovery.
+- Pin the authority-cleanup repair and exercise the actual loader function plus
+  electoral preparation in seven small database tests inside the production image.
+  The original release's literal schema prefix skipped normalization, deduplication
+  and authority keys. See [pin provenance](docs/GNAF-LOADER-UPDATES.md#current-pin-and-upstream-repair).
+- Accept legacy and current Administrative Boundaries directory layouts; reject
+  incomplete extractions before replacing existing data. Require actual G-NAF
+  directories from the same release folder.
+- Retry transport errors and HTTP 408/429/5xx. Permanent download failures stop
+  immediately; recovered errors from earlier stages cannot trigger a retry of a
+  later permanent failure.
+- Validate every document in compressed release artifacts, reject misplaced state
+  records and invalid alternative geocodes, and handle damaged gzip streams cleanly.
+  Report all six census levels and compare coverage thresholds before rounding.
+- Correct the README's schema-validation command and generated release notes'
+  download instructions.
+- Discover quarterly releases weekly and skip already published/draft quarters;
+  add a metadata-only `preflight_only` workflow mode.
+- Validate production quarters consistently in the workflow, Docker entrypoint
+  and local build, before downloads or database startup. Cached builds cannot
+  bypass the minimum; the frozen fixture remains exempt.
+- Freeze both source quarters in Mini Quarterly and include both in its cache
+  identity, so a newer boundary release cannot be loaded under an older cache key.
+- Apply GitHub's size limit to each release asset, stop on comparison-tool errors,
+  and publish at the exact build commit. Refuse to replace existing releases or
+  tags pointing elsewhere; remove the destructive release/tag deletion on rerun.
+- Enforce census coverage per state after loading/restoring and in both output
+  verifiers. A single matching address cannot certify an incomplete census load;
+  the default 99% floor still permits isolated null assignments.
 
 ## [v2026.05] - 2026-05-18
 
@@ -34,7 +101,6 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
   - VIC: 3953704
   - WA: 1530620
 
-
 ## [v2026.02.7] - 2026-04-11
 
 ### Release
@@ -53,7 +119,6 @@ The NDJSON schema is the contract. See `docs/DOCUMENT-SCHEMA.md`.
   - TAS: 346248
   - VIC: 3940659
   - WA: 1526407
-
 
 ## [v2026.02.6] - 2026-04-11
 

@@ -1,122 +1,128 @@
-# Fixtures — flat-white
+# Work with the fixtures
 
-## Overview
+The fixture gives contributors a small, repeatable build without downloading the
+national dataset. It contains **451 principal VIC addresses** from the February
+2026 G-NAF snapshot, plus the related data needed by the flatten query.
 
-This directory contains committed test data for fixture-first development. The fixture is a self-consistent subset of the full VIC G-NAF + Administrative Boundaries dataset — 451 addresses covering all edge case categories.
+> **Schema 1.0.0 change:** the address snapshot stays at `2026.02`. A separate
+> synthetic census overlay exercises ASGS 2026. Its codes and names are test data,
+> not real 2026 assignments for these addresses. Read the
+> [migration guide](../docs/MIGRATING-TO-ASGS-2026.md#if-you-contribute-code).
 
-**Load time:** <30 seconds on commodity hardware (no gnaf-loader, no download required).
+## Run the fixture build
 
-## Files
-
-| File                | Purpose                                                        |
-| ------------------- | -------------------------------------------------------------- |
-| `seed-postgres.sql` | Schema DDL + fixture data. Load into fresh Postgres + PostGIS. |
-| `edge-cases.md`     | Catalogue of edge case categories with specific PIDs.          |
-| `README.md`         | This file.                                                     |
-
-## How to load
+With Node.js 22.22.1 or newer, Docker and Compose available:
 
 ```bash
-# Requires: Docker running, Postgres + PostGIS via docker-compose
-docker compose up -d db
-docker compose exec db psql -U postgres -d gnaf -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-docker compose exec -T db psql -U postgres -d gnaf -f /fixtures/seed-postgres.sql
+npm ci
+./scripts/build-fixture-only.sh
 ```
 
-## Source data
+Leave `GNAF_VERSION` unset. The committed schemas use the suffix `202602`; setting
+a production quarter does not rename the seed. The script writes
+`output/fixture.ndjson` and checks it against the committed baseline.
 
-| Field               | Value                               |
-| ------------------- | ----------------------------------- |
-| G-NAF version       | February 2026                       |
-| Datum               | GDA2020 (SRID 7844)                 |
-| gnaf-loader version | Submodule commit at generation time |
-| Geoscape version    | 202602                              |
-| State               | VIC only                            |
-| Address count       | 451                                 |
+Loading `seed-postgres.sql` alone is incomplete. The fixture script also prepares
+administrative boundaries, executes the census overlay/preparation, derives spatial
+assignments, runs both flatten paths and verifies the output.
 
-## Schema (gnaf-loader output)
+## Files and their roles
 
-The fixture captures gnaf-loader's exact output schema. Key tables:
+| File                                                       | Purpose                                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [seed-postgres.sql](seed-postgres.sql)                     | Frozen February address snapshot, related raw/processed tables and historical census data. |
+| [seed-admin-bdys.sql](seed-admin-bdys.sql)                 | Small synthetic administrative polygons around fixture points.                             |
+| [prep-admin-bdys.sql](prep-admin-bdys.sql)                 | Administrative raw-to-prepared transformation for the fixture.                             |
+| [seed-census-2026.sql](seed-census-2026.sql)               | Synthetic raw 2026 mesh blocks and address mesh-block assignments.                         |
+| [expected-output.ndjson](expected-output.ndjson)           | Complete schema 1.0.0 regression baseline: 451 documents.                                  |
+| [expected-output-sample.json](expected-output-sample.json) | Readable sample document with synthetic census values.                                     |
+| [schema-baseline.json](schema-baseline.json)               | Machine-readable schema compatibility baseline.                                            |
+| [SCHEMA-REFERENCE.md](SCHEMA-REFERENCE.md)                 | Table and column reference. Read this before opening the large seed.                       |
+| [edge-cases.md](edge-cases.md)                             | Measured output coverage, example PIDs and known gaps.                                     |
 
-| Schema      | Table                              | Rows | Description                           |
-| ----------- | ---------------------------------- | ---- | ------------------------------------- |
-| gnaf_202602 | address_principals                 | 451  | Principal addresses                   |
-| gnaf_202602 | address_aliases                    | 75   | Alias addresses                       |
-| gnaf_202602 | address_alias_lookup               | 75   | Principal ↔ alias mapping             |
-| gnaf_202602 | address_secondary_lookup           | 1161 | Primary ↔ secondary mapping           |
-| gnaf_202602 | address_principal_admin_boundaries | 451  | Boundary tags (LGA, electorate, etc.) |
-| gnaf_202602 | localities                         | 267  | Localities with geocodes              |
-| gnaf_202602 | locality_aliases                   | 500  | Locality alternative names            |
-| gnaf_202602 | locality_neighbour_lookup          | 1709 | Locality neighbour relationships      |
-| gnaf_202602 | streets                            | 405  | Streets with geocodes                 |
-| gnaf_202602 | street_aliases                     | 32   | Street alternative names              |
+## Review generated output changes
 
-## Drift detection
+The full NDJSON baseline remains committed, visible in text diffs and tested byte
+for byte. Only two deliberate migration cases change. Read the
+[schema 1.0.0 change inventory](SCHEMA-1.0-CHANGES.md) for every changed field,
+snapshot hashes and commands to inspect all before/after values.
 
-This fixture detects schema drift:
+## What changed in the census fixture?
 
-- If gnaf-loader changes table names, column names, or column types → `seed-postgres.sql` fails to load → CI catches it.
-- If the flatten pipeline changes output → `expected-output.ndjson` (once committed) differs → regression test catches it.
-- To regenerate: `./scripts/extract-fixtures.sh` against a full VIC load.
+`seed-census-2026.sql` adds `mb_2026_code` to principal and alias address tables and
+creates 430 synthetic rows in `raw_admin_bdys_202602.aus_mb_2026`. The raw column
+names match the August 2026 source layout.
 
-## FK constraints
+[`extract-census-prep.mjs`](../scripts/extract-census-prep.mjs) extracts the mesh-block
+section of the pinned upstream `202608` census preparation SQL. Executing that SQL
+creates `admin_bdys_202602.abs_2026_mb`, including its hierarchy columns and geometry.
+The fixture therefore tests the upstream preparation contract rather than merely
+seeding the final lookup table.
 
-Two FK constraints are excluded because they reference rows outside the fixture subset:
+The 2021 tables remain in the base seed as historical data and regression decoys.
+Two cases deliberately differ: one changes its mesh-block code and hierarchy;
+the other keeps its mesh-block code but changes its hierarchy. Rejoining a 2021
+table changes these results and fails regression. The other 449 documents reuse
+historical census values as synthetic test inputs, preserving varied hierarchy
+values without unnecessary baseline changes. This reuse is only a fixture design;
+it does not convert real 2021 geography into 2026 geography.
 
-- `address_aliases_fk2` (alias street → streets): some aliases reference streets not in the fixture
-- `locality_neighbour_lookup_fk2` (neighbour → localities): some neighbours are localities not in the fixture
+All 451 addresses use the 2026 lookup and undergo complete byte-for-byte checks.
+Only census fields change; the frozen address data and other output fields remain
+identical. The [change inventory](SCHEMA-1.0-CHANGES.md) lists every changed value.
 
-All other constraints and indexes are present and enforced.
+## What stays frozen?
 
-## Raw tables (for flatten pipeline)
+| Property                                     | Value                       |
+| -------------------------------------------- | --------------------------- |
+| Address source quarter / document `_version` | `2026.02`                   |
+| Address state                                | VIC                         |
+| Principal addresses                          | 451                         |
+| Source datum                                 | GDA2020, SRID 7844          |
+| Current output contract                      | Schema 1.0.0                |
+| Census assignments used by tests             | Synthetic ASGS 2026 overlay |
 
-The fixture also includes raw G-NAF tables needed by the flatten pipeline for:
+Processed, raw G-NAF, prepared boundary and raw boundary schemas all use `202602`
+in their names. That suffix identifies the **address fixture snapshot**, not the
+census edition.
 
-- `allGeocodes[]` array: `raw_gnaf_202602.address_site_geocode` (828 rows — multiple geocode types per address)
-- `addressLabelSearch` field: `raw_gnaf_202602.flat_type_aut` (54 types), `level_type_aut` (16), `street_type_aut` (276), `street_suffix_aut` (19) for abbreviation expansion
-- `geocode.type` names: `raw_gnaf_202602.geocode_type_aut` (30 types)
-- Address detail: `raw_gnaf_202602.address_detail` (451 rows — flat_type_code, level_type_code, date fields)
+Related data includes 75 alias records, 267 localities, 405 streets and 828 raw
+site-geocode rows. A source row count is not the same as the number of output
+addresses exercising a case: some relationships point outside the selected
+principal-address subset. The [edge-case catalogue](edge-cases.md) reports actual
+output coverage instead of the original extraction targets.
 
-| Schema          | Table                   | Rows | Purpose                                              |
-| --------------- | ----------------------- | ---- | ---------------------------------------------------- |
-| raw_gnaf_202602 | address_detail          | 451  | Flat/level type codes, dates, address_site_pid link  |
-| raw_gnaf_202602 | address_site            | 451  | Links address_detail to geocodes                     |
-| raw_gnaf_202602 | address_site_geocode    | 828  | All geocode types per address (for allGeocodes[])    |
-| raw_gnaf_202602 | address_default_geocode | 451  | Default geocode per address                          |
-| raw_gnaf_202602 | flat_type_aut           | 54   | Flat type code → name (UNIT, APT, SHOP, etc.)        |
-| raw_gnaf_202602 | level_type_aut          | 16   | Level type code → name (LEVEL, FLOOR, etc.)          |
-| raw_gnaf_202602 | street_type_aut         | 276  | Street type code → name (AV→AVENUE, ST→STREET, etc.) |
-| raw_gnaf_202602 | street_suffix_aut       | 19   | Street suffix code → name                            |
-| raw_gnaf_202602 | geocode_type_aut        | 30   | Geocode type code → name (FCS, PC, PAP, etc.)        |
-| raw_gnaf_202602 | geocode_reliability_aut | 6    | Geocode reliability code → description               |
-| raw_gnaf_202602 | locality_class_aut      | 9    | Locality class code → name                           |
-| raw_gnaf_202602 | address_type_aut        | 3    | Address type code → name                             |
-| raw_gnaf_202602 | address_alias_type_aut  | 8    | Alias type code → name                               |
-| raw_gnaf_202602 | street_class_aut        | 2    | Street class code → name                             |
+Two foreign-key constraints are excluded from the base subset because their
+referenced rows lie outside it: `address_aliases_fk2` and
+`locality_neighbour_lookup_fk2`. Do not interpret this as a production schema change.
 
-## Schema versioning
+## What the checks prove
 
-The fixture uses versioned schema names from gnaf-loader:
+- Raw administrative data can be prepared and spatially joined to the fixture.
+- The pinned upstream census mesh-block preparation accepts the fixture layout.
+- The canonical and materialized SQL paths produce byte-identical output.
+- Output matches the committed regression baseline and passes schema, authority
+  value and administrative coverage checks.
 
-- `gnaf_202602` — processed output tables (Feb 2026 release)
-- `raw_gnaf_202602` — raw imported data
+The fixture does not execute the full loader or measure national-scale capacity.
+It also does not establish that synthetic boundary codes are real geographic facts.
+See [known coverage gaps](edge-cases.md#known-gaps).
 
-The flatten pipeline code must reference these schema names. When a new G-NAF quarterly release is loaded, gnaf-loader creates new versioned schemas (e.g., `gnaf_202605`). The fixture always uses the version it was generated from.
+## Make a deliberate fixture change
 
-## ABS statistical area lookup
+Keep the base address snapshot stable during ordinary development. Add a focused
+fixture or unit case for the behaviour being changed, run the fixture build and
+inspect the complete diff. Do not accept a regenerated baseline merely because a
+test failed. Output changes require the document contract, `src/schema.ts` and
+`expected-output.ndjson` to be reviewed together; breaking changes require a major
+schema version.
 
-The fixture includes a lightweight `admin_bdys_202602.abs_2021_mb` table (430 rows, no geometry) that maps mesh block codes to the full ABS statistical area hierarchy:
+The old `scripts/extract-fixtures.sh` is restricted to the original February 2026
+schema and loader. It is historical capture tooling, not a command to run against
+the current August loader. Replacing the address snapshot needs a separate,
+reviewed fixture migration. Never require a full G-NAF download for development tests.
 
-```
-address_principals.mb_2021_code → abs_2021_mb.mb21_code
-  → mb_cat (mesh block category: Residential, Commercial, etc.)
-  → sa1_21code
-  → sa2_21code, sa2_21name
-  → sa3_21code, sa3_21name
-  → sa4_21code, sa4_21name
-  → gcc_21code, gcc_21name (GCCSA: Greater Melbourne, Rest of Vic., etc.)
-```
-
-The fixture's `abs_2021_mb` matches the production table name created by gnaf-loader's `02-02d-prep-census-2021-bdys-tables.sql`, but only carries the columns the flatten SQL actually uses (no PostGIS polygon — committing real shapefile geometry would inflate the fixture by multiple megabytes). The flatten pipeline joins on `mb21_code` to populate the `boundaries.meshBlock`, `boundaries.sa1` through `boundaries.gccsa` output fields.
-
-A back-compat shim table `admin_bdys_202602.abs_2021_mb_lookup` is also created (same column data, no `gid`). It is not joined by any of our SQL — retained only for any external tooling that historically referenced the lookup name. ROADMAP ticket E1.22 tracks the eventual removal of the shim along with the `extract-fixtures.sh` repair.
+**Street-type trap:** `street_type_aut` reverses the usual authority convention:
+`code` is the long form and `name` the abbreviation. The processed
+`address_principals.street_type` already contains the long form. The flatten query
+must not join that authority table to expand it again.

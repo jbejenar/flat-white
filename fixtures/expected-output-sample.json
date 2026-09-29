@@ -72,25 +72,25 @@
       "name": "GOLDSTEIN"
     },
     "meshBlock": {
-      "code": "20192490000",
+      "code": "29900000083",
       "category": "Residential"
     },
-    "sa1": "20802117831",
+    "sa1": "29901000103",
     "sa2": {
-      "name": "Caulfield - South",
-      "code": "208021178"
+      "name": "Fixture 2026 SA2",
+      "code": "299010001"
     },
     "sa3": {
-      "name": "Glen Eira",
-      "code": "20802"
+      "name": "Fixture 2026 SA3",
+      "code": "29901"
     },
     "sa4": {
-      "name": "Melbourne - Inner South",
-      "code": "208"
+      "name": "Fixture 2026 SA4",
+      "code": "299"
     },
     "gccsa": {
-      "name": "Greater Melbourne",
-      "code": "2GMEL"
+      "name": "Fixture 2026 GCCSA",
+      "code": "2TEST"
     }
   },
   "aliases": [],

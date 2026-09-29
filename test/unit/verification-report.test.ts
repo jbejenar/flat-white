@@ -1,15 +1,13 @@
 /**
- * Unit tests for verification-report.ts — report formatting (P4.02).
- *
- * Note: verifyGzippedState() requires actual gzipped files — tested in integration.
- * These tests cover the report formatting logic.
+ * Report formatting, threshold parsing and verification of tiny gzip fixtures.
  */
 
 import { gzipSync } from "node:zlib";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
+import { AddressDocumentSchema } from "../../src/schema.js";
 import {
   formatVerificationReport,
   parseBoundaryThresholdsArg,
@@ -183,6 +181,12 @@ describe("parseBoundaryThresholdsArg", () => {
     });
   });
 
+  it("accepts the full census hierarchy", () => {
+    expect(parseBoundaryThresholdsArg("meshBlock=99,sa1=99,sa2=99,sa3=99,sa4=99,gccsa=98")).toEqual(
+      { meshBlock: 99, sa1: 99, sa2: 99, sa3: 99, sa4: 99, gccsa: 98 },
+    );
+  });
+
   it("rejects unknown fields", () => {
     expect(() => parseBoundaryThresholdsArg("lga=99,bogus=50")).toThrow(
       "Unknown boundary threshold field",
@@ -239,27 +243,21 @@ describe("verifyGzippedState empty-file safety", () => {
 
     expect(result.passed).toBe(false);
     const failedFields = result.coverageBelowThreshold.map((c) => c.field).sort();
-    expect(failedFields).toEqual(["lga", "sa1", "ward"]);
+    expect(failedFields).toEqual(["gccsa", "lga", "meshBlock", "sa1", "sa2", "sa3", "sa4", "ward"]);
     for (const c of result.coverageBelowThreshold) {
       expect(c.actual).toBe(0);
     }
   });
 
   it("a populated file still passes when thresholds are met", async () => {
+    const example = AddressDocumentSchema.parse(
+      JSON.parse(readFileSync("fixtures/expected-output-sample.json", "utf8")),
+    );
     const docs = Array.from({ length: 10 }, (_, i) => ({
+      ...example,
       _id: `GANSW${i}`,
       state: "NSW",
       postcode: "2000",
-      geocode: { latitude: -33.8, longitude: 151.2 },
-      boundaries: {
-        lga: { id: "1", name: "Sydney" },
-        ward: { id: "1", name: "W1" },
-        stateElectorate: { id: "1", name: "S1" },
-        commonwealthElectorate: { id: "1", name: "C1" },
-        meshBlock: { code: "1" },
-        sa1: { code: "1" },
-        sa2: { code: "1" },
-      },
     }));
     const path = writeGzipFixture(
       "populated.ndjson.gz",
@@ -270,8 +268,7 @@ describe("verifyGzippedState empty-file safety", () => {
     expect(result.rowCount).toBe(10);
     expect(result.boundaryCoverage.lga).toBe(100);
     expect(result.coverageBelowThreshold).toEqual([]);
-    // Note: passed may still be false due to schema validation against the
-    // partial doc fixture above; we only assert the threshold check itself.
+    expect(result.passed).toBe(true);
   });
 });
 

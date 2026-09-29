@@ -1,140 +1,97 @@
-# Self-Hosted Runner Setup — flat-white
+# Use a self-hosted build runner
 
-This guide covers setting up a self-hosted GitHub Actions runner for flat-white quarterly builds. Use this when free GitHub-hosted runners (7GB RAM, 2 cores) are insufficient — e.g., private repos without free runner access, or if future G-NAF releases grow beyond free runner capacity.
+> **Schema 1.0.0 change:** the ASGS 2026 migration invalidates old database
+> caches. Plan for a fresh source load. Earlier build timings and memory estimates
+> do not establish the capacity needed by the new sources.
 
-## Hardware Requirements
+Use a dedicated runner when hosted jobs repeatedly run out of memory, disk or
+time, or when you need controlled hardware for measurements. Start by identifying
+the failing stage in the [runbook](RUNBOOK.md); changing runners will not repair
+an incompatible archive or census schema.
 
-| Resource | Minimum | Recommended | Notes                                                                                     |
-| -------- | ------- | ----------- | ----------------------------------------------------------------------------------------- |
-| RAM      | 8 GB    | 16 GB       | NSW (largest state, ~4.6M addresses) peaks at ~5-6 GB. 16 GB provides comfortable margin. |
-| CPU      | 2 cores | 4 cores     | gnaf-loader spatial joins are CPU-bound. More cores reduce load time.                     |
-| Disk     | 30 GB   | 50 GB       | G-NAF download (~6.5 GB) + Admin Boundaries (~1.5 GB) + Postgres data + output.           |
-| Network  | 10 Mbps | 50+ Mbps    | Download step fetches ~8 GB from data.gov.au.                                             |
+## Size the machine for the work it will actually run
 
-### Software Prerequisites
+A state build needs room for downloaded archives, extracted data, Postgres, a
+possible database dump, uncompressed output and compressed artifacts. Plan for
+these to coexist. Measure the first ASGS 2026 cold build before relying on an old
+capacity estimate.
 
-- Docker Engine 24+ (with BuildKit)
-- GitHub Actions runner agent ([docs](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/adding-self-hosted-runners))
-- Git with submodule support
+One runner process accepts one job at a time. Installing several runners on one
+host makes jobs compete for the same memory and disk. The nine-state workflow
+can therefore run serially on one runner or concurrently across a pool. Size the
+pool and set concurrency deliberately; do not assume a nine-job matrix gives one
+machine nine independent resource budgets.
 
-## Runner Setup
+The [April performance baseline](PERFORMANCE.md) and
+[NSW memory analysis](NSW-MEMORY-ANALYSIS.md) are historical starting points. Record
+current machine costs separately; this guide does not promise a build price or
+completion time.
 
-### 1. Install the GitHub Actions Runner
+## Prepare and register the runner
 
-Follow the [official guide](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/adding-self-hosted-runners) to register a self-hosted runner with your fork/copy of the flat-white repository.
+1. Use a dedicated Linux host with Docker, Git, Python 3, `jq` and the GitHub CLI
+   available to the runner account. The workflow builds the Node/Python/Postgres
+   runtime inside Docker; other jobs also use setup actions for Node.
+2. In the repository's **Settings → Actions → Runners**, choose **New self-hosted
+   runner**. Follow GitHub's generated commands for the current runner version and
+   platform. Do not copy an old runner archive URL from a historical guide.
+3. Add a label such as `flat-white-build`. Confirm the account can use Docker and
+   the workspace has enough free disk. Keep registration tokens out of files
+   committed to the repository.
+4. Install the runner as a service if it must remain available for scheduled work.
+   Confirm its status in GitHub before dispatching a job.
 
-```bash
-# Download and configure (from your repo's Settings → Actions → Runners → New self-hosted runner)
-mkdir actions-runner && cd actions-runner
-curl -o actions-runner-linux-x64-2.321.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.321.0/actions-runner-linux-x64-2.321.0.tar.gz
-tar xzf ./actions-runner-linux-x64-2.321.0.tar.gz
+Keep this build host isolated from unrelated workloads. Repository jobs execute
+code on it, so its credentials and filesystem access should match that purpose.
 
-./config.sh --url https://github.com/YOUR_ORG/flat-white --token YOUR_TOKEN --labels flat-white,high-memory
-```
+## Test the setup before a production build
 
-### 2. Add Runner Labels
-
-Label your runner so the workflow can target it. The quarterly build workflow accepts a `runner` input:
-
-- `flat-white` — identifies this as a flat-white-capable runner
-- `high-memory` — optional, indicates >7 GB RAM available
-
-### 3. Start the Runner
-
-```bash
-# Run as a service (recommended for unattended operation)
-sudo ./svc.sh install
-sudo ./svc.sh start
-
-# Or run interactively for testing
-./run.sh
-```
-
-### 4. Verify Docker Access
-
-The runner user must have Docker access:
+First check the small fixture locally on the runner:
 
 ```bash
-# Add runner user to docker group
-sudo usermod -aG docker $(whoami)
-
-# Verify
-docker run --rm hello-world
+git submodule update --init --recursive
+npm ci
+./scripts/build-fixture-only.sh
 ```
 
-## Workflow Configuration
+These commands require Node.js 22.22.1 or newer and Docker Compose on the host.
+Leave `GNAF_VERSION` unset for the frozen fixture.
 
-The quarterly build workflow supports both free and self-hosted runners via the `runner` input parameter.
-
-### Manual Dispatch (self-hosted)
+Then dispatch a metadata-only workflow run to the runner label:
 
 ```bash
-# Trigger a build on your self-hosted runner
-gh workflow run quarterly-build.yml \
-  -f gnaf_version=2026.05 \
-  -f runner=self-hosted
-
-# Or target a specific label
-gh workflow run quarterly-build.yml \
-  -f gnaf_version=2026.05 \
-  -f runner=high-memory
+gh workflow run quarterly-build.yml --ref main \
+  -f runner=flat-white-build -f gnaf_version=2026.08 -f preflight_only=true
 ```
 
-### Manual Dispatch (free runners — default)
+A passing preflight verifies setup and discovery on that runner. It does not
+validate the production load, available capacity or S3 credentials.
+
+## Select the runner for production
+
+After reviewing the intended release and passing preflight, a production dispatch
+can use the same label:
 
 ```bash
-# Default: uses ubuntu-latest (free GitHub-hosted runners)
-gh workflow run quarterly-build.yml -f gnaf_version=2026.05
+gh workflow run quarterly-build.yml --ref main \
+  -f runner=flat-white-build -f gnaf_version=2026.08
 ```
 
-### Scheduled Runs
+This can publish data after verification; follow the [release procedure](RELEASING.md).
+The `runner` input applies to setup, state builds, concatenation and release jobs.
+The S3 job currently stays on `ubuntu-latest`.
 
-Scheduled (cron) runs always use `ubuntu-latest` (free runners). To use self-hosted runners for scheduled builds, fork the workflow and change the default `runner` value or use a separate cron-triggered workflow that dispatches with `runner=self-hosted`.
+Scheduled events have no dispatch inputs. To move scheduled builds, review the
+`inputs.runner || 'ubuntu-latest'` fallbacks in the workflow; changing only the
+manual input's default does not change the scheduled fallback.
 
-## Cost Estimates
+## Keep it reliable
 
-| Option                        | Cost             | Notes                                                                                         |
-| ----------------------------- | ---------------- | --------------------------------------------------------------------------------------------- |
-| GitHub free runners           | $0               | Public repos only. 7 GB RAM, 2 cores. ~24 min total (9 parallel jobs).                        |
-| Self-hosted (existing server) | $0 (electricity) | Reuse existing infrastructure. Runner agent is lightweight.                                   |
-| Self-hosted (cloud VM)        | ~$5-15/month     | Run on-demand for ~1 hour/quarter. e.g., AWS `m6i.xlarge` (16 GB, 4 cores) at ~$0.19/hr spot. |
-| GitHub larger runners         | $0.008/min       | 16 GB runner: ~$12/build. Only available for orgs/enterprise.                                 |
+Monitor peak memory and disk use by stage, alongside the commit, source versions,
+schema version, ASGS year and whether a cache was restored. Preserve logs and
+artifacts until verification and any recovery are complete.
 
-For most users, free runners are sufficient. The P4.07 memory tuning (shared_buffers=256MB, work_mem=64MB) keeps NSW builds within 7 GB.
-
-## Troubleshooting
-
-### Runner not picking up jobs
-
-- Verify runner is online: repo Settings → Actions → Runners
-- Check labels match the `runner` input value
-- Ensure runner service is running: `sudo ./svc.sh status`
-
-### Docker permission denied
-
-```bash
-sudo usermod -aG docker $USER
-# Log out and back in, or:
-newgrp docker
-```
-
-### OOM kills on self-hosted runner
-
-If you see exit code 137 despite having >7 GB RAM:
-
-- Check Docker memory limits: `docker info | grep Memory`
-- Ensure no Docker `--memory` flag is restricting container RAM
-- The PostgreSQL tuning in `docker-entrypoint.sh` assumes 7 GB total; on larger machines it still works but doesn't exploit extra memory. Adjust `shared_buffers` and `effective_cache_size` in the entrypoint for larger machines.
-
-### Disk space issues
-
-```bash
-# Check available space
-df -h
-
-# Clean Docker artifacts
-docker system prune -f
-docker volume prune -f
-```
-
-The build needs ~30 GB free: ~8 GB for downloads, ~15 GB for Postgres data, ~5 GB for output files. Space is reclaimed when the container exits.
+Clean up completed task artifacts and obsolete caches deliberately. Avoid broad
+Docker volume cleanup on a host shared with other work. A cache may speed up a
+build, but the pipeline must still validate it and be able to rebuild from source.
+See [cache recovery](RUNBOOK.md#load-or-cache-validation-failed).

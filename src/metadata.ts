@@ -8,10 +8,12 @@
 import { createReadStream } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import { ASGS_YEAR } from "./schema.js";
 
 export interface BuildMetadata {
   version: string;
   schemaVersion: string;
+  asgsYear: number;
   buildTimestamp: string;
   gnafLoaderVersion: string;
   states: Record<string, number>;
@@ -74,6 +76,7 @@ export async function generateMetadata(options: MetadataOptions): Promise<BuildM
   return {
     version,
     schemaVersion,
+    asgsYear: ASGS_YEAR,
     buildTimestamp: new Date().toISOString(),
     gnafLoaderVersion,
     states,

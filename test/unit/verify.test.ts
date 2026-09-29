@@ -46,6 +46,9 @@ function makeDoc(overrides: Record<string, unknown> = {}): Record<string, unknow
       meshBlock: { code: "123", category: "Residential" },
       sa1: "12345",
       sa2: { code: "123", name: "Test" },
+      sa3: { code: "123", name: "Test" },
+      sa4: { code: "123", name: "Test" },
+      gccsa: { code: "123", name: "Test" },
     },
     ...overrides,
   };
@@ -190,6 +193,9 @@ describe("verify", () => {
         meshBlock: null,
         sa1: null,
         sa2: null,
+        sa3: null,
+        sa4: null,
+        gccsa: null,
       },
     });
     const path = tmpFile("coverage.ndjson");
@@ -410,6 +416,9 @@ describe("boundary coverage thresholds", () => {
                 meshBlock: { code: "123", category: "Residential" },
                 sa1: "12345",
                 sa2: { code: "123", name: "Test" },
+                sa3: { code: "123", name: "Test" },
+                sa4: { code: "123", name: "Test" },
+                gccsa: { code: "123", name: "Test" },
               }
             : {
                 lga: null,
@@ -419,6 +428,9 @@ describe("boundary coverage thresholds", () => {
                 meshBlock: null,
                 sa1: null,
                 sa2: null,
+                sa3: null,
+                sa4: null,
+                gccsa: null,
               },
       }),
     );
@@ -464,6 +476,9 @@ describe("boundary coverage thresholds", () => {
           meshBlock: null,
           sa1: null,
           sa2: null,
+          sa3: null,
+          sa4: null,
+          gccsa: null,
         },
       }),
     );
@@ -489,6 +504,9 @@ describe("boundary coverage thresholds", () => {
           meshBlock: { code: "123", category: "Residential" },
           sa1: "12345",
           sa2: { code: "123", name: "Test" },
+          sa3: { code: "123", name: "Test" },
+          sa4: { code: "123", name: "Test" },
+          gccsa: { code: "123", name: "Test" },
         },
       }),
     );
@@ -518,6 +536,9 @@ describe("boundary coverage thresholds", () => {
           meshBlock: null,
           sa1: null,
           sa2: null,
+          sa3: null,
+          sa4: null,
+          gccsa: null,
         },
       }),
     );
@@ -651,7 +672,13 @@ describe("verify per-record state bucketing (multi-state correctness)", () => {
     state: string,
     boundaries: Record<string, unknown>,
   ): Record<string, unknown> {
-    return makeDoc({ _id: id, state, boundaries });
+    const doc = makeDoc({ _id: id, state });
+    // These cases vary administrative coverage; census stays populated unless
+    // a case explicitly overrides it.
+    return {
+      ...doc,
+      boundaries: { ...(doc.boundaries as Record<string, unknown>), ...boundaries },
+    };
   }
 
   it("ACT no-LGA + QLD with-LGA: both states pass with their own thresholds", () => {
@@ -1082,6 +1109,9 @@ describe("formatReport", () => {
           meshBlock: null,
           sa1: null,
           sa2: null,
+          sa3: null,
+          sa4: null,
+          gccsa: null,
         },
       }),
     );

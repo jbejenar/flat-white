@@ -1,16 +1,26 @@
 # DEC-003 — Submodule, Not Fork
 
+> **Schema 1.0.0 change — current clarification.**
+> The migration uses the `202608` release plus the authority-cleanup contribution
+> in [upstream PR #103](https://github.com/minus34/gnaf-loader/pull/103). Its exact
+> commit is temporarily pinned through the existing fork while upstream reviews
+> it. The updater resolves upstream release tags and checks ancestry. Review
+> raw/prepared census compatibility as described in [loader updates](../GNAF-LOADER-UPDATES.md).
+
 ## Status
 
 Accepted
 
 ## Context
 
-flat-white depends on `minus34/gnaf-loader` to load G-NAF data into Postgres and perform spatial boundary joins. gnaf-loader has 922 commits and 10 years of maintenance covering every G-NAF edge case. We need to integrate it without taking on maintenance burden.
+flat-white depends on `minus34/gnaf-loader` to load G-NAF data into Postgres and perform spatial boundary joins. gnaf-loader contains years of G-NAF loading and compatibility work. We need to integrate it without taking on maintenance burden.
 
 ## Decision
 
-Pin gnaf-loader as a Git submodule at a specific release tag. Never modify it in-repo. If a change is needed, contribute it upstream via PR to `minus34/gnaf-loader`.
+Pin gnaf-loader as a Git submodule at a specific release or a documented commit
+carrying a submitted upstream fix. Never modify it in-repo. If a change is needed,
+contribute it upstream via PR to `minus34/gnaf-loader`. Replace temporary fix pins
+with an upstream version containing the repair once it passes compatibility checks.
 
 ## Alternatives Considered
 
@@ -21,7 +31,7 @@ Pin gnaf-loader as a Git submodule at a specific release tag. Never modify it in
 
 ## Consequences
 
-- Submodule pin is updated via `git submodule update` when upstream releases a new version.
-- Automated tracking (P4.05) detects new releases and opens a PR to update the pin.
+- A reviewed PR advances the committed submodule pin. `git submodule update --init --recursive` checks out that committed pin; it does not choose the latest upstream release.
+- Automated tracking detects new upstream releases and can open a draft pin-update PR for compatibility review.
 - flat-white's `src/load.ts` wraps gnaf-loader invocation — it does not import or modify gnaf-loader code.
 - Contributors must use `git clone --recurse-submodules` to get gnaf-loader.

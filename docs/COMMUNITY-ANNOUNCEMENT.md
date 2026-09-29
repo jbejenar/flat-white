@@ -1,52 +1,58 @@
-# Community Announcement Plan
+# Community announcement draft
 
-Target: first quarterly release (`v2026.04` shipped — announcement pending).
+> **Schema 1.0.0 change:** this draft announces the move to ASGS 2026. Use it only
+> after verifying an actual published release's metadata and download links.
+> Documentation on a branch is not evidence that the new data is available.
 
-## Channels
+## Before using this draft
 
-| Channel                                                                | Audience                                         | Format                                                      | Timing                              |
-| ---------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------- | ----------------------------------- |
-| [FOSS4G-Oceania](https://foss4g-oceania.org/) mailing list / Slack     | GIS developers, open-source geospatial community | Short announcement + link to release                        | Within 1 week of first release      |
-| [OSGeo mailing list](https://lists.osgeo.org/mailman/listinfo/discuss) | Open geospatial community                        | Email announcement                                          | Within 1 week of first release      |
-| [data.gov.au](https://data.gov.au/) derivative dataset listing         | Government data consumers                        | Dataset listing referencing source G-NAF + Admin Boundaries | Submit after first verified release |
-| [GovHack](https://govhack.org/) Slack / forums                         | Civic tech community, hackathon participants     | Discussion post with use case examples                      | Before next GovHack event           |
-| GitHub Discussions / Issues                                            | Developers, data engineers                       | Release announcement pinned to repo                         | Same day as release                 |
-| Reddit r/australia, r/datascience                                      | General Australian tech community                | Post with Quick Start examples                              | Within 1 week of first release      |
+Choose the published release tag and link it in the message. Check its
+`schemaVersion`, `asgsYear`, source versions and counts. Link the
+[migration guide](MIGRATING-TO-ASGS-2026.md) prominently so existing users see the
+breaking change before upgrading. Follow the destination community's current
+posting rules. This file records suggested wording; it does not send an announcement.
 
-## Draft Messaging
+## Short message
 
-### Short (social / forums)
-
-> flat-white: Australia's 15.9M addresses, pre-joined with LGA, electorate, ABS boundaries. One flat NDJSON file per state. Free. Quarterly. Zero vendor lock-in.
+> flat-white turns Australian G-NAF addresses into downloadable NDJSON, with one
+> document per principal address and files for each state and territory.
 >
-> Download and query in 60 seconds:
-> `gh release download latest --pattern '*-vic.ndjson.gz'`
+> Schema 1.0.0 moves mesh block, SA1–SA4 and GCCSA to ASGS 2026. The JSON fields keep
+> their shape, but geographic joins, saved filters and historical comparisons may
+> need changes. Check the release metadata before importing.
 >
-> GitHub: github.com/jbejenar/flat-white
+> [Get started](https://github.com/jbejenar/flat-white#quick-start) ·
+> [Migration guide](https://github.com/jbejenar/flat-white/blob/main/docs/MIGRATING-TO-ASGS-2026.md)
 
-### Long (mailing lists)
+## Longer message
 
-> **flat-white** transforms Australia's G-NAF and Administrative Boundaries datasets into pre-joined, boundary-enriched NDJSON files — one document per address with full geocode, locality context, and all administrative boundaries (LGA, state/commonwealth electorate, mesh block, SA1-SA4, GCCSA).
+> flat-white combines G-NAF addresses with administrative and census geography,
+> then publishes per-state compressed NDJSON. Each document includes address
+> components, available geocodes, locality details and boundary assignments. You
+> can use the files for search, bulk imports or analysis without rebuilding the
+> source database joins.
 >
-> **Why?** G-NAF is powerful but requires Postgres, PostGIS, and gnaf-loader to join 15+ relational tables with spatial boundary data. flat-white runs that pipeline quarterly on free GitHub Actions runners and publishes the result as downloadable per-state `.ndjson.gz` files on GitHub Releases.
+> The new schema 1.0.0 contract uses ASGS 2026 for mesh block, SA1–SA4 and GCCSA.
+> This is a breaking change in meaning even though the JSON field names and types
+> remain the same. Consumers should update geographic reference data and rebuild
+> affected indexes and aggregates. It does not add Census statistical results.
 >
-> **Who is this for?**
+> The migration guide explains metadata checks, geographic correspondences,
+> validation and rollback. Older releases retain their original geography.
+> The README shows how to select one release and download its metadata before
+> downloading addresses.
 >
-> - Anyone who needs Australian address data without a commercial licence
-> - Data scientists who want geocoded, boundary-enriched addresses ready for analysis
-> - Government teams tired of separate vendor contracts for the same public data
-> - Developers building address validation or geocoding services
->
-> **Quick start:** download a state file and query with DuckDB or jq in under 60 seconds. See the README for examples.
+> [README](https://github.com/jbejenar/flat-white) ·
+> [Migration guide](https://github.com/jbejenar/flat-white/blob/main/docs/MIGRATING-TO-ASGS-2026.md)
 
-## data.gov.au Listing
+## Possible audiences
 
-Submit as a derivative dataset referencing:
+GIS and open-data communities, civic-tech groups, and developers maintaining
+address search or data pipelines may find the release useful. Tailor the message
+to the audience and include the actual release link; avoid promising a fixed
+import time or copying old national address counts.
 
-- Source: [G-NAF](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf) (CC BY 4.0)
-- Source: [Administrative Boundaries](https://data.gov.au/data/dataset/geoscape-administrative-boundaries) (CC BY 4.0)
-- Format: NDJSON (gzipped, per-state)
-- Update frequency: Quarterly (aligned with G-NAF releases)
-- Licence: Apache 2.0 (code), CC BY 4.0 (derived data)
-
-Submission requires a data.gov.au account. Submit via the "Suggest a Dataset" flow or contact the data.gov.au team directly.
+For a derivative-dataset listing, identify both upstream datasets, the selected
+source quarters, output format, schema version and ASGS year. Preserve the
+[source attribution and licensing](../README.md#data-sources-and-attribution).
+The Apache 2.0 code licence does not replace the source data's terms.

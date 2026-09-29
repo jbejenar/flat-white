@@ -1,93 +1,70 @@
-# Edge Cases — flat-white Fixtures
+# Fixture edge cases
 
-This document catalogues the edge case categories covered by the fixture data in `seed-postgres.sql`. Each category includes selection criteria and minimum counts.
+> **Schema 1.0.0 change:** the fixture includes a synthetic ASGS 2026 census
+> hierarchy and retains 2021 tables as regression decoys. See the
+> [fixture guide](README.md) for the distinction between real address data and
+> synthetic geographic assignments.
 
-## Categories
+The table below counts the **committed output**, not extraction goals. It was
+checked against all 451 documents in `expected-output.ndjson` for schema 1.0.0.
+Categories overlap, so counts must not be added together. Each PID is a concrete
+example that can be found in the baseline.
 
-### 1. Standard addresses (100+)
+## Covered cases
 
-- **Criteria:** VIC addresses with no flat, no level, no primary/secondary relationship
-- **Purpose:** Baseline — simple house-on-a-street addresses across diverse postcodes
-- **Selection:** Deterministic pseudo-random (ORDER BY md5(gnaf_pid))
+| Case                              | Documents | Example PID      | What is exercised                                                          |
+| --------------------------------- | --------- | ---------------- | -------------------------------------------------------------------------- |
+| Simple addresses                  | 197       | `GAVIC411670057` | No flat, level or primary/secondary classification.                        |
+| Units or flats                    | 185       | `GAVIC411087566` | Flat number present; tests type and number composition.                    |
+| Levels                            | 52        | `GAVIC423623835` | Level number present.                                                      |
+| Melbourne 3000                    | 28        | `GAVIC412717346` | One side of the dual-postcode locality case.                               |
+| Melbourne 3004                    | 25        | `GAVIC411803305` | The same locality name with a different postcode.                          |
+| Address aliases                   | 74        | `GAVIC411809712` | Non-empty aliases array.                                                   |
+| Secondary addresses               | 193       | `GAVIC411087566` | Child-address classification.                                              |
+| Parent with exported children     | 1         | `GAVIC423911067` | Primary classification and a non-empty secondaries array.                  |
+| Multiple geocodes                 | 408       | `GAVIC411087566` | At least two exported geocodes; tests aggregation and best-code selection. |
+| Ward assignment                   | 449       | `GAVIC411087566` | Non-null ward after administrative spatial processing.                     |
+| Lot without street number         | 30        | `GAVIC411935231` | Lot present and numberFirst null.                                          |
+| Building name                     | 33        | `GAVIC411670057` | Named building.                                                            |
+| 2026 census hierarchy             | 451       | `GAVIC411087566` | All six census fields populated by the synthetic 2026 lookup.              |
+| Changed census code and hierarchy | 1         | `GAVIC411087566` | A new mesh-block code and hierarchy must come from the 2026 source.        |
+| Reassigned census hierarchy       | 1         | `GAVIC411441273` | The mesh-block code is retained, but SA1–SA4 and GCCSA change.             |
 
-### 2. Units / flats (80+)
+The two migration cases deliberately differ from the old 2021 lookup. This catches
+an accidental return to the old join even though both tables exist in the fixture.
+The other census values are reused as synthetic test data, not real 2026 assignments.
+Administrative fields are derived from small synthetic polygons, rather than
+accepted as precomputed tags.
 
-- **Criteria:** `flat_number IS NOT NULL`
-- **Purpose:** Test flat type expansion (UNIT, APT, SHOP, etc.) and secondary address handling
-- **Examples:** "UNIT 704, 57 BAY STREET, PORT MELBOURNE VIC 3207"
+## Known gaps
 
-### 3. Levels (50+)
+- **Three or more geocodes:** no committed output document has three geocodes.
+  The fixture covers two-geocode addresses. Older documentation's “50+ with 3+”
+  was an extraction target, not achieved output coverage.
+- **Non-gazetted localities:** no committed address document has a locality class
+  other than `GAZETTED LOCALITY`. Authority-table rows alone do not exercise this path.
+- **Broad parent/child coverage:** only one exported parent has exported children.
+  There are more lookup rows, but many reference addresses outside the principal subset.
+- **Retired addresses:** the frozen exported fixture does not exercise retired
+  address exclusion. It cannot establish what every later source release contains.
+- **Other states and national scale:** the base addresses are VIC only. Separate
+  integration tests exercise state-dependent boundary validation, but the fixture
+  is not a full load of every state's addresses.
 
-- **Criteria:** `level_number IS NOT NULL`
-- **Purpose:** Test level type expansion (LEVEL, FLOOR, etc.)
-- **Examples:** Multi-storey commercial buildings, high-rises
+These are gaps in the committed end-to-end output fixture, not a claim that no
+unit test covers related behaviour. When changing one of these paths, add a small,
+focused case and verify its result. Do not download the full dataset merely to
+satisfy an old selection target.
 
-### 4. Melbourne CBD dual-postcode — 3000 (25+)
+## Reproduce a count
 
-- **Criteria:** `locality_name = 'MELBOURNE' AND postcode = '3000'`
-- **Purpose:** Melbourne has two postcodes (3000 for street addresses, 3004 for GPO). gnaf-loader splits the locality boundary. Tests this edge case.
-
-### 5. Melbourne CBD dual-postcode — 3004 (25+)
-
-- **Criteria:** `locality_name = 'MELBOURNE' AND postcode = '3004'`
-- **Purpose:** The other half of the Melbourne dual-postcode split.
-
-### 6. Addresses with aliases (50+)
-
-- **Criteria:** Address has entry in `address_alias_lookup` table
-- **Purpose:** Test alias aggregation — addresses with alternative names (synonyms, historical)
-- **Verification:** Check `address_alias_lookup.principal_pid` matches, `address_aliases` rows present
-
-### 7. Secondary addresses (60+)
-
-- **Criteria:** `primary_secondary = 'S'`
-- **Purpose:** Child addresses (units within a building) — test secondary aggregation on parent
-- **Verification:** Each secondary's primary exists in `address_secondary_lookup`
-
-### 8. Primary addresses with secondaries (60+)
-
-- **Criteria:** `primary_secondary = 'P'`
-- **Purpose:** Parent addresses — test that `secondaries[]` array is populated correctly
-- **Verification:** Each primary has entries in `address_secondary_lookup`
-
-### 9. Multi-geocode addresses (50+)
-
-- **Criteria:** Address has 3+ geocode types in `raw_gnaf.address_site_geocode`
-- **Purpose:** Test `allGeocodes[]` array aggregation and primary geocode selection
-- **Note:** Multi-geocode data is in raw tables, not yet in fixture (requires raw PSV subset — Tier 2)
-
-### 10. Non-gazetted localities (20+)
-
-- **Criteria:** `locality_class != 'GAZETTED LOCALITY'` (TOPOGRAPHIC LOCALITY, INDIGENOUS LOCATION, UNOFFICIAL SUBURB)
-- **Purpose:** Edge case locality types that may have different boundary or naming characteristics
-
-### 11. Ward-tagged addresses (30+)
-
-- **Criteria:** `address_principal_admin_boundaries.ward_name IS NOT NULL`
-- **Purpose:** Not all LGAs have wards — these test the ward boundary enrichment path
-
-### 12. Lot number addresses (30+)
-
-- **Criteria:** `lot_number IS NOT NULL AND number_first IS NULL`
-- **Purpose:** Rural-style addresses without street numbers — "LOT 5 SMITH ROAD"
-
-### 13. Building name addresses (30+)
-
-- **Criteria:** `building_name IS NOT NULL`
-- **Purpose:** Named buildings — "CHADSTONE SHOPPING CENTRE 1341 DANDENONG RD"
-
-## Missing categories
-
-The following categories from the ROADMAP are not represented in this fixture because the Feb 2026 VIC data doesn't contain them:
-
-- **Retired addresses** — `date_retired IS NOT NULL` returns 0 rows in VIC Feb 2026. The dataset appears to have been cleaned of retired records. If future releases include retired addresses, re-extract with `scripts/extract-fixtures.sh`.
-
-## Regeneration
-
-To regenerate fixtures from a full VIC load:
+For example, count addresses with at least two exported geocodes:
 
 ```bash
-./scripts/extract-fixtures.sh
+jq -s '[.[] | select(.allGeocodes | length >= 2)] | length' fixtures/expected-output.ndjson
 ```
 
-This requires a running Postgres with a full VIC gnaf-loader load. See ROADMAP ticket P0.07.
+This command is for the small committed fixture. Use streaming checks for
+production files. The [schema reference](SCHEMA-REFERENCE.md) describes source
+rows and columns; the [fixture guide](README.md#make-a-deliberate-fixture-change)
+explains how to change or replace the snapshot safely.

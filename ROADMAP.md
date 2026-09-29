@@ -1,5 +1,16 @@
 # flat-white
 
+> **Historical plan and ticket log.** The roadmap's own version number below is
+> a planning-document revision, not the NDJSON schema version. Its estimates,
+> sample output, proposed flags and workflow snippets record the earlier design.
+> For current work use [NEXT-WORK.md](NEXT-WORK.md) and the [documentation index](docs/README.md).
+>
+> **Schema 1.0.0 change:** current census fields use ASGS 2026 and the 2026
+> mesh-block lookup; source inputs require August 2026 or newer. Weekly discovery
+> replaces the old fixed quarterly day. The fixture keeps February addresses with
+> a synthetic 2026 census overlay. See the [migration guide](docs/MIGRATING-TO-ASGS-2026.md).
+> Historical 2021 references in completed tickets are preserved as evidence.
+
 ### Australian addresses. Flattened and served.
 
 > Last updated: 2026-04-09 · Roadmap version: 1.3.0
@@ -66,7 +77,7 @@ flat-white/
 │       ├── quarterly-build.yml       # Matrix build → GitHub Release + S3
 │       └── notify-downstream.yml     # Post-release: repository_dispatch
 │
-├── gnaf-loader/                      # Git submodule → minus34/gnaf-loader @ pinned release
+├── gnaf-loader/                      # Git submodule → minus34/gnaf-loader @ pinned commit
 │
 ├── src/
 │   ├── build.ts                      # Orchestrator: download → load → flatten → output
@@ -133,7 +144,7 @@ flat-white/
 
 Every line in the NDJSON is one address document. This schema IS the contract. Breaking changes require a major version bump.
 
-> **Note:** This schema example is illustrative. The authoritative contract is `docs/DOCUMENT-SCHEMA.md` once published (P0.11).
+> **Historical example:** this pre-1.0 proposal does not define the current contract. Use [DOCUMENT-SCHEMA.md](docs/DOCUMENT-SCHEMA.md), especially its ASGS 2026 boundary meanings and nullability.
 
 ```json
 {
@@ -231,6 +242,8 @@ Every line in the NDJSON is one address document. This schema IS the contract. B
 
 ## CLI Interface
 
+> Historical proposal. Current supported commands are in the [README](README.md#build-it-yourself).
+
 ```bash
 # Full build — all states, split per state, compressed
 docker run -v $(pwd)/output:/output flat-white \
@@ -276,6 +289,8 @@ docker run -v $(pwd)/output:/output flat-white \
 ---
 
 ## GitHub Actions Matrix Build Strategy
+
+> Historical workflow sketch. Use the current [release procedure](docs/RELEASING.md); discovery now runs weekly and source compatibility is checked before building.
 
 Each state builds in parallel on a free runner. No paid infrastructure. Zero cost.
 
@@ -376,6 +391,8 @@ jobs:
 ---
 
 ## GitHub Release Format
+
+> Historical illustration, including its version labels and size estimates. Current metadata distinguishes release, G-NAF, administrative source, schema and ASGS versions; see [version metadata](docs/DOCUMENT-SCHEMA.md#version-metadata).
 
 ```
 flat-white v2026.02
@@ -493,7 +510,7 @@ flat-white is a greenfield project with a partial scaffold already committed (RE
 - [x] Repository contains full directory structure matching the Repo Structure section of this roadmap
   - `Verify:` `ls -R` matches planned structure (empty directories with `.gitkeep` where no files exist yet)
   - `Evidence:` PR #2 — src/, test/, scripts/, docs/, fixtures/, .github/workflows/ all created
-- [x] `git clone --recurse-submodules` pulls gnaf-loader at a pinned release tag
+- [x] `git clone --recurse-submodules` pulls gnaf-loader at a pinned commit
   - `Verify:` `git submodule status gnaf-loader` shows pinned commit hash
   - `Evidence:` gnaf-loader submodule at commit 65328e8 (202602-5 variant)
 - [x] `docker-compose.yml` defines Postgres 16 + PostGIS 3.5 service
@@ -4770,16 +4787,16 @@ As a downstream consumer of flat-white NDJSON, I need `geocode.type` and `allGeo
 
 Today the two geocode type fields are inconsistent — verified by inspection of the released v2026.04 ACT file:
 
-```json
+```jsonc
 {
   "geocode": {
     "type": "FRONTAGE CENTRE SETBACK", // ← long form (from geocode_type_aut.name)
-    "reliability": 2
+    "reliability": 2,
   },
   "allGeocodes": [
     { "type": "FRONTAGE CENTRE SETBACK", "reliability": 2 }, // ← now long form (fixed in E1.16, PR #70)
-    { "type": "PROPERTY CENTROID", "reliability": 2 }
-  ]
+    { "type": "PROPERTY CENTROID", "reliability": 2 },
+  ],
 }
 ```
 

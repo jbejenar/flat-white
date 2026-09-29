@@ -13,426 +13,243 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a>&ensp;&bull;&ensp;
-  <a href="#whats-in-a-document">Schema</a>&ensp;&bull;&ensp;
-  <a href="#use-cases">Use Cases</a>&ensp;&bull;&ensp;
-  <a href="#how-it-works">How It Works</a>&ensp;&bull;&ensp;
+  <a href="#quick-start">Quick start</a>&ensp;&bull;&ensp;
+  <a href="docs/MIGRATING-TO-ASGS-2026.md">Migrate to schema 1.0.0</a>&ensp;&bull;&ensp;
+  <a href="docs/DOCUMENT-SCHEMA.md">Document schema</a>&ensp;&bull;&ensp;
   <a href="#build-it-yourself">Build</a>&ensp;&bull;&ensp;
-  <a href="ROADMAP.md">Roadmap</a>
+  <a href="docs/README.md">Documentation</a>
 </p>
-
----
 
 ## What is this?
 
-flat-white takes Australia's two canonical government datasets — [G-NAF](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf) (every physical address) and [Administrative Boundaries](https://data.gov.au/data/dataset/geoscape-administrative-boundaries) (LGA, electoral, ABS) — and joins them into a **single flat file** of one-document-per-address NDJSON.
+flat-white turns Australian G-NAF address data into **one JSON document per
+principal address**. Each document brings together address text, geocodes,
+locality details, aliases and administrative and census boundaries. Download a
+state, read one line at a time, and use the data without recreating the source
+joins.
 
-Every document contains the full address, multiple geocode types, locality context with neighbours and aliases, and all boundary enrichment (LGA, ward, state electorate, commonwealth electorate, mesh block, SA1-SA4, GCCSA). No joins. No database. Just download and search.
+It suits address search, bulk imports and geographic analysis. NDJSON is the
+published download format; the code also provides Parquet and GeoParquet
+converters for local use.
 
----
+> **Schema 1.0.0 change:** mesh block, SA1–SA4 and GCCSA now use **ASGS 2026**.
+> Their JSON shapes are unchanged, but their geographic meanings can differ.
+> Read the [migration guide](docs/MIGRATING-TO-ASGS-2026.md) before upgrading.
+> Check each release's metadata: this README describes the current code, while
+> previously published schema 0.x downloads retain ASGS 2021.
 
-## Quick Start
+## Quick start
 
-Download your state and start querying in under 60 seconds:
+You need the [GitHub CLI](https://cli.github.com/), `jq` and `gzip`. Choose a release
+once, download its metadata, and check compatibility before downloading addresses.
+Run these steps in a fresh directory so files from different releases stay separate.
 
 ```bash
-# Download Victoria
-gh release download latest --pattern '*-vic.ndjson.gz'
-
-# Count addresses
-zcat flat-white-*-vic.ndjson.gz | wc -l
-# → 3,821,044
-
-# Find addresses in a postcode
-zcat flat-white-*-vic.ndjson.gz | jq -c 'select(.postcode == "3000")' | head -3
-
-# Query with DuckDB
-duckdb -c "SELECT addressLabel, boundaries.lga.name, boundaries.sa2.name
-           FROM read_ndjson_auto('flat-white-*-vic.ndjson.gz')
-           WHERE postcode = '3000' LIMIT 5"
+# Resolve one tag. You can instead set TAG to a specific published release.
+TAG=$(gh api repos/jbejenar/flat-white/releases/latest --jq '.tag_name')
+gh release download "$TAG" --repo jbejenar/flat-white --pattern metadata.json
 ```
 
-Or browse the [Releases](../../releases) page.
+```bash
+# Stop here if this fails: that release is not the contract used by this guide.
+jq -e '.schemaVersion == "1.0.0" and .asgsYear == 2026' metadata.json
+```
 
----
+The check will fail if the latest published release is still schema 0.x. Select a
+published 1.0.0 release when available, or keep using the older release with its
+matching schema and ASGS 2021 references. Do not change the metadata to bypass
+this check.
+
+```bash
+# Download Victoria from the same tag.
+RELEASE_VERSION=$(jq -r '.version' metadata.json)
+FILE="flat-white-${RELEASE_VERSION}-vic.ndjson.gz"
+gh release download "$TAG" --repo jbejenar/flat-white --pattern "$FILE"
+
+# Show a few Melbourne addresses. This parses JSON; it does not validate the schema.
+gzip -cd "$FILE" | jq -c 'select(.postcode == "3000")' | head -n 3
+```
+
+Browse available files and their source versions on the [releases page](https://github.com/jbejenar/flat-white/releases).
+Use the release metadata for counts rather than relying on estimates in a README.
 
 ## What's in a document?
 
-Every line in the NDJSON is one address. Here's a real example:
+Each NDJSON line is a complete address document. This **shortened, synthetic fixture
+example** shows the census fields most affected by the migration:
 
 ```json
 {
-  "_id": "GAVIC425181432",
-  "addressLabel": "1 MCNAB AV, FOOTSCRAY VIC 3011",
-  "state": "VIC",
-  "postcode": "3011",
-  "geocode": {
-    "latitude": -37.798,
-    "longitude": 144.897,
-    "type": "FRONTAGE CENTRE SETBACK",
-    "reliability": 2
-  },
+  "_version": "2026.02",
   "boundaries": {
-    "lga": { "name": "MARIBYRNONG", "code": "LGA24650" },
-    "stateElectorate": { "name": "FOOTSCRAY" },
-    "commonwealthElectorate": { "name": "GELLIBRAND" },
-    "meshBlock": { "code": "20663890000", "category": "COMMERCIAL" },
-    "sa2": { "code": "20604", "name": "FOOTSCRAY" },
-    "sa4": { "code": "2", "name": "MELBOURNE - WEST" },
-    "gccsa": { "code": "2GMEL", "name": "GREATER MELBOURNE" }
-  },
-  "locality": {
-    "neighbours": ["ASCOT VALE", "FLEMINGTON", "KENSINGTON", "SEDDON"],
-    "aliases": ["FOOTSCRAY WEST"]
+    "meshBlock": {
+      "code": "29900000083",
+      "category": "Residential"
+    },
+    "sa1": "29901000103",
+    "sa2": {
+      "name": "Fixture 2026 SA2",
+      "code": "299010001"
+    },
+    "sa3": {
+      "name": "Fixture 2026 SA3",
+      "code": "29901"
+    },
+    "sa4": {
+      "name": "Fixture 2026 SA4",
+      "code": "299"
+    },
+    "gccsa": {
+      "name": "Fixture 2026 GCCSA",
+      "code": "2TEST"
+    }
   }
 }
 ```
 
-Full schema: [DOCUMENT-SCHEMA.md](docs/DOCUMENT-SCHEMA.md)
+The fixture deliberately keeps February 2026 addresses and adds synthetic 2026
+census assignments. Those codes are **test data**, not real ABS assignments.
+Production schema 1.x builds require compatible sources from August 2026 or later.
+A document's `_version` records the G-NAF quarter, not the schema or ASGS year.
 
----
+The [document schema](docs/DOCUMENT-SCHEMA.md) defines every field and its
+nullability. [Field provenance](docs/FIELD-PROVENANCE.md) traces each value to its
+source. A missing boundary or geocode is represented by `null`; do not assume
+every address has every enrichment.
 
-## By the Numbers
+## Verify your download
 
-<table>
-<tr>
-<td align="center"><h3>15.9M</h3><sub>Addresses</sub></td>
-<td align="center"><h3>9</h3><sub>States</sub></td>
-<td align="center"><h3>10</h3><sub>Boundary types</sub></td>
-<td align="center"><h3>$0</h3><sub>Annual cost</sub></td>
-<td align="center"><h3>~50min</h3><sub>Build time</sub></td>
-<td align="center"><h3>Quarterly</h3><sub>Updates</sub></td>
-</tr>
-</table>
-
----
-
-## Use Cases
-
-| Use Case                         | How                                                                   |
-| -------------------------------- | --------------------------------------------------------------------- |
-| **Self-host address validation** | Pipe into OpenSearch/Elasticsearch, add a Lambda, done                |
-| **Drop-in address data**         | Pre-joined, boundary-enriched — no commercial licence required        |
-| **Data science**                 | 15.9M geocoded, boundary-enriched records ready for analysis          |
-| **Government**                   | Every department gets the same data without separate vendor contracts |
-
----
-
-## How It Works
-
-```mermaid
-graph LR
-    DL["Download<br/><sub>G-NAF + Admin Bdys<br/>from data.gov.au</sub>"]
-    GL["gnaf-loader<br/><sub>PostGIS spatial joins<br/>~30 min per state</sub>"]
-    FL["Flatten<br/><sub>9+ table JOIN<br/>streaming cursor</sub>"]
-    OUT["Output<br/><sub>NDJSON.gz<br/>per state</sub>"]
-
-    DL --> GL --> FL --> OUT
-
-    style DL fill:#1f6feb,stroke:#58a6ff,color:#fff
-    style GL fill:#8250df,stroke:#a371f7,color:#fff
-    style FL fill:#238636,stroke:#3fb950,color:#fff
-    style OUT fill:#9e6a03,stroke:#d29922,color:#fff
-```
-
-> **Postgres is a build tool.** It lives inside the container for ~30 minutes per state, then it dies. The NDJSON is the only artifact.
-
-```mermaid
-graph TB
-    subgraph container["docker run flat-white"]
-        direction LR
-        PG["Postgres 16<br/>+ PostGIS 3.5"]
-        GNAF["gnaf-loader<br/><sub>Python</sub>"]
-        FLAT["flatten.ts<br/><sub>Node.js 22</sub>"]
-    end
-
-    DATA["data.gov.au<br/><sub>G-NAF + Admin Bdys</sub>"] --> container
-    container --> NDJSON["per-state<br/>NDJSON.gz"]
-    NDJSON --> GH["GitHub<br/>Releases"]
-
-    style container fill:#161b22,stroke:#30363d,color:#f0f6fc
-    style DATA fill:#1f6feb,stroke:#58a6ff,color:#fff
-    style NDJSON fill:#238636,stroke:#3fb950,color:#fff
-    style GH fill:#9e6a03,stroke:#d29922,color:#fff
-```
-
----
-
-## Build It Yourself
+Continue with `FILE` set by the quick start:
 
 ```bash
-# Full build — all states
-# Omit --states to process every state/territory.
-docker run -v $(pwd)/output:/output flat-white \
-  --split-states --compress --output /output/
-
-# Single state
-docker run -v $(pwd)/output:/output flat-white \
-  --states VIC --compress --output /output/
-
-# Dev mode — fixture data only (~30 seconds)
-docker run -v $(pwd)/output:/output flat-white \
-  --fixture-only --output /output/fixture.ndjson
+# Check the compressed stream, then compare Victoria's row count with metadata.
+gzip -t "$FILE"
+ACTUAL=$(gzip -cd "$FILE" | wc -l | tr -d '[:space:]')
+EXPECTED=$(jq -r '.states.VIC' metadata.json)
+test "$ACTUAL" = "$EXPECTED"
 ```
 
-### Build Defaults
-
-- Direct production container runs require `GNAF_VERSION`. Example: `-e GNAF_VERSION=2026.04`.
-- The GitHub Actions quarterly workflow can omit `gnaf_version`; it auto-discovers the newest overlapping published G-NAF/Admin Boundaries release from data.gov.au.
-- If `--states` is omitted, flat-white builds all states/territories.
-- Production release data is resolved in this order:
-  1. explicit workflow input
-  2. automatic discovery from data.gov.au for the target `GNAF_VERSION`
-  3. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02` only
-- Normal quarterly production runs should not need manual inputs.
-- These overrides are only for patch rebuilds or emergency/manual runs:
-  - `DOWNLOAD_URL_GNAF`
-  - `DOWNLOAD_URL_ADMIN_BDYS`
-  - `ADMIN_BDYS_EXTRACTED_DIR`
-
-### Patch Releases
-
-Patch releases rebuild the original quarterly data version and publish new asset filenames such as `flat-white-2026.04.1-vic.ndjson.gz`.
-
-With the default auto-discovery path, a manual patch run normally only needs the patch number:
+For document validation, use a checkout matching the release's schema, install
+its dependencies and run `npm run build`. Run this from the directory containing
+the downloaded state file and its `metadata.json`:
 
 ```bash
-gh workflow run quarterly-build.yml \
-  -f patch_version=1
+node /path/to/flat-white/dist/verification-report.js . \
+  --states VIC --output verification-report.md
 ```
 
-Add `-f gnaf_version=2026.04` only when you want to pin a specific parent quarter instead of using the latest published one. Only provide the three download override inputs if you need to force a specific resource URL or work around a data.gov.au naming issue. See [docs/RELEASING.md](docs/RELEASING.md) for the full procedure.
+Replace `/path/to/flat-white` with that checkout's path. The report streams the
+compressed file, validates every document, checks state membership and reports
+coverage for all census levels. The commands above check integrity, counts and
+the document schema; they do not prove that an external geographic join uses the
+right edition. The [migration checklist](docs/MIGRATING-TO-ASGS-2026.md#upgrade-in-six-steps)
+covers that part.
 
-### State Sizes
+## How it works
 
-|   State   | Est. Addresses |
-| :-------: | -------------: |
-|    NSW    |          ~4.5M |
-|    VIC    |          ~3.9M |
-|    QLD    |          ~2.9M |
-|    WA     |          ~1.3M |
-|    SA     |          ~1.1M |
-|    TAS    |          ~310K |
-|    ACT    |          ~220K |
-|    NT     |           ~98K |
-|    OT     |            ~3K |
-| **Total** |     **~15.9M** |
+1. Discover and freeze the G-NAF and Admin Boundaries source versions for the run.
+2. Start temporary Postgres with PostGIS, then load the sources with the pinned
+   [gnaf-loader](https://github.com/minus34/gnaf-loader).
+3. Prepare boundaries, spatially assign administrative areas, and look up census
+   areas through the address's **2026 mesh-block code**.
+4. Join and stream the address documents, validating each one with Zod.
+5. Verify the output, split it by state and compress it. Stop Postgres when done.
 
-> Estimates based on G-NAF Feb 2026 principal addresses. The 15.9M total includes aliases and secondaries. Exact counts will be published with the first release.
+The [boundary guide](docs/BOUNDARIES.md) explains the two enrichment methods.
+Postgres is a build tool, not a database service you need to run to consume the files.
 
----
+## Build it yourself
+
+For development, use the committed fixture. It exercises preparation, spatial
+joins, both flatten SQL paths, schema checks and the regression baseline without
+a national download. You need Node.js 22.22.1 or newer and Docker with Compose.
+
+```bash
+git clone --recurse-submodules https://github.com/jbejenar/flat-white.git
+cd flat-white
+npm ci
+./scripts/build-fixture-only.sh
+```
+
+Output goes to `output/fixture.ndjson`. Leave `GNAF_VERSION` unset for this command;
+the fixture uses its frozen `2026.02` snapshot. See [contributor instructions](AGENTS.md)
+and the [fixture guide](fixtures/README.md).
+
+To exercise the container with the same small fixture:
+
+```bash
+docker build -t flat-white .
+mkdir -p output
+docker run --rm -v "$PWD/output:/output" flat-white --fixture-only --output /output
+```
+
+A production build downloads and processes the full source archives. It needs an
+explicit, compatible G-NAF quarter and enough disk and memory for loading. This
+illustrative command builds Victoria from August 2026 sources; it is not a test:
+
+```bash
+docker run --rm -e GNAF_VERSION=2026.08 \
+  -v "$PWD/output:/output" flat-white --states VIC --compress --output /output
+```
+
+Omit `--states` for all states and territories. The [release guide](docs/RELEASING.md)
+explains version discovery, URL overrides, metadata-only preflight and patch releases.
 
 ## Distribution
 
-Every quarter, a [GitHub Actions](https://github.com/features/actions) matrix build runs **9 parallel jobs** on free runners — one per state. Per-state gzipped NDJSON files are published as [GitHub Release](../../releases) assets.
+The workflow checks upstream every **Monday at 02:00 UTC** and skips a quarter
+that already has a published or draft release. New source data is still quarterly;
+weekly discovery accommodates publication dates that move.
 
-**Total cost: $0.** Free runners. Free hosting. Free forever.
+A production run builds ACT, NSW, NT, OT, QLD, SA, TAS, VIC and WA as separate jobs.
+GitHub Releases carry per-state `.ndjson.gz` files, `metadata.json` and the document
+schema. The combined national file is a workflow artifact, since it can exceed
+GitHub's per-asset size limit. The configured S3 mirror publishes versioned files
+and a manifest after the GitHub release is public. See [release checks and S3 recovery](docs/RELEASING.md).
 
-```bash
-# Download a single state
-gh release download latest --repo jbejenar/flat-white --pattern '*-vic.ndjson.gz'
-
-# Download all states (9 per-state files)
-gh release download latest --repo jbejenar/flat-white --pattern '*.ndjson.gz'
-
-# Combine into one file (concatenated gzips are valid gzip)
-cat flat-white-*-*.ndjson.gz > flat-white-all.ndjson.gz
-
-# Or via curl (replace VERSION with e.g. 2026.04)
-curl -LO "https://github.com/jbejenar/flat-white/releases/download/vVERSION/flat-white-VERSION-vic.ndjson.gz"
-```
-
-### Programmatic Download (CI / Scripts)
-
-Use the GitHub API to fetch the latest release and download assets:
+Download all nine state files from the same checked tag with:
 
 ```bash
-# Get the latest release tag
-TAG=$(gh api repos/jbejenar/flat-white/releases/latest --jq '.tag_name')
-
-# Download a specific state
-gh release download "$TAG" --repo jbejenar/flat-white --pattern '*-vic.ndjson.gz'
-
-# Download metadata to check counts before downloading data
-gh release download "$TAG" --repo jbejenar/flat-white --pattern 'metadata.json'
-cat metadata.json | jq .
+gh release download "$TAG" --repo jbejenar/flat-white --pattern 'flat-white-*-*.ndjson.gz'
 ```
 
-### Verify Your Download
+Keep the files together with their metadata. Avoid broad globs across old download
+directories: mixing quarters can duplicate addresses and mix geographic editions.
 
-After downloading, verify integrity and validate against the schema:
+## Standing on shoulders
 
-```bash
-# Decompress, check line count against metadata, validate 3 random documents
-STATE="vic"; VERSION="2026.04"
-FILE="flat-white-${VERSION}-${STATE}.ndjson.gz"
-gzip -t "$FILE" && echo "gzip OK"
-LINES=$(zcat "$FILE" | wc -l | tr -d ' ') && echo "$LINES documents"
-zcat "$FILE" | shuf -n 3 | jq . > /dev/null && echo "schema OK"
-```
+flat-white depends on Hugh Saalmans' [gnaf-loader](https://github.com/minus34/gnaf-loader)
+to turn government source files into a usable PostGIS database. This repository
+pins that work as a submodule and adds the flattened document contract, verification
+and release pipeline. Thank you, Hugh, for maintaining the foundation.
 
----
-
-## Data Sources
-
-| Dataset          | Source                                                                               | Licence   | Updated   |
-| ---------------- | ------------------------------------------------------------------------------------ | --------- | --------- |
-| G-NAF            | [data.gov.au](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf) | CC BY 4.0 | Quarterly |
-| Admin Boundaries | [data.gov.au](https://data.gov.au/data/dataset/geoscape-administrative-boundaries)   | CC BY 4.0 | Quarterly |
-
----
-
-## Standing on Shoulders
-
-flat-white wouldn't exist without [Hugh Saalmans](https://github.com/minus34) and his [gnaf-loader](https://github.com/minus34/gnaf-loader) project. Hugh has spent **a decade** maintaining the Python pipeline that turns raw G-NAF PSV files into a queryable PostGIS database with spatial boundary joins. flat-white literally vendors gnaf-loader as a git submodule and runs it as the first step of every build. **Thank you, Hugh.** 🙏
-
-### Already published as parquet — by Hugh
-
-Hugh also publishes the same data as **GeoParquet files on S3** (anonymous read, free):
-
-```bash
-# 37 separate parquet tables (raw relational structure)
-aws s3 ls s3://minus34.com/opendata/geoscape-202602/geoparquet/ --no-sign-request
-```
-
-### Why flat-white runs its own pipeline
-
-flat-white goes **straight to the government source** at [data.gov.au](https://data.gov.au) — the same starting point as gnaf-loader, not downstream of it. This is deliberate:
-
-- **Independence.** Builds aren't blocked by anyone's release schedule. When data.gov.au publishes a quarterly update, flat-white can ship a release that day.
-- **Verifiability.** Every byte in the output traces back to the canonical Australian government source, processed by code in this repo. Auditors can re-derive it from scratch.
-- **Postgres is the right tool for the join.** A 9-table relational join with millions of rows belongs in PostgreSQL. It's rock-solid, well-understood, easy to debug, and produces the same answer every time. Doing the same join in DuckDB-over-parquet would mean rewriting the SQL in a different dialect and losing 30 years of Postgres optimizer work.
-- **Quarterly cadence is fine.** G-NAF publishes quarterly. There's no daily feed, no real-time stream — quarterly is the rhythm of the data itself. Spending ~30 min per state on a free runner four times a year is not a cost worth optimizing.
-
-We could read minus34's parquet directly, but then flat-white would be a thin wrapper around someone else's pipeline. By running gnaf-loader ourselves we keep full control of the build, validate every document with Zod, and own the entire chain from raw PSV files to NDJSON.
-
-### When to use which
-
-| Need                                                                | Use                             |
-| ------------------------------------------------------------------- | ------------------------------- |
-| Run analytical SQL with DuckDB or Spark/Sedona                      | **minus34/gnaf-loader parquet** |
-| Spatial joins with proper geometry (WKB)                            | **minus34/gnaf-loader parquet** |
-| Smallest possible download (columnar Snappy)                        | **minus34/gnaf-loader parquet** |
-| Index addresses into Elasticsearch / OpenSearch / Algolia / MongoDB | **flat-white NDJSON**           |
-| `grep` / `jq` / `awk` an address by PID or postcode                 | **flat-white NDJSON**           |
-| Avoid writing 9-table JOINs                                         | **flat-white NDJSON**           |
-| Pre-validated documents with a guaranteed schema                    | **flat-white NDJSON**           |
-
-flat-white and gnaf-loader's parquet are **the same data, different formats** — pick the one that fits your tools. If you're doing analytics, go straight to S3. If you're building search or doc-oriented apps, NDJSON is easier.
-
----
-
-## Tech Stack
-
-| Layer        | Technology                                                             |
-| ------------ | ---------------------------------------------------------------------- |
-| Database     | PostgreSQL 16 + PostGIS 3.5 (ephemeral)                                |
-| Data loader  | [minus34/gnaf-loader](https://github.com/minus34/gnaf-loader) (Python) |
-| Flattener    | Node.js 22 / TypeScript (streaming)                                    |
-| Container    | Docker (Debian Bookworm)                                               |
-| CI/CD        | GitHub Actions (free tier, matrix build)                               |
-| Output       | NDJSON (per-state, gzipped)                                            |
-| Distribution | GitHub Releases                                                        |
-
----
-
-## AI-Ready Development
-
-<a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-72%2F100_L4-97ca00" alt="ARI Score"></a> &ensp; Measured by [ariscan](https://github.com/prontiq/ariscan-cli) — the Agent Readiness Index.
-
-This repo is built for **autonomous AI coding agents**. Every push to `main` runs [ariscan](https://github.com/prontiq/ariscan-cli) to measure and track agent readiness across 8 pillars. The badge above updates automatically; pillar breakdown as of last audit:
-
-| Pillar                  | Score | What it measures                              |
-| ----------------------- | ----- | --------------------------------------------- |
-| Agent Context Quality   | 100   | CLAUDE.md, AGENTS.md, .agentignore            |
-| Feedback Loop Speed     | 100   | Tests, lint, CI turnaround                    |
-| Security & Governance   | 100   | Dependabot, SAST, branch protection           |
-| Dev Environment         | 97    | Devcontainer, setup scripts, versions         |
-| Build Determinism       | 70    | TypeScript strict, lockfile, pre-commit hooks |
-| Code Navigability       | 69    | File structure, naming, imports               |
-| Doc Machine-Readability | 50    | API specs, structured docs                    |
-| Test Isolation          | 35    | Test-to-source ratio, anti-patterns           |
-
-**Key guardrails:**
-
-- [`CLAUDE.md`](CLAUDE.md) — auto-loaded rules for Claude Code sessions (sandbox boundaries, read discipline, streaming rules)
-- [`NEXT-WORK.md`](NEXT-WORK.md) — active tickets for agents (avoids scanning the 4,490-line roadmap)
-- [`fixtures/SCHEMA-REFERENCE.md`](fixtures/SCHEMA-REFERENCE.md) — table schemas (~220 lines vs 10k-line SQL fixture)
-- Pre-commit hooks reject empty files and `sql.unsafe()` without `.cursor()`
-- [CodeQL SAST](.github/workflows/sast.yml) on every push and PR
-
----
-
-## Project Status
-
-```mermaid
-gantt
-    title flat-white — built in a week
-    dateFormat YYYY-MM-DD
-    axisFormat %b %d
-
-    section Foundation
-    P0 Data + Fixtures        :done, p0, 2026-04-01, 3d
-
-    section Core
-    P1 Flatten Pipeline       :done, p1, 2026-04-03, 2d
-    P2 Container              :done, p2, 2026-04-04, 2d
-
-    section Ship
-    P3 Distribution           :done, p3, 2026-04-05, 1d
-    First Release             :milestone, m1, 2026-04-05, 0d
-
-    section Ongoing
-    P4 Hardening              :active, p4, 2026-04-05, 7d
-    E1 Enhancements           :active, e1, 2026-04-04, 10d
-    P5 AWS Mirror             :p5, after p4, 7d
-```
-
-<table>
-<tr>
-<td align="center"><h3>72/100</h3><sub>ARI Score (L4)</sub></td>
-<td align="center"><h3>56 / 66</h3><sub>Tickets Done</sub></td>
-<td align="center"><h3>15M</h3><sub>Addresses Released</sub></td>
-<td align="center"><h3>v2026.04</h3><sub>Latest Release</sub></td>
-</tr>
-</table>
-
-See [ROADMAP.md](ROADMAP.md) for the full 66-ticket plan across 8 phases. [First release shipped!](../../releases/tag/v2026.04)
-
----
+gnaf-loader also serves people who need the relational tables and spatial tooling.
+Choose the representation that fits your use case, and check the source quarter
+and geography edition before comparing outputs from different pipelines.
 
 ## Documentation
 
-Full reference docs live in [`docs/`](docs/):
+Start at the [documentation index](docs/README.md), or go directly to:
 
-**Reference:**
+- [Migration to schema 1.0.0 / ASGS 2026](docs/MIGRATING-TO-ASGS-2026.md) — impact, upgrade checks and rollback.
+- [Document schema](docs/DOCUMENT-SCHEMA.md) — fields, types, nulls and version metadata.
+- [Field provenance](docs/FIELD-PROVENANCE.md) and [boundary processing](docs/BOUNDARIES.md).
+- [Release procedure](docs/RELEASING.md), [runbook](docs/RUNBOOK.md) and [loader updates](docs/GNAF-LOADER-UPDATES.md).
+- [Fixtures](fixtures/README.md), [architectural decisions](docs/decisions/) and [current work](NEXT-WORK.md).
+- [Changelog](CHANGELOG.md) and [historical roadmap](ROADMAP.md).
 
-- [DOCUMENT-SCHEMA.md](docs/DOCUMENT-SCHEMA.md) — output document schema, every field, every nested object, type + nullability + example
-- [FIELD-PROVENANCE.md](docs/FIELD-PROVENANCE.md) — maps every output field back to its source G-NAF table, column, and transformation
-- [BOUNDARIES.md](docs/BOUNDARIES.md) — how boundary enrichment works, the two-path architecture, every failure mode that's bitten us, and the layered defence
-- [PERFORMANCE.md](docs/PERFORMANCE.md) — established baseline timings on M2 Max + free runners
+## Data sources and attribution
 
-**Operations:**
+Sources: [G-NAF](https://data.gov.au/data/dataset/geocoded-national-address-file-g-naf)
+and [Administrative Boundaries](https://data.gov.au/data/dataset/geoscape-administrative-boundaries).
+Source data has its own licensing terms; the code licence does not replace them.
 
-- [RUNBOOK.md](docs/RUNBOOK.md) — incident response, common failures, recovery procedures
-- [RELEASING.md](docs/RELEASING.md) — quarterly release procedure, patch releases, version discovery
-- [SELF-HOSTED-RUNNER.md](docs/SELF-HOSTED-RUNNER.md) — when and how to escalate from free runners
-- [NSW-MEMORY-ANALYSIS.md](docs/NSW-MEMORY-ANALYSIS.md) — NSW-scale memory profiling and tuning notes
+> G-NAF &copy; Geoscape Australia licensed by the Commonwealth of Australia under
+> the Open G-NAF End User Licence Agreement.
 
-**Decisions:**
-
-- [docs/decisions/](docs/decisions/) — architectural decision records (NDJSON over Parquet, ephemeral Postgres, submodule not fork, streaming flatten, fixture-first dev, matrix builds on free runners, GitHub Releases for distribution)
-
----
-
-## Attribution
-
-> G-NAF &copy; Geoscape Australia licensed by the Commonwealth of Australia under the Open G-NAF End User Licence Agreement.
-
-> Administrative Boundaries &copy; Geoscape Australia licensed by the Commonwealth of Australia under CC BY 4.0.
-
----
+> Administrative Boundaries &copy; Geoscape Australia licensed by the Commonwealth
+> of Australia under CC BY 4.0.
 
 ## Licence
 
-[Apache 2.0](LICENSE)
+Code: [Apache 2.0](LICENSE).

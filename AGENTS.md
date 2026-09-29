@@ -2,24 +2,33 @@
 
 ## Project Overview
 
-flat-white transforms Australian Government G-NAF address data into pre-joined, boundary-enriched NDJSON files. It spins up ephemeral Postgres + PostGIS, runs the gnaf-loader submodule (`gnaf-loader/`) to load and spatially join 15.9M addresses with administrative boundaries, flattens the relational model via a 9+ table SQL JOIN, and outputs one document per address. Then it dies.
+flat-white transforms Australian Government G-NAF address data into pre-joined, boundary-enriched NDJSON files. It starts ephemeral Postgres + PostGIS, uses the pinned gnaf-loader submodule (`gnaf-loader/`) to load and prepare data, derives administrative spatial assignments in flat-white, joins the ASGS 2026 census hierarchy, and streams one NDJSON document per principal address. Then Postgres stops.
+
+> **Schema 1.0.0 change:** census fields use ASGS 2026. Production build
+> sources must be August 2026 or newer; the address fixture remains February
+> 2026 with a synthetic census overlay. See the
+> [migration guide](docs/MIGRATING-TO-ASGS-2026.md) and [document contract](docs/DOCUMENT-SCHEMA.md).
 
 ## Architecture
 
 ```
 src/
-  index.ts              — package entry point, version export
-  schema.ts             — TypeScript types + Zod validation
-  # Planned (not yet on main):
-  # build.ts            — orchestrator: download → load → flatten → output
-  # download.ts         — fetch G-NAF + Admin Bdys from data.gov.au
-  # load.ts             — invoke gnaf-loader against local Postgres
-  # flatten.ts          — stream Postgres → compose docs → write NDJSON
-  # split.ts            — split all-states NDJSON into per-state files
-  # compress.ts         — streaming gzip (~85-90% ratio)
-  # verify.ts           — row count, schema validation, completeness
-  # metadata.ts         — generate build metadata JSON
-  # cli.ts              — CLI: --states, --output, --split-states, --compress
+  index.ts              — package entry point, schema/package version export
+  schema.ts             — TypeScript types + Zod validation; ASGS_YEAR = 2026
+  download.ts           — source discovery, download and archive validation
+  load.ts               — invoke the pinned gnaf-loader against Postgres
+  flatten.ts            — stream rows → validate documents → write NDJSON
+  flatten-localities.ts — separate locality export module
+  split.ts              — split NDJSON into per-state files
+  compress.ts           — streaming gzip
+  verify.ts             — counts, quality and per-state boundary coverage
+  verification-report.ts — full schema and quality checks on compressed state artifacts
+  metadata.ts           — local build metadata helper
+  manifest.ts           — S3 manifest handling
+  cli.ts                — TypeScript argument parser (not the Docker entrypoint)
+  parquet.ts / geoparquet.ts — optional conversion modules
+
+docker-entrypoint.sh    — production/fixture container orchestration
 
 sql/
   address_full.sql              — SINGLE SOURCE OF TRUTH for the flatten query (CTE-based).
@@ -38,7 +47,8 @@ sql/
 fixtures/
   seed-postgres.sql             — schema DDL + ~451 edge-case addresses (loads via psql <30s)
   edge-cases.md                 — catalogue of edge cases with PIDs
-  # expected-output.ndjson      — regression baseline (pending P0.09)
+  seed-census-2026.sql          — synthetic ASGS 2026 overlay; keeps 2021 decoys
+  expected-output.ndjson        — committed schema 1.0.0 regression baseline
 ```
 
 ## Key Commands
@@ -53,7 +63,7 @@ npm run typecheck               # Type-check (tsc --noEmit)
 docker compose up db            # Start local Postgres + PostGIS
 ```
 
-**GNAF_VERSION:** Production builds (docker-entrypoint.sh, build-local.sh) require `GNAF_VERSION` env var (e.g. `GNAF_VERSION=2026.05`). Fixture builds default to `2026.02` (the frozen fixture snapshot). See `docs/RELEASING.md` for download URL configuration.
+**GNAF_VERSION:** Production builds require a quarter in `YYYY.MM` format, `2026.08` or newer (months `02`, `05`, `08`, `11`). Set `GNAF_VERSION` for Docker; `build-local.sh` also accepts `--version`. Invalid or older quarters fail before build side effects. Fixture builds default to `2026.02` (the frozen fixture snapshot). Leave `GNAF_VERSION` unset for fixture builds. See [releasing](docs/RELEASING.md) for source configuration.
 
 ## Principles (MUST follow)
 

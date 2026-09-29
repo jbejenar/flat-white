@@ -82,16 +82,19 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
   fi
 
   is_transient=false
+  failure_kind=$(python3 scripts/quarterly_failure.py "${log_file}")
   if [[ $final_exit_code -eq 137 ]]; then
     is_transient=true
     echo "::warning::${STATE}: OOM kill detected (exit 137) on attempt ${attempt}"
   elif [[ $final_exit_code -eq 143 ]]; then
     is_transient=true
     echo "::warning::${STATE}: container killed (exit 143) on attempt ${attempt}"
-  elif grep -qiE '(ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|ENOTFOUND|download failed|fetch failed|socket hang up)' "${log_file}" 2>/dev/null; then
+  # Use the terminal download classification, or the failed stage's errors.
+  # Recovered errors earlier in the attempt are not grounds for a retry.
+  elif [[ "$failure_kind" == "network" ]]; then
     is_transient=true
     echo "::warning::${STATE}: network/download error detected on attempt ${attempt}"
-  elif grep -qiE '(could not resize shared memory|no space left on device|cannot allocate memory)' "${log_file}" 2>/dev/null; then
+  elif [[ "$failure_kind" == "resource" ]]; then
     is_transient=true
     echo "::warning::${STATE}: resource exhaustion detected on attempt ${attempt}"
   fi

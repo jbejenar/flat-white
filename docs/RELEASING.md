@@ -1,243 +1,268 @@
-# Releasing flat-white
+# Release a data build
 
-## Quarterly releases
+> **Schema 1.0.0 change:** production builds must use G-NAF and Admin
+> Boundaries August 2026 or newer, with ASGS 2026 census data. Older quarters need
+> their original code and schema. Read the [migration guide](MIGRATING-TO-ASGS-2026.md)
+> before publishing or consuming the new contract.
 
-The normal release cadence is quarterly, triggered automatically by `.github/workflows/quarterly-build.yml` on a cron schedule (15th of Feb, May, Aug, Nov at 02:00 UTC). The version is `vYYYY.MM` matching the underlying G-NAF data version.
+A code version and a data release answer different questions. Schema `1.0.0`
+describes the document contract. A tag such as `v2026.08.1` identifies a particular
+data build. All versions below are examples; check existing releases before
+choosing a tag.
 
-To trigger a quarterly build manually, you can either pin a specific quarter or omit `gnaf_version` and let the workflow discover the latest published one:
+## Choose the sources and release version
 
-```bash
-gh workflow run quarterly-build.yml -f gnaf_version=2026.05
-```
+| Input                                                 | Behaviour                                                                                                       |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| No version input                                      | Discover the newest G-NAF and newest Admin Boundaries releases independently. Freeze both for this run.         |
+| `gnaf_version=2026.08`                                | Select August 2026 for both sources.                                                                            |
+| `gnaf_version=2026.08`, `patch_version=1`             | Rebuild that source quarter as release `v2026.08.1`.                                                            |
+| All three manual source overrides plus `gnaf_version` | Use the supplied URLs and extracted boundary directory; metadata records the administrative source as `manual`. |
 
-```bash
-gh workflow run quarterly-build.yml
-```
+`patch_version` is a positive integer. It never becomes part of the G-NAF version
+or a document's `_version`. Always pin `gnaf_version` when making a patch: leaving
+it empty discovers the latest upstream data, which may be a different quarter.
 
-### Version configuration
+Production quarters use `YYYY.MM`, with month `02`, `05`, `08` or `11`, and must
+be `2026.08` or newer. The quarterly and mini workflow setup steps, Docker entrypoint
+and local build share this validation. Docker and local builds reject invalid versions before
+creating output directories or starting Postgres, including when reusing data
+or a database cache. The February fixture is exempt; leave its version unset.
 
-`GNAF_VERSION` is **required** for direct production builds — there is no hardcoded default inside the container. The workflow sets it automatically from the `gnaf_version` input, or if omitted, discovers the newest overlapping G-NAF/Admin Boundaries quarterly release from data.gov.au. For local builds, set it explicitly:
+The scheduled check runs **Monday at 02:00 UTC**. It skips quarters that already
+have a draft or published release. The data remains quarterly; checking weekly
+avoids missing a release that appears after a fixed day of the month. Inspect an
+existing draft before assuming a skipped scheduled build is a failure.
 
-```bash
-# Local build
-GNAF_VERSION=2026.05 ./scripts/build-local.sh --version 2026.05 --states VIC
+## Start with metadata-only preflight
 
-# Fixture builds default to 2026.02 (frozen fixture data) — no GNAF_VERSION needed
-./scripts/build-fixture-only.sh
-```
-
-### Download URLs for new G-NAF releases
-
-Each Geoscape quarterly release publishes new dataset UUIDs on data.gov.au, so download URLs change per release. flat-white now resolves those automatically from data.gov.au for the target `GNAF_VERSION`. Use manual overrides only when you need to pin a specific resource URL for a patch rebuild or emergency/manual run:
-
-```bash
-# Manual overrides (optional), or docker run -e flags locally:
-DOWNLOAD_URL_GNAF="https://data.gov.au/data/dataset/.../download/g-naf_may26_....zip"
-DOWNLOAD_URL_ADMIN_BDYS="https://data.gov.au/data/dataset/.../download/may26_adminbounds_....zip"
-ADMIN_BDYS_EXTRACTED_DIR="MAY26_AdminBounds_GDA_2020_SHP"
-```
-
-Priority order for production builds:
-
-1. workflow_dispatch input
-2. automatic discovery from data.gov.au for the target `GNAF_VERSION`
-3. built-in Feb 2026 fallback in `src/download.ts` for `GNAF_VERSION=2026.02`
-
-If automatic discovery cannot find the matching G-NAF GDA2020 ZIP or Administrative Boundaries GDA2020 shapefile ZIP for the requested version, the build fails before download with a clear error. That prevents a release tagged as `2026.04` or `2026.05` from silently downloading the wrong source data.
-
-Find the correct URLs by browsing the G-NAF dataset page on data.gov.au, or by querying the CKAN API:
+After the code checks pass, run setup without downloading the archives, starting
+a database, building data, publishing a release or writing to S3:
 
 ```bash
-curl -s 'https://data.gov.au/data/api/3/action/package_show?id=19432f89-dc3a-4ef3-b943-5326ef1dbecc' | jq '.result.resources[] | {name, url}'
+gh workflow run quarterly-build.yml --ref main \
+  -f gnaf_version=2026.08 -f preflight_only=true
+gh run list --workflow quarterly-build.yml --limit 5
 ```
 
-## Patch releases
+Use `--ref YOUR_BRANCH` to check a workflow change before merge. Then inspect the
+run's setup output. Confirm the resolved G-NAF, Admin Boundaries and release
+versions. With `preflight_only=true`, all downstream jobs should be skipped.
 
-When a critical bug is found in a published release between quarterly cuts, ship a patch release. **Patch releases use new asset filenames so consumers can detect that previous downloads are stale.**
+Preflight validates metadata and input eligibility. It does **not** inspect the
+archive contents, prove a complete loader run, measure production memory, or test
+release/S3 publication. It does not reserve a release tag. The loaded database checks provide a later compatibility
+gate for the actual sources.
 
-### Versioning convention
+The manual **Mini Quarterly** workflow also freezes and validates both source
+quarters and includes both in its database cache key. An explicit quarter pins
+both sources; automatic discovery may choose different compatible quarters.
 
-| Tag          | Asset filenames                          | When to use                             |
-| ------------ | ---------------------------------------- | --------------------------------------- |
-| `v2026.04`   | `flat-white-2026.04-{state}.ndjson.gz`   | Normal quarterly release                |
-| `v2026.04.1` | `flat-white-2026.04.1-{state}.ndjson.gz` | First patch of v2026.04                 |
-| `v2026.04.2` | `flat-white-2026.04.2-{state}.ndjson.gz` | Second patch of v2026.04                |
-| `v2026.05`   | `flat-white-2026.05-{state}.ndjson.gz`   | Next quarterly release (new G-NAF data) |
+## Publish a quarter
 
-The G-NAF data version stays at `2026.04` for all `v2026.04.N` patches — the patch number bumps the **flat-white release**, not the underlying data. This is reflected in `metadata.json`:
+1. Land the intended code on `main` with CI passing. For a schema change, review
+   the [contract](DOCUMENT-SCHEMA.md), fixture baseline and migration guide together.
+2. Check [existing releases](https://github.com/jbejenar/flat-white/releases), including
+   drafts. Choose an unused release version and run preflight.
+3. Start the **production** workflow. This downloads the source archives and can
+   publish data after the gates pass:
+
+   ```bash
+   gh workflow run quarterly-build.yml --ref main -f gnaf_version=2026.08
+   ```
+
+4. Inspect all nine state jobs, concatenation and release verification. Use the
+   [runbook](RUNBOOK.md) for failures; do not bypass failed checks.
+5. Review the release assets and metadata. Confirm `schemaVersion: "1.0.0"`,
+   `asgsYear: 2026`, the intended source versions, per-state counts and total count.
+   Read the verification and build-over-build comparison reports, especially for
+   unexplained count drops or missing geographic assignments.
+6. Confirm the release is public and check the separate S3 mirror job. A successful
+   GitHub release does not mean S3 succeeded. Review the workflow's generated
+   CHANGELOG PR as a separate repository change.
+
+The workflow first creates a draft, verifies its assets and a programmatic
+download, then publishes it unless the comparison check reports anomalies. An
+anomaly leaves the release as a draft for investigation. A draft is not a
+consumer-ready release.
+
+The release verification report validates every document in each compressed state
+file. It checks state membership, coordinates and duplicates, and reports coverage
+through GCCSA. Each census field must reach 99% coverage in each state by default;
+the load/restore gate also requires 99% complete census hierarchies per state.
+Review the actual null rates and source compatibility as part of the migration
+checks. These floors detect incomplete enrichment; they do not certify each
+individual geographic assignment.
+
+Publication also checks [GitHub's limit of less than 2 GiB per asset](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
+The combined size of valid state files can exceed that limit. A comparison-tool
+error stops publication rather than being treated as a clean comparison.
+
+Both setup and the final publication step check whether the release already
+exists. Scheduled runs skip existing releases; manual runs stop with an error.
+No run deletes an existing release or tag. New releases point to the exact commit
+used by the build. A pre-existing tag pointing elsewhere is rejected.
+
+## How release permissions work
+
+The workflow uses GitHub's built-in `GITHUB_TOKEN`; no extra App or release secret
+is required. Setup and publication have `contents: write`. Setup needs that access
+even for its read checks because GitHub hides drafts from a read-only token.
+
+After checking availability, a production run reserves the release tag at its
+exact commit **before** starting the state builds. Publication rechecks that tag
+and uses `gh release create --verify-tag`, then checks the commit again before
+publishing. It never substitutes the current tip of `main`. This also avoids
+asking GitHub to create a historical tag after workflow files have changed during
+the long build, which can require permissions unavailable to `GITHUB_TOKEN`.
+
+If a build fails, the reserved tag remains but no data release is published.
+Rerun the same commit to reuse that reservation. If the repair changes the commit,
+choose an unused patch version; the workflow will not move or delete the old tag.
+Tag creation or authorization failures stop in setup, before the expensive build.
+Metadata-only preflight and mirror recovery do not reserve tags.
+
+Keeping the built-in token also preserves the existing event behaviour: release
+tags do not launch another tag-triggered Docker publication. The catalogue runs
+from completion of Quarterly Build, and downstream notifications require a public
+release. A held draft is not announced as ready.
+
+## Publish a correction
+
+Use a new patch release when correcting already published data. For example,
+`v2026.08.1` has filenames such as `flat-white-2026.08.1-vic.ndjson.gz`, while its
+documents retain `_version: "2026.08"`.
+
+```bash
+# Production publication: first check that this tag is unused.
+gh workflow run quarterly-build.yml --ref main \
+  -f gnaf_version=2026.08 -f patch_version=1
+```
+
+A patch tag does not make a breaking schema change backward compatible. Review
+the schema version separately. Documentation-only corrections do not need a new
+data release. Do not delete a published release or overwrite its assets to hide
+a correction; consumers need stable files and a clear reason to download a new version.
+
+## Configure downloads
+
+The data.gov.au package identifiers are stable; individual resource identifiers
+and archive filenames change. Normal workflow runs resolve the matching GDA2020
+G-NAF ZIP and Administrative Boundaries shapefile ZIP automatically. The downloader
+fails if it cannot resolve the requested source, rather than silently using the
+old February URL constants for a schema 1.x build.
+
+To inspect available G-NAF resource metadata without downloading the archives:
+
+```bash
+curl --fail --silent --show-error \
+  'https://data.gov.au/data/api/3/action/package_show?id=19432f89-dc3a-4ef3-b943-5326ef1dbecc' \
+  | jq '.result.resources[] | {name, url}'
+```
+
+The Admin Boundaries package is `bdcf5b09-89bc-47ec-9281-6b8e9ee147aa`.
+
+When an operator needs explicit sources, provide **all three** workflow inputs
+and `gnaf_version` together:
+
+- `download_url_gnaf`: the intended GDA2020 address ZIP.
+- `download_url_admin_bdys`: the intended GDA2020 boundary ZIP.
+- `admin_bdys_extracted_dir`: its extracted root, such as `AUG26_AdminBounds_GDA_2020_SHP`.
+
+The equivalent container environment names are `DOWNLOAD_URL_GNAF`,
+`DOWNLOAD_URL_ADMIN_BDYS` and `ADMIN_BDYS_EXTRACTED_DIR`. Record the exact URLs with
+the build evidence. Manual sources use `adminBoundariesVersion: "manual"` because
+a URL override does not establish the source's quarter. The actual loaded tables
+must still contain the required 2026 census columns and matching mesh-block codes.
+
+## Build locally
+
+Production container builds require `GNAF_VERSION`; fixture builds default to the
+frozen `2026.02` address snapshot. Follow the [README build instructions](../README.md#build-it-yourself)
+for both. Leave `GNAF_VERSION` unset when using the fixture script.
+
+Use the fixture for code development. A national download or loader run is not a
+prerequisite for checking a change. The older `scripts/build-local.sh` is a lower-level
+helper for an already configured local database and source paths; it is not a
+replacement for the documented container setup.
+
+## What gets published
+
+| Artifact                      | Purpose                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Nine state `.ndjson.gz` files | Address documents, each from the same resolved build.                                                     |
+| `metadata.json`               | Release version, both source versions, schema version, ASGS year, timestamp and counts.                   |
+| `DOCUMENT-SCHEMA.md`          | Contract shipped with the release.                                                                        |
+| `verification-report.md`      | Verification evidence for the release.                                                                    |
+| Combined national file        | Workflow artifact and S3 output; excluded from GitHub release assets because of the per-asset size limit. |
+
+A GitHub metadata excerpt for an illustrative patch is:
 
 ```json
 {
-  "version": "2026.04.1",
-  "gnafVersion": "2026.04",
-  ...
+  "version": "2026.08.1",
+  "gnafVersion": "2026.08",
+  "adminBoundariesVersion": "2026.08",
+  "schemaVersion": "1.0.0",
+  "asgsYear": 2026
 }
 ```
 
-### When to bump the patch number
+S3 uses paths such as `data/address/2026-08-1/` and
+`manifests/address-2026-08-1.json`. Its manifest keeps `manifest_version: 2` and adds
+`schema_version: "1.0.0"` and `asgs_year: 2026`. See the
+[migration guide's metadata table](MIGRATING-TO-ASGS-2026.md#know-which-version-you-are-checking)
+for the differences between release, source, schema and manifest versions.
 
-| Change                                                   | Patch?  | Rationale                                           |
-| -------------------------------------------------------- | ------- | --------------------------------------------------- |
-| Bug fix in SQL or flatten code that changes field values | **Yes** | Consumers need to re-download to get the fix        |
-| Bug fix in download/load that didn't ship to a release   | No      | Roll into next quarterly                            |
-| Schema field added (additive)                            | No      | Wait for next quarterly + minor schema version bump |
-| Schema field removed/renamed (breaking)                  | No      | Wait for next quarterly + major schema version bump |
-| Documentation-only fix                                   | No      | No need to republish data                           |
-| New per-state coverage or boundary fields restored       | **Yes** | Consumers want this immediately                     |
+## Recover a draft or incomplete mirror
 
-### Procedure
-
-1. **Land the bug fix on `main`.** All gates must be green: `npm test`, `npm run lint`, `npm run typecheck`, and `./scripts/build-fixture-only.sh` (which runs both flatten paths and asserts byte-equality).
-
-2. **Decide the patch number.** Look at the most recent existing release for the same parent quarterly:
-
-   ```bash
-   gh release list --limit 5
-   ```
-
-   If `v2026.04` exists and there's no `v2026.04.1`, use `patch_version=1`. If `v2026.04.1` exists, use `patch_version=2`.
-
-3. **Trigger the workflow:**
-
-   ```bash
-   gh workflow run quarterly-build.yml -f patch_version=1
-   ```
-
-   If you need to patch a specific older quarter instead of the latest published one, pin it explicitly:
-
-   ```bash
-   gh workflow run quarterly-build.yml \
-     -f gnaf_version=2026.04 \
-     -f patch_version=1
-   ```
-
-   If data.gov.au discovery needs to be overridden for a one-off run, provide the manual download inputs too:
-
-   ```bash
-   gh workflow run quarterly-build.yml \
-     -f gnaf_version=2026.04 \
-     -f patch_version=1 \
-     -f download_url_gnaf="https://data.gov.au/data/dataset/.../download/g-naf_apr26_....zip" \
-     -f download_url_admin_bdys="https://data.gov.au/data/dataset/.../download/apr26_adminbounds_....zip" \
-     -f admin_bdys_extracted_dir="APR26_AdminBounds_GDA_2020_SHP"
-   ```
-
-   This builds against the same G-NAF data version (`2026.04`) and publishes as `v2026.04.1`. The build cache may be a hit (~30 min saved per state) if the cache key is still warm. Total wall time: ~25 min on free runners.
-
-   Patch releases still rebuild the original quarterly data, so `v2026.04.1` resolves the April 2026 source data automatically. Only provide the three download override inputs if you need to force a specific resource URL or work around a data.gov.au naming issue.
-
-4. **Wait for the build to complete and the draft release to publish.** Watch with:
-
-   ```bash
-   gh run watch
-   ```
-
-   The release is created as a draft and auto-published if no build-over-build anomalies are detected. For patch releases the count comparison is automatically skipped (the same data should produce ~the same counts).
-
-5. **Manually edit the patch release notes to link the fixing PR(s):**
-
-   ```bash
-   gh release edit v2026.04.1 --notes-file - <<'EOF'
-   > ⚠️ **Patch release.** This is a hotfix for v2026.04. Underlying G-NAF data is unchanged (still 2026.04). Fixes:
-   >
-   > - **streetType** field returned the abbreviation (`"PL"`) instead of the long form (`"PLACE"`). Affects all addresses where the street type code differs from the name. Fixed in #67.
-   > - **addressLabelSearch** included the same abbreviation. Same root cause, fixed by the same PR.
-   >
-   > Consumers should re-download. Asset filenames are versioned as `flat-white-2026.04.1-{state}.ndjson.gz` so stale downloads can be detected by filename comparison.
-
-   ## Summary
-   ... (auto-generated content from the workflow stays below)
-   EOF
-   ```
-
-   (E1.13 will eventually automate this — for now it's manual.)
-
-6. **Update the parent release notes to point at the patch:**
-
-   ```bash
-   ORIG_BODY=$(gh release view v2026.04 --json body --jq '.body')
-   gh release edit v2026.04 --notes - <<EOF
-   > ⚠️ **Superseded by [v2026.04.1](https://github.com/jbejenar/flat-white/releases/tag/v2026.04.1).** This release contains a streetType regression — re-download the patched assets.
-
-   ${ORIG_BODY}
-   EOF
-   ```
-
-7. **Notify downstream consumers** (if not already triggered automatically by the workflow's repository_dispatch).
-
-### What patch releases do NOT do
-
-- **Do not delete the parent release by default.** Patches are normally additive. Consumers who pinned to `v2026.04` can keep that pin if they accept the bug; consumers who want the fix bump their pin to `v2026.04.1`. The catalogue (E1.08) eventually shows both.
-- **Do not rebuild the G-NAF data.** Use the same `gnaf_version`. The fix is in flat-white code, not in upstream G-NAF.
-- **Do not change the schema.** Patches are bug fixes only. Schema changes need a quarterly release with a schema version bump.
-
-### Exceptional cleanup of superseded patch releases
-
-Delete older patch releases only when all three conditions are true:
-
-1. a newer patch in the same chain is the single canonical consumer target
-2. no downstream consumers are pinned to the older patch tags
-3. the operator intentionally wants a single visible release per quarterly line
-
-When that bar is met, clean up the superseded patches completely:
+For a draft, inspect the failed verification or comparison evidence first. Record
+why the anomaly is expected or fix the data and choose the appropriate new build.
+Only publish a reviewed draft when its contents satisfy the release checks.
+Manually making a draft public does not by itself run a previously skipped S3 job.
+After reviewing and publishing it, use the explicit mirror-only mode:
 
 ```bash
-# Example: keep only v2026.02.7 in the 2026.02 patch line
-for tag in v2026.02.3 v2026.02.4 v2026.02.5 v2026.02.6; do
-  gh release delete "$tag" --yes
-  git push origin ":refs/tags/${tag}"
-done
+gh workflow run quarterly-build.yml --ref main -f mirror_release_tag=v2026.08.1
 ```
 
-Rules:
+This is a publication action that writes to S3. Use it only for the public release
+you intend to mirror. Leave preflight, source-version, patch and download inputs
+at their defaults. The setup step rejects mixed modes and draft/prerelease tags.
+The build, concatenation and GitHub release jobs are skipped.
 
-- Keep the newest patch release in the line.
-- Delete the GitHub release object and the matching Git tag together.
-- Do not use this for quarterly parents that still have active pinned consumers.
-- Prefer documenting the cleanup decision in the PR or CHANGELOG when it affects a public patch chain.
+Recovery checks the release metadata, geography, schema and tag commit. It then
+downloads the nine **published state files**, checks their sizes and SHA-256
+digests against GitHub's release records, and reconstructs the national gzip by
+concatenating those exact bytes. The original tag supplies the OpenSearch mapping
+and schema version. Seven-day workflow artifact expiry does not prevent recovery.
+The documented `adminBoundariesVersion: "manual"` marker is accepted for releases
+built from explicit source overrides. Recovery preserves that provenance; it does
+not invent a source quarter. Explicit quarter values must still satisfy the
+production version policy, and schema, geography, counts and asset checks still apply.
+Public status and asset metadata are checked again after downloading, before AWS
+credentials are configured. The manifest's pipeline fields identify the recovery
+run and its publishing code; its saved recovery plan records the release commit.
 
-### Verifying a patch release
+Rerunning release creation will not replace an existing draft. Review that draft's
+assets and reports, then either publish the reviewed draft or use a new patch
+version for a corrected build. This also protects public releases from accidental
+deletion during a manual rerun.
 
-After publishing, verify:
+For a **failed S3 job after a public release**, inspect its logs and OIDC
+configuration. Use the same mirror-only command, or rerun the failed job while
+its original artifacts remain available. A normal build dispatch still rejects
+existing releases; it does not replace the release or bypass a held draft.
 
-```bash
-# Tag exists and is published (not draft)
-gh release view v2026.04.1 --json tagName,isDraft
+Both mirror paths share a per-version concurrency group and the same S3 gates.
+An existing manifest skips every write. Only a confirmed missing object permits
+upload; permission, authentication and transport errors stop the job. Staged and
+published sizes and SHA-256 checksums must match, including the mapping file.
+The manifest is written last with a
+[conditional write](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
+that refuses to replace an existing key. A corrected dataset needs a new release
+version; do not remove or rewrite a published manifest to force a retry.
 
-# Asset filenames include the patch version
-gh release view v2026.04.1 --json assets --jq '.assets[].name' | sort
-
-# metadata.json has both versions
-gh release download v2026.04.1 --pattern metadata.json --dir /tmp
-jq '{version, gnafVersion}' /tmp/metadata.json
-# Expected: { "version": "2026.04.1", "gnafVersion": "2026.04" }
-
-# Spot-check the bug fix
-gh release download v2026.04.1 --pattern '*-act.ndjson.gz' --dir /tmp
-gunzip -c /tmp/flat-white-2026.04.1-act.ndjson.gz | grep -m5 '"streetType":"STREET"'
-# Should find addresses with long-form streetType
-```
-
-## Schema versioning
-
-Independent of release versioning, the NDJSON schema has its own version in `package.json` (semver):
-
-| Schema change                   | Bump                      | Example                                  |
-| ------------------------------- | ------------------------- | ---------------------------------------- |
-| Field added                     | Minor (`0.2.0` → `0.3.0`) | E1.05 added geoparquet support           |
-| Field removed or renamed        | Major (`0.2.0` → `1.0.0`) | Would require consumer migration         |
-| Field type changed              | Major                     | Number → string                          |
-| Bug fix to existing field value | Patch (`0.2.0` → `0.2.1`) | The v2026.04.1 streetType fix is a patch |
-
-The release tag (`vYYYY.MM[.N]`) and schema version (`X.Y.Z`) are tracked independently. A patch release can ship a schema patch bump, or no schema change at all.
-
-## Version references in documentation
-
-Documentation files use two conventions for version numbers:
-
-| Doc type                                                                             | Convention                                                               | Rationale                                                                                                      |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| **Consumer-facing** (`DOCUMENT-SCHEMA.md`, `COMMUNITY-ANNOUNCEMENT.md`, `README.md`) | Use the latest release version as illustrative examples (e.g. `2026.04`) | Helps users understand what real data looks like                                                               |
-| **Operational** (`RUNBOOK.md`)                                                       | Use `${VERSION}` shell variable placeholders                             | Operators copy-paste commands and substitute their target version — hardcoded versions are a copy-paste hazard |
-
-When a new quarterly release ships, update the consumer-facing examples to reference the new version. Operational docs do not need updating because the placeholder is version-agnostic.
+For read-only diagnosis, compare the public release metadata, workflow logs and
+S3 manifest/object metadata. Keep any publication or repair action separate from
+that inspection. See the [runbook](RUNBOOK.md#release-or-s3-failure).

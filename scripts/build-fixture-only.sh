@@ -72,6 +72,7 @@ docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-postgres
 # 3b. Seed raw admin boundary fixtures (E1.10)
 echo "[fixture-build] Seeding raw admin boundary fixtures..."
 docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-admin-bdys.sql
+docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-census-2026.sql
 
 # 3c. Run boundary prep SQL (raw → admin_bdys boundary tables)
 SCHEMA_VERSION="${GNAF_VERSION:-2026.02}"
@@ -79,6 +80,10 @@ SCHEMA_VERSION_FLAT="${SCHEMA_VERSION//.}"
 echo "[fixture-build] Preparing admin boundary tables (schema ${SCHEMA_VERSION_FLAT})..."
 sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/fixtures/prep-admin-bdys.sql" | \
   docker compose exec -T db psql -U postgres -d gnaf -q
+
+# Transform synthetic ASGS 2026 rows with the pinned upstream SQL itself.
+node "$PROJECT_DIR/scripts/extract-census-prep.mjs" "$SCHEMA_VERSION_FLAT" | \
+  docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d gnaf -q
 
 # 3d. Run spatial join to populate address_principal_admin_boundaries from polygons
 # This must run BEFORE either flatten path so both legacy and materialize see boundary data.

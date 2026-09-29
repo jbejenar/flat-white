@@ -1,4 +1,8 @@
 {
+  "_meta": {
+    "schemaVersion": "1.0.0",
+    "asgsYear": 2026
+  },
   "dynamic": false,
   "properties": {
     "addressLabelSearch": { "type": "search_as_you_type" },

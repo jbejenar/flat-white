@@ -1,6 +1,49 @@
-# Next Work — flat-white
+# Next work — flat-white
 
-> Updated: 2026-04-10. All implementation work complete. Next event: v2026.05 cron fires 2026-05-15.
+> Updated: 2026-09-29. **Schema 1.0.0 change:** the current migration targets
+> ASGS 2026. Earlier April work records are retained below as history, not the
+> active release plan.
+
+## Current focus
+
+The implementation and documentation are being reviewed in
+[PR #204](https://github.com/jbejenar/flat-white/pull/204). Check that PR for its
+current commit, CI and review state. Passing fixtures and metadata-only preflight
+do not establish a completed production release.
+
+- Complete review and checks for the ASGS 2026 migration. Keep the
+  [contract](docs/DOCUMENT-SCHEMA.md), [migration guide](docs/MIGRATING-TO-ASGS-2026.md)
+  and fixture baseline aligned.
+- Track [upstream loader PR #103](https://github.com/minus34/gnaf-loader/pull/103).
+  Replace its temporary fix pin with an upstream version containing the repair
+  once the authority integration and existing compatibility checks pass.
+- For the first production release after merge, verify all nine state outputs,
+  census coverage, source/schema metadata, release status and the separate S3 mirror.
+  Follow [releasing](docs/RELEASING.md); use the new cache namespace and record cold-load capacity.
+- Coordinate downstream geographic references, index rebuilds, comparisons and
+  rollback using the migration guide. Do not assume every consumer of `latest`
+  already supports the new contract.
+
+## Follow-up findings from the documentation audit
+
+- **GeoParquet CRS:** `src/geoparquet.ts` declares WGS 84 while copying GDA2020
+  source coordinates without transformation. Review and correct the converter's
+  CRS contract separately, with appropriate geometry/metadata tests. Do not
+  describe the current output as reprojected.
+- **Fixture gaps:** the committed output has no three-geocode addresses or
+  non-gazetted localities, and only one parent with exported children. Add focused
+  small cases when changing those paths. See [measured coverage](fixtures/edge-cases.md).
+- **First mirror recovery:** the explicit `mirror_release_tag` mode now covers
+  approved drafts and missing mirrors using checksum-verified public assets.
+  Record the first production recovery outcome separately from the fixture and
+  mocked-service checks. See [the procedure](docs/RELEASING.md#recover-a-draft-or-incomplete-mirror).
+
+## Historical work log — April 2026
+
+The dates, release targets, completed items and unchecked tasks below describe
+the state recorded in April. Reassess old pending items against current code and
+release evidence before treating them as active work. The former May 15 schedule
+and ASGS 2021 table guidance are superseded by the guides linked above.
 
 ## Completed (2026-04-10, session 6)
 

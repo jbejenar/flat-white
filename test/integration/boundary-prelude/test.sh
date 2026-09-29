@@ -56,8 +56,12 @@ ensure_db_container
 echo "[boundary-prelude] Seeding fixture data..."
 psql_db -q -f /fixtures/seed-postgres.sql
 psql_db -q -f /fixtures/seed-admin-bdys.sql
+psql_db -q -f /fixtures/seed-census-2026.sql
 sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/fixtures/prep-admin-bdys.sql" | \
   psql_db -q
+
+node "$PROJECT_DIR/scripts/extract-census-prep.mjs" "$SCHEMA_VERSION_FLAT" | \
+  psql_db -v ON_ERROR_STOP=1 -q
 
 echo "[boundary-prelude] Creating intentionally incomplete boundary table..."
 psql_db -q <<SQL

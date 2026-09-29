@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from quarterly_failure import NETWORK_ERROR, RESOURCE_ERROR
 
 
 def parse_bool(value: str) -> bool:
@@ -35,29 +36,9 @@ def main() -> int:
             line = raw_line.strip()
             if "retrying with --no-boundary-tag" in line:
                 fallback_retry_count += 1
-            if any(
-                token in line
-                for token in [
-                    "ETIMEDOUT",
-                    "ECONNRESET",
-                    "ECONNREFUSED",
-                    "ENETUNREACH",
-                    "EAI_AGAIN",
-                    "ENOTFOUND",
-                    "download failed",
-                    "fetch failed",
-                    "socket hang up",
-                ]
-            ):
+            if NETWORK_ERROR.search(line):
                 network_error_detected = True
-            if any(
-                token in line
-                for token in [
-                    "could not resize shared memory",
-                    "no space left on device",
-                    "cannot allocate memory",
-                ]
-            ):
+            if RESOURCE_ERROR.search(line):
                 resource_error_detected = True
             if not line.startswith("{"):
                 continue
@@ -65,7 +46,7 @@ def main() -> int:
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if payload.get("event") == "stage_end" and "elapsed_s" in payload:
+            if isinstance(payload, dict) and payload.get("event") == "stage_end" and "elapsed_s" in payload:
                 stage = payload.get("stage")
                 if isinstance(stage, str):
                     stage_durations[stage] = int(payload["elapsed_s"])
