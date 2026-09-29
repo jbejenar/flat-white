@@ -63,7 +63,7 @@ npm run typecheck               # Type-check (tsc --noEmit)
 docker compose up db            # Start local Postgres + PostGIS
 ```
 
-**GNAF_VERSION:** Production builds require a quarter in `YYYY.MM` format, `2026.08` or newer (months `02`, `05`, `08`, `11`). Set `GNAF_VERSION` for Docker; `build-local.sh` also accepts `--version`. Invalid or older quarters fail before build side effects. Fixture builds default to `2026.02` (the frozen fixture snapshot). Leave `GNAF_VERSION` unset for fixture builds. See [releasing](docs/RELEASING.md) for source configuration.
+**Source versions:** Production builds require `GNAF_VERSION` in `YYYY.MM` format, `2026.08` or newer (months `02`, `05`, `08`, `11`). `build-local.sh` also accepts `--version`. An optional independent `ADMIN_BDYS_VERSION` follows the same rules. Invalid or older explicit quarters fail before build side effects, including on cached paths. The `manual` metadata marker is not a quarter input. Fixture builds default to `2026.02` (the frozen snapshot) and ignore production boundary overrides. Leave `GNAF_VERSION` unset for fixtures. See [releasing](docs/RELEASING.md) for source configuration.
 
 ## Principles (MUST follow)
 

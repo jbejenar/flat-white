@@ -57,7 +57,7 @@ const VALID_STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"]
 
 /**
  * Derive the 6-digit geoscape version from GNAF_VERSION env var.
- * e.g. GNAF_VERSION="2026.05" → "202605"
+ * e.g. GNAF_VERSION="2026.08" → "202608"
  * Returns null if GNAF_VERSION is not set.
  */
 /**
@@ -142,7 +142,7 @@ export function buildArgs(opts: LoadOptions): string[] {
       deriveGeoscapeVersion() ??
       (() => {
         throw new Error(
-          "Geoscape version is required. Set GNAF_VERSION env var (e.g. GNAF_VERSION=2026.05) " +
+          "Geoscape version is required. Set GNAF_VERSION env var (e.g. GNAF_VERSION=2026.08) " +
             "or pass --geoscape-version YYYYMM.",
         );
       })(),

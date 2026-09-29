@@ -399,7 +399,7 @@ export interface DownloadOptions {
   outputDir?: string;
   /** Skip download if extracted data already exists */
   skipIfExists?: boolean;
-  /** G-NAF data version label (e.g. "2026.05"). Falls back to GNAF_VERSION env var. Required. */
+  /** G-NAF data version label (e.g. "2026.08"). Falls back to GNAF_VERSION env var. Required. */
   version?: string;
 }
 
@@ -672,7 +672,7 @@ export async function download(options: DownloadOptions = {}): Promise<DownloadR
   const version = options.version ?? process.env.GNAF_VERSION;
   if (!version) {
     throw new Error(
-      "G-NAF version is required. Set the GNAF_VERSION environment variable (e.g. GNAF_VERSION=2026.05) " +
+      "G-NAF version is required. Set the GNAF_VERSION environment variable (e.g. GNAF_VERSION=2026.08) " +
         "or pass { version } in DownloadOptions.",
     );
   }
@@ -894,7 +894,7 @@ async function main() {
   const version = process.env.GNAF_VERSION;
   if (!version) {
     console.error("[download] ERROR: GNAF_VERSION environment variable is required.");
-    console.error("[download] Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.05)");
+    console.error("[download] Set GNAF_VERSION=YYYY.MM (e.g. GNAF_VERSION=2026.08)");
     process.exit(1);
   }
   const outputDir = resolveOutputDir(version);

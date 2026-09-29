@@ -22,9 +22,16 @@ def validate_production_version(value: str, field_name: str = "GNAF_VERSION") ->
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
+    parser.add_argument("--admin-version", default="",
+                        help="Optional independent Admin Boundaries quarter")
     args = parser.parse_args()
     try:
         validate_production_version(args.version)
+        # Match the downloader's readEnvOverride: blank means no explicit
+        # override and surrounding whitespace is removed before selection.
+        admin_version = args.admin_version.strip()
+        if admin_version:
+            validate_production_version(admin_version, "ADMIN_BDYS_VERSION")
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         raise SystemExit(1)

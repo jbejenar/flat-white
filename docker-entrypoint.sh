@@ -58,11 +58,13 @@ flat-white — Australian address data, flattened and served.
 Usage:
   docker run flat-white --help
   docker run flat-white --fixture-only --output /output/
-  docker run -e GNAF_VERSION=2026.08 -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
+  docker run -e GNAF_VERSION=2026.08 -e ADMIN_BDYS_VERSION=2026.08 -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
 
 Environment:
   GNAF_VERSION       Required production quarter, YYYY.MM, 2026.08 or newer.
                      Release months: 02, 05, 08, 11. Fixtures default to 2026.02.
+  ADMIN_BDYS_VERSION Optional independent boundary quarter; same production rules.
+                     Omit for automatic discovery. Ignored by fixture mode.
 
 Flags:
   --help              Show this help
@@ -169,7 +171,7 @@ if [[ -n "$RESTORE_DB" && "$SKIP_DOWNLOAD" == "true" ]]; then
   exit 1
 fi
 
-# ── Validate GNAF_VERSION before any build side effects ──────────────────────
+# ── Validate source versions before any build side effects ───────────────────
 # The version must be supplied explicitly to prevent shipping stale data.
 # Fixture mode uses frozen 202602 data from seed-postgres.sql, so it defaults.
 
@@ -189,7 +191,7 @@ else
   if [[ ! -f "$VERSION_POLICY" ]]; then
     VERSION_POLICY="/app/scripts/source_version_policy.py"
   fi
-  python3 "$VERSION_POLICY" -- "$GNAF_VERSION"
+  python3 "$VERSION_POLICY" "--admin-version=${ADMIN_BDYS_VERSION:-}" -- "$GNAF_VERSION"
 fi
 
 mkdir -p "$OUTPUT_DIR"
