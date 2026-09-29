@@ -31,12 +31,13 @@ describe("production version guards", () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  function run(script: string, version: string, args: string[] = []) {
+  function run(script: string, version: string, args: string[] = [], adminVersion = "") {
     const result = spawnSync("bash", [resolve(script), ...args], {
       encoding: "utf8",
       env: {
         ...process.env,
         GNAF_VERSION: version,
+        ADMIN_BDYS_VERSION: adminVersion,
         PATH: `${join(root, "bin")}:${process.env.PATH}`,
       },
     });
@@ -168,6 +169,37 @@ print(json.dumps({"gnaf_version": version, "admin_bdys_version": os.environ["DIS
         expect(result.status).toBe(97);
         expect(result.output).toContain("REACHED_OUTPUT_SETUP");
       });
+
+      it.each([
+        "2026.05",
+        "2025.11",
+        "2026.8",
+        "2026.08.1",
+        "2026.09",
+        "2026.00",
+        "2026.13",
+        "--help",
+        "-h",
+        "--version",
+        "manual",
+      ])(
+        "rejects administrative-boundary override %j before any build side effect",
+        (adminVersion) => {
+          const result = run(script, "2026.08", [], adminVersion);
+          expect(result.status).toBe(1);
+          expect(result.output).toContain("ADMIN_BDYS_VERSION");
+          expect(result.output).not.toContain("REACHED_OUTPUT_SETUP");
+        },
+      );
+
+      it.each(["", "   ", "2026.08", "2026.11", "2027.02", " 2026.08 "])(
+        "accepts optional or compatible administrative-boundary override %j",
+        (adminVersion) => {
+          const result = run(script, "2026.08", [], adminVersion);
+          expect(result.status).toBe(97);
+          expect(result.output).toContain("REACHED_OUTPUT_SETUP");
+        },
+      );
     });
   }
 
@@ -193,9 +225,27 @@ print(json.dumps({"gnaf_version": version, "admin_bdys_version": os.environ["DIS
   });
 
   it("keeps the frozen February fixture exemption", () => {
-    const result = run("docker-entrypoint.sh", "", ["--fixture-only"]);
+    const result = run("docker-entrypoint.sh", "", ["--fixture-only"], "2026.02");
     expect(result.status).toBe(97);
     expect(result.output).toContain("REACHED_OUTPUT_SETUP version=2026.02");
+  });
+
+  it.each([
+    [
+      "docker-entrypoint.sh",
+      "--skip-download",
+      "--gnaf-path",
+      "/unused/gnaf",
+      "--admin-path",
+      "/unused/admin",
+    ],
+    ["docker-entrypoint.sh", "--restore-db", "/unused/cache.dump"],
+    ["scripts/build-local.sh", "--skip-load"],
+  ])("cached inputs cannot bypass the boundary-version guard: %s %s", (script, ...args) => {
+    const result = run(script, "2026.08", args, "2026.05");
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("ADMIN_BDYS_VERSION 2026.08 or newer");
+    expect(result.output).not.toContain("REACHED_OUTPUT_SETUP");
   });
 
   it("help works without a production version", () => {

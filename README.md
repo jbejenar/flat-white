@@ -188,12 +188,15 @@ explicit, compatible G-NAF quarter and enough disk and memory for loading. This
 illustrative command builds Victoria from August 2026 sources; it is not a test:
 
 ```bash
-docker run --rm -e GNAF_VERSION=2026.08 \
+docker run --rm -e GNAF_VERSION=2026.08 -e ADMIN_BDYS_VERSION=2026.08 \
   -v "$PWD/output:/output" flat-white --states VIC --compress --output /output
 ```
 
 Omit `--states` for all states and territories. The [release guide](docs/RELEASING.md)
 explains version discovery, URL overrides, metadata-only preflight and patch releases.
+The optional `ADMIN_BDYS_VERSION` pins boundaries independently; omitting it uses
+automatic discovery. Both explicit quarters must be August 2026 or newer and are
+checked before output creation or database startup, including cached builds.
 
 ## Distribution
 

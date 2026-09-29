@@ -7,6 +7,21 @@ DOCKER_IMAGE="${3:?docker image is required}"
 OUTPUT_DIR="${4:-output}"
 CACHE_DIR="${5:-cache}"
 
+# "manual" is release provenance, not a quarter for the downloader to select.
+# Only the complete URL override path may use that marker.
+ADMIN_DOWNLOAD_VERSION="${ADMIN_BDYS_VERSION_EFFECTIVE:-}"
+if [[ "$ADMIN_DOWNLOAD_VERSION" == manual ]]; then
+  if [[ ! "${DOWNLOAD_URL_GNAF_EFFECTIVE:-}" =~ [^[:space:]] ||
+        ! "${DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE:-}" =~ [^[:space:]] ||
+        ! "${ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE:-}" =~ [^[:space:]] ]]; then
+    echo "ERROR: Manual sources require both download URLs and the extracted boundary directory" >&2
+    exit 1
+  fi
+  ADMIN_DOWNLOAD_VERSION=""
+fi
+python3 "$(dirname "${BASH_SOURCE[0]}")/source_version_policy.py" \
+  "--admin-version=$ADMIN_DOWNLOAD_VERSION" -- "$VERSION"
+
 MAX_RETRIES="${MAX_RETRIES:-2}"
 CACHE_FILE="${CACHE_DIR}/${STATE}.dump"
 LOG_DIR="${OUTPUT_DIR}/logs"
@@ -55,7 +70,7 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
     -e "DOWNLOAD_URL_GNAF=${DOWNLOAD_URL_GNAF_EFFECTIVE:-}" \
     -e "DOWNLOAD_URL_ADMIN_BDYS=${DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE:-}" \
     -e "ADMIN_BDYS_EXTRACTED_DIR=${ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE:-}" \
-    -e "ADMIN_BDYS_VERSION=${ADMIN_BDYS_VERSION_EFFECTIVE:-}" \
+    -e "ADMIN_BDYS_VERSION=${ADMIN_DOWNLOAD_VERSION}" \
     "${DOCKER_IMAGE}" \
     --states "${STATE}" \
     --split-states \

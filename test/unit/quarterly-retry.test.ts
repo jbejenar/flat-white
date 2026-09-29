@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -23,6 +24,7 @@ describe("quarterly pipeline retries", () => {
       "run-quarterly-state.sh",
       "summarize-quarterly-run.py",
       "quarterly_failure.py",
+      "source_version_policy.py",
     ]) {
       copyFileSync(resolve("scripts", file), join(root, "scripts", file));
     }
@@ -30,6 +32,7 @@ describe("quarterly pipeline retries", () => {
       join(root, "bin", "docker"),
       `#!/usr/bin/env bash
 set -eu
+printf '%s\\n' "$@" >> docker-args
 calls=0
 [[ ! -f calls ]] || calls="$(cat calls)"
 calls=$((calls + 1))
@@ -48,15 +51,21 @@ exit 0
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  function run(failure: string) {
+  function run(failure: string, overrides: NodeJS.ProcessEnv = {}) {
     writeFileSync(join(root, "failure.log"), failure);
     const result = spawnSync(
       "bash",
-      ["scripts/run-quarterly-state.sh", "ACT", "2026.05", "fixture-image"],
+      ["scripts/run-quarterly-state.sh", "ACT", "2026.08", "fixture-image"],
       {
         cwd: root,
         encoding: "utf8",
-        env: { ...process.env, PATH: `${join(root, "bin")}:${process.env.PATH}`, MAX_RETRIES: "2" },
+        env: {
+          ...process.env,
+          PATH: `${join(root, "bin")}:${process.env.PATH}`,
+          MAX_RETRIES: "2",
+          ADMIN_BDYS_VERSION_EFFECTIVE: "",
+          ...overrides,
+        },
       },
     );
     if (result.error) throw result.error;
@@ -73,6 +82,62 @@ exit 0
       },
     };
   }
+
+  const manualSources = {
+    ADMIN_BDYS_VERSION_EFFECTIVE: "manual",
+    DOWNLOAD_URL_GNAF_EFFECTIVE: "https://fixture.invalid/gnaf.zip",
+    DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE: "https://fixture.invalid/admin.zip",
+    ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE: "AUG26_AdminBounds_GDA_2020_SHP",
+  };
+
+  it("keeps manual provenance out of the downloader's quarter selector", () => {
+    const result = run("[download] Failure kind: transient", manualSources);
+    expect(result.status).toBe(0);
+    const args = readFileSync(join(root, "docker-args"), "utf8");
+    expect(args).toContain("ADMIN_BDYS_VERSION=\n");
+    expect(args).not.toContain("ADMIN_BDYS_VERSION=manual");
+    expect(args).toContain("DOWNLOAD_URL_ADMIN_BDYS=https://fixture.invalid/admin.zip");
+  });
+
+  it("passes a valid independent boundary quarter to Docker", () => {
+    expect(
+      run("[download] Failure kind: transient", { ADMIN_BDYS_VERSION_EFFECTIVE: "2026.11" }).status,
+    ).toBe(0);
+    expect(readFileSync(join(root, "docker-args"), "utf8")).toContain(
+      "ADMIN_BDYS_VERSION=2026.11\n",
+    );
+  });
+
+  it.each([
+    { ADMIN_BDYS_VERSION_EFFECTIVE: "2026.05" },
+    { ADMIN_BDYS_VERSION_EFFECTIVE: "2026.13" },
+    { ADMIN_BDYS_VERSION_EFFECTIVE: "--help" },
+    { ADMIN_BDYS_VERSION_EFFECTIVE: "manual" },
+    { ...manualSources, DOWNLOAD_URL_GNAF_EFFECTIVE: "" },
+    { ...manualSources, DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE: " " },
+    { ...manualSources, ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE: "" },
+  ])("rejects invalid source selection before output, cache or Docker: %j", (overrides) => {
+    const result = spawnSync(
+      "bash",
+      ["scripts/run-quarterly-state.sh", "ACT", "2026.08", "fixture-image"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${join(root, "bin")}:${process.env.PATH}`,
+          DOWNLOAD_URL_GNAF_EFFECTIVE: "",
+          DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE: "",
+          ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE: "",
+          ...overrides,
+        },
+      },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout + result.stderr).toContain("ERROR:");
+    for (const file of ["calls", "output", "cache"])
+      expect(existsSync(join(root, file))).toBe(false);
+  });
 
   it("does not retry the real archive-validation failure behind the generic Download failed message", () => {
     const result = run(

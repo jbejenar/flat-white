@@ -28,6 +28,11 @@ be `2026.08` or newer. The quarterly and mini workflow setup steps, Docker entry
 and local build share this validation. Docker and local builds reject invalid versions before
 creating output directories or starting Postgres, including when reusing data
 or a database cache. The February fixture is exempt; leave its version unset.
+For direct Docker and local builds, an explicit `ADMIN_BDYS_VERSION` follows the
+same quarter and minimum-version rules. It is optional: the downloader discovers
+the boundary source when no override is given. Pin it to `2026.08` alongside
+`GNAF_VERSION=2026.08` when both sources must be August. Blank overrides remain
+unset, and surrounding whitespace is ignored as it is by the downloader.
 
 The scheduled check runs **Monday at 02:00 UTC**. It skips quarters that already
 have a draft or published release. The data remains quarterly; checking weekly
@@ -174,6 +179,10 @@ The equivalent container environment names are `DOWNLOAD_URL_GNAF`,
 the build evidence. Manual sources use `adminBoundariesVersion: "manual"` because
 a URL override does not establish the source's quarter. The actual loaded tables
 must still contain the required 2026 census columns and matching mesh-block codes.
+`manual` is a metadata marker, not a valid `ADMIN_BDYS_VERSION` input. The state
+runner passes the complete manual URL/directory overrides to Docker and leaves
+the quarter selector empty. It validates normal quarters and rejects incomplete
+manual overrides before creating output/cache directories or invoking Docker.
 
 ## Build locally
 
