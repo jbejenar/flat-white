@@ -33,9 +33,10 @@ do not establish a completed production release.
 - **Fixture gaps:** the committed output has no three-geocode addresses or
   non-gazetted localities, and only one parent with exported children. Add focused
   small cases when changing those paths. See [measured coverage](fixtures/edge-cases.md).
-- **Draft-to-S3 recovery:** publishing a held draft manually does not automatically
-  run its previously skipped mirror job. Review that recovery path before relying
-  on it; do not redispatch against an existing tag or rewrite an existing manifest.
+- **First mirror recovery:** the explicit `mirror_release_tag` mode now covers
+  approved drafts and missing mirrors using checksum-verified public assets.
+  Record the first production recovery outcome separately from the fixture and
+  mocked-service checks. See [the procedure](docs/RELEASING.md#recover-a-draft-or-incomplete-mirror).
 
 ## Historical work log — April 2026
 

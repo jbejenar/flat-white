@@ -44,6 +44,10 @@ Historical entries retain the contract and source versions published at the time
 
 ### Fixed
 
+- Add mirror-only recovery for an approved, published draft or a failed S3 mirror.
+  Check public asset digests and the original schema/mapping, rebuild the national
+  gzip without loading G-NAF, and share the normal publisher's immutable-manifest
+  and checksum gates. Expired workflow artifacts do not block recovery.
 - Pin the authority-cleanup repair and exercise the actual loader function plus
   electoral preparation in seven small database tests inside the production image.
   The original release's literal schema prefix skipped normalization, deduplication

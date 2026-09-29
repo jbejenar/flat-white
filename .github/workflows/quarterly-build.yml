@@ -3,6 +3,10 @@ name: Quarterly Build
 on:
   workflow_dispatch:
     inputs:
+      mirror_release_tag:
+        description: "Mirror an already-published release only (e.g. v2026.08.1). Leave other build inputs empty."
+        required: false
+        default: ""
       preflight_only:
         description: "Validate source-version metadata without downloading, building or publishing"
         type: boolean
@@ -58,9 +62,11 @@ jobs:
     permissions:
       contents: read
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      admin_bdys_version: ${{ steps.version.outputs.admin_bdys_version }}
-      release_version: ${{ steps.version.outputs.release_version }}
+      version: ${{ steps.version.outputs.version || steps.recovery.outputs.version }}
+      admin_bdys_version: ${{ steps.version.outputs.admin_bdys_version || steps.recovery.outputs.admin_bdys_version }}
+      release_version: ${{ steps.version.outputs.release_version || steps.recovery.outputs.release_version }}
+      schema_version: ${{ steps.version.outputs.schema_version || steps.recovery.outputs.schema_version }}
+      mirror_only: ${{ steps.recovery.outputs.mirror_only || 'false' }}
       data_source_key: ${{ steps.version.outputs.data_source_key }}
       build_required: ${{ steps.release-check.outputs.build_required }}
     steps:
@@ -68,6 +74,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Determine version
+        if: inputs.mirror_release_tag == ''
         id: version
         env:
           GNAF_INPUT: ${{ inputs.gnaf_version }}
@@ -106,8 +113,36 @@ jobs:
             echo "::notice::Patch release: building v${RELEASE_VERSION} from G-NAF data ${VERSION}"
           fi
           echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "schema_version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve published release for mirror recovery
+        if: inputs.mirror_release_tag != ''
+        id: recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MIRROR_TAG: ${{ inputs.mirror_release_tag }}
+          PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
+          BUILD_INPUTS: ${{ format('{0}{1}{2}{3}{4}', inputs.gnaf_version, inputs.patch_version, inputs.download_url_gnaf, inputs.download_url_admin_bdys, inputs.admin_bdys_extracted_dir) }}
+        run: |
+          if [[ "$PREFLIGHT_ONLY" == true || -n "$BUILD_INPUTS" ]]; then
+            echo "::error::Mirror recovery cannot be combined with preflight or build inputs"
+            exit 1
+          fi
+          python3 scripts/prepare-mirror-recovery.py resolve \
+            --repository="$GITHUB_REPOSITORY" --tag="$MIRROR_TAG" \
+            --plan=mirror-recovery.json >> "$GITHUB_OUTPUT"
+
+      - name: Save mirror recovery plan
+        if: steps.recovery.outputs.mirror_only == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mirror-recovery-plan
+          path: mirror-recovery.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Check release and tag availability
+        if: inputs.mirror_release_tag == ''
         id: release-check
         env:
           GH_TOKEN: ${{ github.token }}
@@ -920,23 +955,9 @@ jobs:
           fi
           echo "✓ Programmatic download works"
 
-          # Set the 'published' output based on the ACTUAL state of the
-          # GitHub Release at this point, NOT on has_anomalies. This is
-          # important for the recovery path: if a maintainer reviewed the
-          # anomalies on a previous run, decided the release was fine, and
-          # manually published the draft via 'gh release edit --draft=false',
-          # then re-triggers the workflow_dispatch:
-          #
-          #   1. The release job sees the same has_anomalies value
-          #      (presumably still true — the data hasn't changed)
-          #   2. The if/else above sees has_anomalies==true and SKIPS the
-          #      gh release edit call (because the release is already
-          #      published — the call would be a no-op anyway)
-          #   3. We need to detect that the release IS public despite the
-          #      anomaly flag still being true
-          #
-          # gh release view --json isDraft tells us the literal current
-          # state. published=true iff isDraft==false.
+          # Only public releases can reach the normal mirror path. For a
+          # reviewed draft published later, dispatch mirror_release_tag;
+          # that path bypasses builds and release creation entirely.
           ACTUAL_IS_DRAFT=$(gh release view "$TAG" --json isDraft --jq '.isDraft')
           if [[ "$ACTUAL_IS_DRAFT" == "false" ]]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
@@ -995,27 +1016,6 @@ jobs:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
 
   # ---------------------------------------------------------------------------
-  # Job 4: S3 mirror upload (P5.01)
-  # ---------------------------------------------------------------------------
-  # Uploads all release artifacts (per-state ndjson.gz files, metadata.json,
-  # DOCUMENT-SCHEMA.md, verification-report.md) PLUS the all-states concatenated
-  # file to s3://flat-white-address-493712557159-ap-southeast-2-an/builds/v{version}/
-  #
-  # The all-states file (~1.5-2GB) is the unique value-add of the S3 mirror —
-  # it exceeds GitHub's 2GB per-asset release limit and is excluded from the
-  # GitHub Release. S3 has no such limit (5GB single PUT, 5TB max object).
-  #
-  # Authentication: OIDC via aws-actions/configure-aws-credentials@v6 against
-  # arn:aws:iam::493712557159:role/flat-white-role. The role's trust policy
-  # restricts to repo:jbejenar/flat-white:* via the GitHub OIDC provider.
-  # Validated end-to-end by .github/workflows/s3-smoke.yml.
-  #
-  # Failure semantics: this job is NON-BLOCKING for the release. If S3 upload
-  # fails, the GitHub Release is still published correctly (it's already done
-  # by the time s3-upload runs). The S3 mirror is redundancy, not the primary
-  # distribution. A failure here is loud (job marked failed in the workflow
-  # summary) but doesn't undo anything upstream.
-  # ---------------------------------------------------------------------------
   # Job 4: S3 data + manifest upload (platform convention)
   # ---------------------------------------------------------------------------
   # Uploads address data files to data/address/{version}/ and a v2 manifest to
@@ -1032,7 +1032,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [setup, release, concatenate]
-    if: ${{ !cancelled() && needs.release.result == 'success' && needs.concatenate.result == 'success' && needs.release.outputs.published == 'true' }}
+    if: ${{ !cancelled() && needs.setup.result == 'success' && (needs.setup.outputs.mirror_only == 'true' || (needs.release.result == 'success' && needs.concatenate.result == 'success' && needs.release.outputs.published == 'true')) }}
+    concurrency:
+      group: address-mirror-${{ needs.setup.outputs.release_version }}
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
@@ -1040,14 +1043,32 @@ jobs:
       AWS_REGION: ap-southeast-2
       AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-role
       S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
+      MIRROR_SCHEMA_VERSION: ${{ needs.setup.outputs.schema_version }}
+      MAPPINGS_SOURCE: ${{ needs.setup.outputs.mirror_only == 'true' && 'mirror-source/mappings.json' || 'opensearch/address-mappings.json' }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Download per-state build artifacts
+        if: needs.setup.outputs.mirror_only != 'true'
         uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: flat-white-*
+
+      - name: Download mirror recovery plan
+        if: needs.setup.outputs.mirror_only == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: mirror-recovery-plan
+
+      - name: Verify public release files for recovery
+        if: needs.setup.outputs.mirror_only == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/prepare-mirror-recovery.py prepare \
+            --plan=mirror-recovery.json --artifacts=artifacts \
+            --mappings-output=mirror-source/mappings.json
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v6
@@ -1067,25 +1088,10 @@ jobs:
           VERSION_DASH=$(echo "$RELEASE_VERSION" | tr '.' '-')
           MANIFEST_KEY="manifests/address-${VERSION_DASH}.json"
 
-          # If a manifest already exists for this version, the version is
-          # already published. Refuse to re-publish in place — that would
-          # require mutating live S3 keys that the existing manifest
-          # references, which cannot be done atomically.
-          #
-          # To re-publish: bump the patch version (e.g., patch_version=5)
-          # and trigger a new workflow_dispatch. The new version gets its
-          # own prefix and manifest with no collision.
-          if aws s3api head-object \
-               --bucket "${S3_BUCKET}" \
-               --key "${MANIFEST_KEY}" >/dev/null 2>&1; then
-            echo "::warning::Manifest already exists at s3://${S3_BUCKET}/${MANIFEST_KEY}"
-            echo "::warning::Skipping S3 upload — this version is already published."
-            echo "::warning::To republish, use a new patch_version and re-trigger."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No existing manifest for ${VERSION_DASH} — proceeding with upload"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          # Only a confirmed 404 means unpublished. Authentication, permission
+          # and transport failures must stop before any writes.
+          python3 scripts/check-s3-mirror.py exists \
+            --bucket="$S3_BUCKET" --key="$MANIFEST_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Upload data files + collect manifest metadata
         if: steps.check_existing.outputs.skip != 'true'
@@ -1218,16 +1224,17 @@ jobs:
 
           echo "✓ All-states file uploaded to staging and added to the manifest"
 
-          MAPPINGS_SOURCE="opensearch/address-mappings.json"
           MAPPINGS_STAGING_KEY="${STAGING_PREFIX}/mappings.json"
           if [[ ! -f "$MAPPINGS_SOURCE" ]]; then
             echo "::error::Mappings file not found: $MAPPINGS_SOURCE"
             exit 1
           fi
+          MAPPINGS_SHA256_B64="$(openssl dgst -sha256 -binary "$MAPPINGS_SOURCE" | openssl base64 -A)"
           aws s3api put-object \
             --bucket "${S3_BUCKET}" \
             --key "${MAPPINGS_STAGING_KEY}" \
             --body "$MAPPINGS_SOURCE" \
+            --checksum-algorithm SHA256 --checksum-sha256 "$MAPPINGS_SHA256_B64" \
             --content-type "application/json" >/dev/null
           echo "✓ Mappings uploaded to staging"
 
@@ -1254,7 +1261,7 @@ jobs:
           # Build the v2 manifest
           jq -n \
             --argjson manifest_version 2 \
-            --arg schema_version "$(jq -r '.version' package.json)" \
+            --arg schema_version "$MIRROR_SCHEMA_VERSION" \
             --argjson asgs_year 2026 \
             --arg product "address" \
             --arg version "$VERSION_DASH" \
@@ -1309,7 +1316,7 @@ jobs:
           ')
           jq -e \
             --arg expected_source_key "$EXPECTED_SOURCE_KEY" \
-            --arg schema_version "$(jq -r '.version' package.json)" \
+            --arg schema_version "$MIRROR_SCHEMA_VERSION" \
             --argjson expected_file_keys "$EXPECTED_FILE_KEYS" '
               .manifest_version == 2 and
               .schema_version == $schema_version and .asgs_year == 2026 and
@@ -1335,100 +1342,15 @@ jobs:
             ' /tmp/manifest.json >/dev/null
           echo "✓ Manifest contract validated"
 
-      # Phase 2: VERIFY staged data files in S3 BEFORE promoting to published.
+      # Compare actual sizes and checksums, including mappings, before promotion.
       - name: Verify staged data files (pre-promote gate)
         if: steps.check_existing.outputs.skip != 'true'
+        env:
+          VERSION_DASH: ${{ steps.upload_data.outputs.version_dash }}
         run: |
-          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
-          STAGING_PREFIX="data/address/${VERSION_DASH}/.staging"
-
-          echo "--- Verifying staged files in s3://${S3_BUCKET}/${STAGING_PREFIX}/ ---"
-
-          MISMATCH=0
-          for STATE in vic nsw qld sa wa tas nt act ot; do
-            STATE_UPPER=$(echo "$STATE" | tr '[:lower:]' '[:upper:]')
-            LOCAL_FILE=$(find "artifacts/flat-white-${STATE_UPPER}" -name "*.ndjson.gz" | head -1)
-            LOCAL_SIZE=$(stat -c%s "$LOCAL_FILE")
-            HEAD_JSON=$(aws s3api head-object \
-              --bucket "${S3_BUCKET}" \
-              --key "${STAGING_PREFIX}/${STATE}.ndjson.gz" \
-              --checksum-mode ENABLED \
-              --output json 2>/dev/null || echo "MISSING")
-            if [[ "$HEAD_JSON" == "MISSING" ]]; then
-              echo "::error::Missing from staging: ${STATE}.ndjson.gz"
-              MISMATCH=1
-              continue
-            fi
-            REMOTE_SIZE=$(jq -r '.ContentLength' <<<"$HEAD_JSON")
-            REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$HEAD_JSON")
-            REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$HEAD_JSON")
-            if [[ -z "$REMOTE_SHA256" ]]; then
-              echo "::error::Missing ChecksumSHA256 in staging: ${STATE}.ndjson.gz"
-              echo "$HEAD_JSON"
-              MISMATCH=1
-            elif [[ "$LOCAL_SIZE" != "$REMOTE_SIZE" ]]; then
-              echo "::error::Size mismatch in staging: ${STATE}.ndjson.gz local=${LOCAL_SIZE} remote=${REMOTE_SIZE}"
-              MISMATCH=1
-            elif [[ -n "$REMOTE_CHECKSUM_TYPE" && "$REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
-              echo "::error::Unexpected ChecksumType in staging: ${STATE}.ndjson.gz type=${REMOTE_CHECKSUM_TYPE}"
-              echo "$HEAD_JSON"
-              MISMATCH=1
-            else
-              echo "✓ ${STATE}.ndjson.gz (${LOCAL_SIZE} bytes, checksum present)"
-            fi
-          done
-
-          # Verify all-states file
-          ALL_GZ=$(find "artifacts/flat-white-all" -name "*.ndjson.gz" | head -1)
-          ALL_LOCAL_SIZE=$(stat -c%s "$ALL_GZ")
-          ALL_HEAD_JSON=$(aws s3api head-object \
-            --bucket "${S3_BUCKET}" \
-            --key "${STAGING_PREFIX}/all.ndjson.gz" \
-            --checksum-mode ENABLED \
-            --output json 2>/dev/null || echo "MISSING")
-          if [[ "$ALL_HEAD_JSON" == "MISSING" ]]; then
-            echo "::error::Missing from staging: all.ndjson.gz"
-            MISMATCH=1
-          else
-            ALL_REMOTE_SIZE=$(jq -r '.ContentLength' <<<"$ALL_HEAD_JSON")
-            ALL_REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$ALL_HEAD_JSON")
-            ALL_REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$ALL_HEAD_JSON")
-            if [[ -z "$ALL_REMOTE_SHA256" ]]; then
-              echo "::error::Missing ChecksumSHA256 in staging: all.ndjson.gz"
-              echo "$ALL_HEAD_JSON"
-              MISMATCH=1
-            elif [[ "$ALL_LOCAL_SIZE" != "$ALL_REMOTE_SIZE" ]]; then
-              echo "::error::Size mismatch in staging: all.ndjson.gz local=${ALL_LOCAL_SIZE} remote=${ALL_REMOTE_SIZE}"
-              MISMATCH=1
-            elif [[ -n "$ALL_REMOTE_CHECKSUM_TYPE" && "$ALL_REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
-              echo "::error::Unexpected ChecksumType in staging: all.ndjson.gz type=${ALL_REMOTE_CHECKSUM_TYPE}"
-              echo "$ALL_HEAD_JSON"
-              MISMATCH=1
-            else
-              echo "✓ all.ndjson.gz (${ALL_LOCAL_SIZE} bytes, checksum present)"
-            fi
-          fi
-
-          if ! aws s3api head-object \
-            --bucket "${S3_BUCKET}" \
-            --key "${STAGING_PREFIX}/mappings.json" >/dev/null 2>&1; then
-            echo "::error::Missing from staging: mappings.json"
-            MISMATCH=1
-          else
-            echo "✓ mappings.json"
-          fi
-
-          if [[ "$MISMATCH" -ne 0 ]]; then
-            echo ""
-            echo "::error::Staging verification failed — published data is UNTOUCHED"
-            echo "::error::Cleaning up staging prefix..."
-            aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive 2>/dev/null || true
-            echo "::error::Staging cleaned. Re-run the workflow to retry."
-            exit 1
-          fi
-
-          echo ""
-          echo "✓ All 11 staged files verified"
+          python3 scripts/check-s3-mirror.py verify --bucket="$S3_BUCKET" \
+            --prefix="data/address/${VERSION_DASH}/.staging" \
+            --manifest=/tmp/manifest.json --mappings="$MAPPINGS_SOURCE"
 
       # Phase 3: Promote staging → published prefix.
       # This step only runs for FIRST-TIME publishes (check_existing
@@ -1471,75 +1393,12 @@ jobs:
 
       - name: Verify published data files (pre-manifest gate)
         if: steps.check_existing.outputs.skip != 'true'
+        env:
+          VERSION_DASH: ${{ steps.upload_data.outputs.version_dash }}
         run: |
-          VERSION_DASH="${{ steps.upload_data.outputs.version_dash }}"
-          S3_PREFIX="data/address/${VERSION_DASH}"
-
-          echo "--- Verifying published files in s3://${S3_BUCKET}/${S3_PREFIX}/ ---"
-
-          MISMATCH=0
-          for STATE in vic nsw qld sa wa tas nt act ot; do
-            HEAD_JSON=$(aws s3api head-object \
-              --bucket "${S3_BUCKET}" \
-              --key "${S3_PREFIX}/${STATE}.ndjson.gz" \
-              --checksum-mode ENABLED \
-              --output json 2>/dev/null || echo "MISSING")
-            if [[ "$HEAD_JSON" == "MISSING" ]]; then
-              echo "::error::Missing from published prefix: ${STATE}.ndjson.gz"
-              MISMATCH=1
-              continue
-            fi
-            REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$HEAD_JSON")
-            REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$HEAD_JSON")
-            if [[ -z "$REMOTE_SHA256" ]]; then
-              echo "::error::Missing ChecksumSHA256 in published prefix: ${STATE}.ndjson.gz"
-              echo "$HEAD_JSON"
-              MISMATCH=1
-            elif [[ -n "$REMOTE_CHECKSUM_TYPE" && "$REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
-              echo "::error::Unexpected ChecksumType in published prefix: ${STATE}.ndjson.gz type=${REMOTE_CHECKSUM_TYPE}"
-              echo "$HEAD_JSON"
-              MISMATCH=1
-            else
-              echo "✓ ${STATE}.ndjson.gz"
-            fi
-          done
-
-          ALL_HEAD_JSON=$(aws s3api head-object \
-            --bucket "${S3_BUCKET}" \
-            --key "${S3_PREFIX}/all.ndjson.gz" \
-            --checksum-mode ENABLED \
-            --output json 2>/dev/null || echo "MISSING")
-          if [[ "$ALL_HEAD_JSON" == "MISSING" ]]; then
-            echo "::error::Missing from published prefix: all.ndjson.gz"
-            MISMATCH=1
-          else
-            ALL_REMOTE_SHA256=$(jq -r '.ChecksumSHA256 // empty' <<<"$ALL_HEAD_JSON")
-            ALL_REMOTE_CHECKSUM_TYPE=$(jq -r '.ChecksumType // empty' <<<"$ALL_HEAD_JSON")
-            if [[ -z "$ALL_REMOTE_SHA256" ]]; then
-              echo "::error::Missing ChecksumSHA256 in published prefix: all.ndjson.gz"
-              echo "$ALL_HEAD_JSON"
-              MISMATCH=1
-            elif [[ -n "$ALL_REMOTE_CHECKSUM_TYPE" && "$ALL_REMOTE_CHECKSUM_TYPE" != "FULL_OBJECT" ]]; then
-              echo "::error::Unexpected ChecksumType in published prefix: all.ndjson.gz type=${ALL_REMOTE_CHECKSUM_TYPE}"
-              echo "$ALL_HEAD_JSON"
-              MISMATCH=1
-            else
-              echo "✓ all.ndjson.gz"
-            fi
-          fi
-
-          if ! aws s3api head-object \
-            --bucket "${S3_BUCKET}" \
-            --key "${S3_PREFIX}/mappings.json" >/dev/null 2>&1; then
-            echo "::error::Missing from published prefix: mappings.json"
-            MISMATCH=1
-          else
-            echo "✓ mappings.json"
-          fi
-
-          if [[ "$MISMATCH" -ne 0 ]]; then
-            exit 1
-          fi
+          python3 scripts/check-s3-mirror.py verify --bucket="$S3_BUCKET" \
+            --prefix="data/address/${VERSION_DASH}" \
+            --manifest=/tmp/manifest.json --mappings="$MAPPINGS_SOURCE"
 
       # Phase 4: Upload manifest LAST — this is the downstream trigger.
       # Only reached after staging is verified AND promoted.
@@ -1554,6 +1413,7 @@ jobs:
             --bucket "${S3_BUCKET}" \
             --key "${MANIFEST_KEY}" \
             --body /tmp/manifest.json \
+            --if-none-match '*' \
             --content-type "application/json" >/dev/null
           echo "✓ Manifest uploaded — version ${VERSION_DASH} is now published"
 

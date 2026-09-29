@@ -6,9 +6,9 @@
 #     (assumes role: arn:aws:iam::493712557159:role/flat-white-role)
 #   - Those credentials can list the destination bucket
 #
-# This is a SMOKE TEST ONLY. It does not upload anything. The intent is to
-# validate the AWS plumbing in isolation before adding S3 upload steps to
-# the actual quarterly-build release job (P5.01).
+# This smoke test lists the bucket, then writes, verifies and deletes one small
+# temporary object. It is NOT read-only. Use logs and object metadata for
+# read-only diagnosis; run this workflow only when its writes are intended.
 #
 # Trigger: workflow_dispatch only. Doesn't fire on any other event.
 #

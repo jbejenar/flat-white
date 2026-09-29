@@ -195,24 +195,45 @@ for the differences between release, source, schema and manifest versions.
 For a draft, inspect the failed verification or comparison evidence first. Record
 why the anomaly is expected or fix the data and choose the appropriate new build.
 Only publish a reviewed draft when its contents satisfy the release checks.
-Manually making a draft public does not by itself run a previously skipped S3 job;
-track that mirror as unfinished and plan its recovery explicitly.
+Manually making a draft public does not by itself run a previously skipped S3 job.
+After reviewing and publishing it, use the explicit mirror-only mode:
+
+```bash
+gh workflow run quarterly-build.yml --ref main -f mirror_release_tag=v2026.08.1
+```
+
+This is a publication action that writes to S3. Use it only for the public release
+you intend to mirror. Leave preflight, source-version, patch and download inputs
+at their defaults. The setup step rejects mixed modes and draft/prerelease tags.
+The build, concatenation and GitHub release jobs are skipped.
+
+Recovery checks the release metadata, geography, schema and tag commit. It then
+downloads the nine **published state files**, checks their sizes and SHA-256
+digests against GitHub's release records, and reconstructs the national gzip by
+concatenating those exact bytes. The original tag supplies the OpenSearch mapping
+and schema version. Seven-day workflow artifact expiry does not prevent recovery.
+Public status and asset metadata are checked again after downloading, before AWS
+credentials are configured. The manifest's pipeline fields identify the recovery
+run and its publishing code; its saved recovery plan records the release commit.
 
 Rerunning release creation will not replace an existing draft. Review that draft's
 assets and reports, then either publish the reviewed draft or use a new patch
 version for a corrected build. This also protects public releases from accidental
 deletion during a manual rerun.
 
-For a **failed S3 job after a public release**, inspect its logs, OIDC configuration
-and available artifacts. If the failure is recoverable and artifacts are still
-available, rerun that job from the existing workflow run. Do not redispatch the
-entire release workflow against an existing tag as a generic mirror repair.
+For a **failed S3 job after a public release**, inspect its logs and OIDC
+configuration. Use the same mirror-only command, or rerun the failed job while
+its original artifacts remain available. A normal build dispatch still rejects
+existing releases; it does not replace the release or bypass a held draft.
 
-The S3 job checks for an existing manifest before uploading. Once a manifest
-exists, that version is treated as published and the upload is skipped. The
-manifest is written last, after the data checks, because it signals downstream
-readiness. A corrected dataset needs a new release version; do not remove or
-rewrite a published manifest to force a retry.
+Both mirror paths share a per-version concurrency group and the same S3 gates.
+An existing manifest skips every write. Only a confirmed missing object permits
+upload; permission, authentication and transport errors stop the job. Staged and
+published sizes and SHA-256 checksums must match, including the mapping file.
+The manifest is written last with a
+[conditional write](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
+that refuses to replace an existing key. A corrected dataset needs a new release
+version; do not remove or rewrite a published manifest to force a retry.
 
 For read-only diagnosis, compare the public release metadata, workflow logs and
 S3 manifest/object metadata. Keep any publication or repair action separate from

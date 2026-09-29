@@ -213,6 +213,14 @@ OIDC, upload and object-verification logs without changing AWS state during
 triage. If a manifest already exists, the workflow treats that version as
 published and skips upload. Do not overwrite it to force a rerun.
 
+After approving and publishing a held draft, or when repairing a missing mirror,
+dispatch `quarterly-build.yml` with only `mirror_release_tag` set to that public
+tag. Follow the [mirror-only procedure](RELEASING.md#recover-a-draft-or-incomplete-mirror).
+It reads the published state assets rather than expired workflow artifacts and
+checks their digests before any S3 writes. This is a publishing operation, not a
+read-only diagnostic. A 403 while checking for a manifest is an access failure;
+it is never treated as proof that the manifest is absent.
+
 The national file is a workflow artifact and S3 output, not a GitHub release asset.
 The GitHub size limit applies per asset, not to the release's combined size.
 A correction to published data needs a new patch version; deleting the old tag
