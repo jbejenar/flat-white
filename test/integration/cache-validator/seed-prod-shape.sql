@@ -105,8 +105,12 @@ CREATE TABLE admin_bdys_202699.abs_2026_mb (
   gc_name_26 text,
   state text
 );
-INSERT INTO admin_bdys_202699.abs_2026_mb (gid, mb_code_26, state)
-  VALUES (1, 20001320000, 'VIC');
+INSERT INTO admin_bdys_202699.abs_2026_mb
+  (gid, mb_code_26, mb_cat_26, s1_code_26, s2_code_26, s2_name_26,
+   s3_code_26, s3_name_26, s4_code_26, s4_name_26, gc_code_26, gc_name_26, state)
+VALUES
+  (1, 20001320000, 'Residential', '20101100101', '201011001', 'Synthetic SA2',
+   '20101', 'Synthetic SA3', '201', 'Synthetic SA4', '2TEST', 'Synthetic GCCSA', 'VIC');
 
 -- Boundary polygon tables — what the spatial-join fallback in
 -- address_full_prep.sql joins against. Not a polygon here (we're not testing

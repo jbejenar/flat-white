@@ -243,7 +243,7 @@ describe("verifyGzippedState empty-file safety", () => {
 
     expect(result.passed).toBe(false);
     const failedFields = result.coverageBelowThreshold.map((c) => c.field).sort();
-    expect(failedFields).toEqual(["lga", "sa1", "ward"]);
+    expect(failedFields).toEqual(["gccsa", "lga", "meshBlock", "sa1", "sa2", "sa3", "sa4", "ward"]);
     for (const c of result.coverageBelowThreshold) {
       expect(c.actual).toBe(0);
     }

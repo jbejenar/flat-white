@@ -36,7 +36,8 @@ identifier; it is not one of the six ASGS census codes changed by this migration
 2. **Validate the input.** After a fresh load or cache restore,
    [`validate-db-cache.sh`](../scripts/validate-db-cache.sh) checks the expected
    schemas, populated tables and state-specific boundaries. It also requires
-   2026 census columns and at least one matching address mesh-block code.
+   2026 census columns and a complete census hierarchy for at least 99% of
+   addresses in each state.
 3. **Assign administrative areas.** The boundary prelude in
    [`address_full_prep.sql`](../sql/address_full_prep.sql) creates/populates
    `address_principal_admin_boundaries` when needed. It uses bulk spatial joins
@@ -47,8 +48,8 @@ identifier; it is not one of the six ASGS census codes changed by this migration
    Production pre-materializes aggregations before streaming. Its generated main
    query must agree with the canonical CTE query.
 5. **Verify output.** Schema, row-count, PID and data-quality checks run on the
-   documents. Administrative coverage gates apply per state. Reported mesh-block,
-   SA1 and SA2 coverage helps detect census gaps.
+   documents. Administrative coverage gates apply per state. Mesh-block, SA1,
+   SA2, SA3, SA4 and GCCSA coverage must each reach 99% in every state.
 
 Names such as `gnaf_202608` use the **source quarter** as the schema suffix. The
 `2026` in `abs_2026_mb` identifies the **ASGS edition**. These are different
@@ -69,15 +70,30 @@ empty 2026 column with no matching codes. An old restored dump fails validation
 and is rebuilt from source by the state wrapper. The cache namespace is
 `v3-asgs2026`.
 
-The input check proves that the expected columns and at least one matching code
-exist. It does **not** prove that every address has a census match. The production
-`verify.ts` thresholds gate administrative fields. It reports mesh-block, SA1
-and SA2 coverage without imposing census percentage thresholds or separately
-reporting SA3, SA4 and GCCSA coverage. The separate `verification-report.ts` tool
-accepts configurable census thresholds; the quarterly fixture shape smoke uses
-those, while the production release workflow does not currently supply them.
-Review census coverage and representative hierarchy joins when assessing a
-production release.
+## Coverage and verification
+
+After loading or restoring, at least **99% of each state's addresses** must match
+a mesh block with populated SA1–SA4 and GCCSA codes. The check rejects null and
+blank hierarchy codes and counts each reference code once. One matching row, or
+a large healthy state beside a broken small state, cannot certify the cache.
+
+After flattening, `verify.ts` applies a 99% floor to each of the six census fields
+in each state when production boundary checks are enabled. The compressed release
+verifier applies the same census defaults even when no threshold flag is supplied.
+Both report all six levels and compare unrounded coverage. Administrative fields
+retain their separate, state-specific thresholds.
+
+Why 99%, rather than 100%? The [published May 2026 report](https://github.com/jbejenar/flat-white/releases/download/v2026.05/verification-report.md)
+reported rounded 100% mesh-block, SA1 and SA2 coverage in all nine states. The
+floor leaves room for isolated missing assignments while rejecting incomplete
+enrichment. SA3, SA4 and GCCSA must also form a complete hierarchy. Individual
+missing assignments remain `null`; they are never filled with 2021 geography.
+
+That report describes the older edition, not measured ASGS 2026 coverage. Treat
+99% as a safety floor, not a geographic accuracy guarantee. Inspect the first
+2026 release's actual rates and representative joins. If a legitimate source
+exception breaches the floor, investigate and review the evidence before changing
+the policy; do not lower it simply to make a failed build pass.
 
 ## Administrative gaps vary by state
 

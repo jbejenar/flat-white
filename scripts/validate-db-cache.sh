@@ -13,6 +13,7 @@ set -euo pipefail
 #   - Missing admin_bdys polygon tables → spatial-join fallback would silently
 #     produce 0% boundary coverage (the v2026.04 incident class)
 #   - Missing raw_admin_bdys source tables (used for late prep / debugging)
+#   - Incomplete ASGS 2026 census coverage in any state
 #
 # What this does NOT catch:
 #   - Whether address_principal_admin_boundaries is populated. By design, this
@@ -132,9 +133,30 @@ require_column "$GNAF_SCHEMA" "address_principals" "mb_2026_code"
 for column in mb_code_26 mb_cat_26 s1_code_26 s2_code_26 s2_name_26 s3_code_26 s3_name_26 s4_code_26 s4_name_26 gc_code_26 gc_name_26; do
   require_column "$ADMIN_SCHEMA" "abs_2026_mb" "$column"
 done
-matched_mesh_blocks="$(query_scalar "SELECT EXISTS (SELECT 1 FROM ${GNAF_SCHEMA}.address_principals ap JOIN ${ADMIN_SCHEMA}.abs_2026_mb mb ON mb.mb_code_26 = ap.mb_2026_code);")"
-if [[ "$matched_mesh_blocks" != "t" ]]; then
-  echo "[cache-validate] FAIL: no address mesh-block codes match the ASGS 2026 lookup; rebuild the database" >&2
+# Match the 99% census floor in src/verify.ts. Check each actual state, so a
+# large healthy state cannot hide a broken small state in a combined cache.
+# DISTINCT prevents duplicate reference rows inflating the match count. Only
+# codes with a complete hierarchy count; names/types are checked during flatten.
+require_column "$GNAF_SCHEMA" "address_principals" "state"
+census_shortfalls="$(query_scalar "
+WITH complete_mesh_blocks AS (
+  SELECT DISTINCT mb_code_26
+  FROM ${ADMIN_SCHEMA}.abs_2026_mb
+  WHERE NULLIF(BTRIM(s1_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(s2_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(s3_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(s4_code_26::text), '') IS NOT NULL
+    AND NULLIF(BTRIM(gc_code_26::text), '') IS NOT NULL
+)
+SELECT COALESCE(ap.state, '(missing state)') || ': ' || COUNT(mb.mb_code_26) || '/' ||
+       COUNT(*) || ' addresses have a complete ASGS 2026 hierarchy (minimum 99%)'
+FROM ${GNAF_SCHEMA}.address_principals ap
+LEFT JOIN complete_mesh_blocks mb ON mb.mb_code_26 = ap.mb_2026_code
+GROUP BY ap.state
+HAVING COUNT(mb.mb_code_26) * 100 < COUNT(*) * 99;")"
+if [[ -n "$census_shortfalls" ]]; then
+  echo "[cache-validate] FAIL: ASGS 2026 census coverage below 99%; check source compatibility and completeness:" >&2
+  echo "$census_shortfalls" >&2
   exit 1
 fi
 

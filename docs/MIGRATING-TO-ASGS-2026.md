@@ -171,6 +171,12 @@ Manual URL overrides
 still have to pass the loaded 2026 schema checks; a URL or folder name alone is
 not proof of compatibility.
 
+Loads and restored caches must match at least 99% of each state's addresses to a
+complete 2026 census hierarchy. Both output verification paths apply a 99% default
+minimum to every census level, separately for each state. Individual missing
+assignments remain `null`; the checks reject widespread loss without filling
+gaps with old geography. See [the coverage policy](BOUNDARIES.md#coverage-and-verification).
+
 The first build uses a new database cache namespace. Plan for a full source load
 and measure its duration, memory and disk use. April 2026 performance reports in
 this repository describe older data and are not ASGS 2026 capacity guarantees.

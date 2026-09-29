@@ -20,11 +20,14 @@ import { pipeline } from "node:stream/promises";
 import { AddressDocumentSchema } from "./schema.js";
 import type { AddressDocument } from "./schema.js";
 import type { BuildMetadata } from "./metadata.js";
-import { ENUM_FIELD_PATHS } from "./verify.js";
+import { CENSUS_BOUNDARY_THRESHOLDS, ENUM_FIELD_PATHS } from "./verify.js";
 import type { EnumSets, EnumUnknownCounts } from "./verify.js";
 
 const DEFAULT_STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
 const VALID_STATES = new Set(DEFAULT_STATES);
+const CENSUS_COVERAGE_PERCENT = Object.fromEntries(
+  Object.entries(CENSUS_BOUNDARY_THRESHOLDS).map(([field, fraction]) => [field, fraction * 100]),
+);
 
 /** Per-field minimum boundary coverage thresholds (percent, 0-100). */
 export type BoundaryCoverageThresholds = Partial<
@@ -62,6 +65,7 @@ export interface VerificationReport {
 /**
  * Stream a gzipped state artifact, validating every record before publication.
  * Decompression and input errors reject the promise and close the whole stream.
+ * Census fields default to 99% coverage; explicit thresholds override defaults.
  */
 export async function verifyGzippedState(
   gzPath: string,
@@ -194,16 +198,15 @@ export async function verifyGzippedState(
   // errors to flag on zero rows. Coerce missing values to 0 so empty states
   // explicitly fail every configured threshold.
   const coverageBelowThreshold: CoverageBelowThreshold[] = [];
-  if (thresholds) {
-    for (const [field, threshold] of Object.entries(thresholds) as [
-      keyof BoundaryCoverageThresholds,
-      number,
-    ][]) {
-      if (threshold === undefined) continue;
-      const actual = rowCount > 0 ? (boundaryCounts[field] / rowCount) * 100 : 0;
-      if (actual < threshold) {
-        coverageBelowThreshold.push({ field, actual, threshold });
-      }
+  const effectiveThresholds = { ...CENSUS_COVERAGE_PERCENT, ...thresholds };
+  for (const [field, threshold] of Object.entries(effectiveThresholds) as [
+    keyof BoundaryCoverageThresholds,
+    number,
+  ][]) {
+    if (threshold === undefined) continue;
+    const actual = rowCount > 0 ? (boundaryCounts[field] / rowCount) * 100 : 0;
+    if (actual < threshold) {
+      coverageBelowThreshold.push({ field, actual, threshold });
     }
   }
 
@@ -219,7 +222,7 @@ export async function verifyGzippedState(
     duplicatePids,
     enumUnknownCounts,
     // Independent safety: a zero-row state file is always a failure, even if
-    // no thresholds are configured. Every schema/quality/enum check is
+    // thresholds are explicitly overridden to zero. Every schema/quality/enum check is
     // vacuously "passing" on an empty file, so without this gate the function
     // would return passed=true for an empty artifact.
     passed:
@@ -372,7 +375,7 @@ const VALID_THRESHOLD_FIELDS = new Set<keyof BoundaryCoverageThresholds>([
 
 /**
  * Parse a boundary coverage threshold spec like "lga=99,ward=95,sa1=99".
- * Returns undefined when the spec is missing/empty (no thresholds applied).
+ * Returns undefined when the spec is missing/empty (keep census defaults).
  * Throws on unknown fields or non-numeric values so a typo fails loud.
  */
 export function parseBoundaryThresholdsArg(

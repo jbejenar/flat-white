@@ -95,13 +95,15 @@ For ASGS 2026, validation requires:
 - The expected versioned G-NAF and raw schemas with populated core tables.
 - `address_principals.mb_2026_code` and the prepared `abs_2026_mb` lookup.
 - The required 2026 mesh-block and hierarchy columns.
-- At least one address mesh-block code matching the 2026 lookup.
+- At least 99% of addresses in **each state** matching a 2026 mesh block with
+  populated SA1–SA4 and GCCSA codes. Null or blank hierarchy values do not count.
 - Populated raw and prepared administrative tables appropriate to the selected states.
 
-The error `no address mesh-block codes match the ASGS 2026 lookup` means the
-inputs are incompatible or incomplete. A table containing 2021 data is not a
-fallback. The matching-code check is an input sanity check, **not** proof of full
-census coverage; inspect output coverage as well.
+The error `ASGS 2026 census coverage below 99%` reports the affected state and its
+complete/total address counts. Check incompatible quarters, incomplete loads and
+missing hierarchy values. A table containing 2021 data is not a fallback. A large
+healthy state cannot hide a broken smaller state, and duplicate reference rows
+cannot inflate the matching count.
 
 `Restored database failed validation` makes the state wrapper discard that local
 dump and retry from source within its attempt budget. Schema 1.0.0 also uses cache
@@ -122,11 +124,12 @@ would have fallen between the former sample checks. Wrong-state records and
 out-of-range primary or alternative geocodes fail verification. Missing or damaged
 gzip files also fail, with their streams closed cleanly.
 
-The report includes mesh block, SA1–SA4 and GCCSA coverage. Optional
-`--boundary-thresholds` values are evaluated before rounding for display. The
-quarterly workflow does not set census minimums: compare the reported rates with
-the actual source and expected nulls rather than treating a green report as proof
-of complete geographic assignments.
+Both production verifiers apply a 99% default floor to mesh block, SA1–SA4 and
+GCCSA coverage in each state. The release report's optional `--boundary-thresholds`
+values use percentages and are evaluated before rounding. Isolated nulls remain
+valid; a green report still does not prove each geographic assignment is correct.
+See [the coverage policy](BOUNDARIES.md#coverage-and-verification) for the evidence
+and limits behind this safeguard.
 
 Reproduce code changes with the fixture:
 

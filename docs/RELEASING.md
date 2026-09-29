@@ -88,8 +88,11 @@ consumer-ready release.
 
 The release verification report validates every document in each compressed state
 file. It checks state membership, coordinates and duplicates, and reports coverage
-through GCCSA. It does not impose census coverage minimums by default; review
-null rates and source compatibility as part of the migration checks.
+through GCCSA. Each census field must reach 99% coverage in each state by default;
+the load/restore gate also requires 99% complete census hierarchies per state.
+Review the actual null rates and source compatibility as part of the migration
+checks. These floors detect incomplete enrichment; they do not certify each
+individual geographic assignment.
 
 Publication also checks [GitHub's limit of less than 2 GiB per asset](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 The combined size of valid state files can exceed that limit. A comparison-tool

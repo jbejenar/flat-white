@@ -64,6 +64,9 @@ Historical entries retain the contract and source versions published at the time
 - Apply GitHub's size limit to each release asset, stop on comparison-tool errors,
   and publish at the exact build commit. Refuse to replace existing releases or
   tags pointing elsewhere; remove the destructive release/tag deletion on rerun.
+- Enforce census coverage per state after loading/restoring and in both output
+  verifiers. A single matching address cannot certify an incomplete census load;
+  the default 99% floor still permits isolated null assignments.
 
 ## [v2026.05] - 2026-05-18
 
