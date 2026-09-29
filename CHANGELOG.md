@@ -44,6 +44,9 @@ Historical entries retain the contract and source versions published at the time
 
 ### Fixed
 
+- Validate independent administrative-boundary quarters at Docker, local and
+  state-runner startup, before output/cache creation or infrastructure. Preserve
+  manual URL builds by keeping their provenance marker out of the quarter selector.
 - Give quarterly setup draft visibility and reserve the exact release tag before
   building. Reuse the built-in token when publishing after `main` advances;
   reject missing or moved tags and keep publication checks on the built commit.

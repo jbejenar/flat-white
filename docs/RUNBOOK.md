@@ -58,6 +58,10 @@ Boundaries can be published at different times. An explicit `gnaf_version` pins
 both to that quarter; an unpinned run discovers each independently.
 
 Schema 1.x rejects either automatically selected source older than `2026.08`.
+Direct production entrypoints also reject an older or malformed explicit
+`ADMIN_BDYS_VERSION` before output setup or Postgres, even for cached runs.
+Correct or unset that selector; do not pass the metadata marker `manual` as a
+quarter. Manual builds use the documented URL and directory overrides instead.
 Do not rename an older quarter to satisfy the check. Use the old release's code
 for an old-data rebuild, or select compatible sources. Manual overrides require
 both URLs, the extracted boundary directory and an explicit G-NAF version.
