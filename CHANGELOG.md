@@ -44,6 +44,11 @@ Historical entries retain the contract and source versions published at the time
 
 ### Fixed
 
+- Give quarterly setup draft visibility and reserve the exact release tag before
+  building. Reuse the built-in token when publishing after `main` advances;
+  reject missing or moved tags and keep publication checks on the built commit.
+- Preserve the supported manual-source provenance marker in mirror recovery,
+  and notify downstream repositories only after a release is public.
 - Add mirror-only recovery for an approved, published draft or a failed S3 mirror.
   Check public asset digests and the original schema/mapping, rebuild the national
   gzip without loading G-NAF, and share the normal publisher's immutable-manifest

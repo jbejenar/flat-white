@@ -42,6 +42,15 @@ gh api repos/jbejenar/flat-white/actions/workflows/quarterly-build.yml --jq .sta
 A disabled schedule needs operator attention. A green preflight proves metadata
 setup, not archive compatibility or production readiness. See [release preflight](RELEASING.md#start-with-metadata-only-preflight).
 
+For a setup authorization error, check its `contents: write` job permission. A
+read-only token cannot reliably see held drafts. The built-in Actions token is
+sufficient; no separate release App is needed. Production setup reserves the
+exact release tag before building. If that fails, the state jobs must stay skipped.
+
+A failed build can leave an unused reserved tag. Rerun the same commit, or choose
+a new patch version when the fix changes code. Do not move the reserved tag to
+make a different commit pass. See [release permissions](RELEASING.md#how-release-permissions-work).
+
 ## Source discovery failed
 
 Check the resolved versions and data.gov.au resource metadata. G-NAF and Admin

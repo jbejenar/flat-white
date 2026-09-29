@@ -54,7 +54,11 @@ describe("release publication guards", () => {
     expect(sizeCheck().status).toBe(1);
   });
 
-  function createRelease(existing: boolean) {
+  function createRelease(
+    existing: boolean,
+    ref: "matching" | "missing" | "moved" = "matching",
+    mainAdvanced = false,
+  ) {
     mkdirSync(join(root, "bin"));
     mkdirSync(join(root, "scripts"));
     for (const name of ["check-quarterly-release.sh", "check-release-asset-sizes.py"]) {
@@ -66,7 +70,15 @@ describe("release publication guards", () => {
         data: {
           repository: {
             release: existing ? { url: "https://example.com/release", isDraft: false } : null,
-            ref: null,
+            ref:
+              ref === "missing"
+                ? null
+                : {
+                    target: {
+                      __typename: "Commit",
+                      oid: ref === "matching" ? "built-commit" : "other-commit",
+                    },
+                  },
           },
         },
       }),
@@ -76,6 +88,9 @@ describe("release publication guards", () => {
       `#!/usr/bin/env bash
 if [[ "$1" == api ]]; then
   cat "$AUDIT_ROOT/response.json"
+elif [[ "$MAIN_ADVANCED" == true && " $* " == *" --target "* ]]; then
+  echo 'HTTP 403: workflow-write authorization required for historical target' >&2
+  exit 1
 else
   printf '%s\\n' "$@" >> "$AUDIT_ROOT/mutations"
 fi
@@ -101,6 +116,7 @@ fi
         ...process.env,
         PATH: `${join(root, "bin")}:${process.env.PATH}`,
         AUDIT_ROOT: root,
+        MAIN_ADVANCED: String(mainAdvanced),
         GITHUB_SHA: "built-commit",
         GITHUB_REPOSITORY: "owner/repo",
       },
@@ -120,12 +136,37 @@ fi
     expect(result.mutations).toBe("");
   });
 
-  it("creates a new draft at the exact built commit without deleting tags", () => {
-    const result = createRelease(false);
+  it.each([false, true])("uses the verified tag when main advanced=%s", (mainAdvanced) => {
+    const result = createRelease(false, "matching", mainAdvanced);
     expect(result.status).toBe(0);
-    expect(result.mutations).toContain(
-      "release\ncreate\nv2026.08\n--draft\n--target\nbuilt-commit\n",
-    );
+    expect(result.mutations).toContain("release\ncreate\nv2026.08\n--draft\n--verify-tag\n");
+    expect(result.mutations).not.toContain("--target");
     expect(result.mutations).not.toContain("delete");
+  });
+
+  it.each(["missing", "moved"] as const)(
+    "refuses publication when the reserved tag is %s",
+    (ref) => {
+      const result = createRelease(false, ref, true);
+      expect(result.status).toBe(1);
+      expect(result.mutations).toBe("");
+    },
+  );
+
+  it("keeps draft visibility, tag reservation and publication wired to the built-in token", () => {
+    const workflow = readFileSync(".github/workflows/quarterly-build.yml", "utf8");
+    const setup = workflow.split("  setup:\n")[1].split("  build:\n")[0];
+    expect(setup).toContain("contents: write");
+    expect(setup).toContain(
+      "steps.reserve-tag.outputs.build_required || steps.release-check.outputs.build_required",
+    );
+    expect(setup).toContain(
+      "steps.release-check.outputs.build_required == 'true' && !inputs.preflight_only",
+    );
+    expect(setup).toContain('"$GITHUB_SHA" reserve');
+    expect(workflow).toContain('git checkout --detach "$GITHUB_SHA"');
+    expect(workflow).toContain('"$GITHUB_SHA" verify');
+    expect(workflow).toContain("steps.verify_release.outputs.published == 'true'");
+    expect(workflow).not.toContain("create-github-app-token");
   });
 });

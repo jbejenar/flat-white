@@ -7,6 +7,16 @@ event_name="${1:?event name required}"
 repository="${2:?owner/repository required}"
 tag="${3:?release tag required}"
 target_sha="${4:-}"
+mode="${5:-check}"
+case "$mode" in
+  check) ;;
+  reserve|require|verify)
+    if [[ -z "$target_sha" ]]; then
+      echo "::error::Tag $mode requires the exact build commit" >&2
+      exit 1
+    fi ;;
+  *) echo "::error::Unknown release gate mode: $mode" >&2; exit 1 ;;
+esac
 
 # GraphQL variables must remain literal; gh supplies their values separately.
 # shellcheck disable=SC2016
@@ -23,7 +33,7 @@ release_url="$(jq -er '
   else .data.repository.release.url | select(type == "string" and length > 0)
   end' <<< "$response")"
 
-if [[ -n "$release_url" ]]; then
+if [[ -n "$release_url" && "$mode" != verify ]]; then
   if [[ "$event_name" == "schedule" ]]; then
     echo "::notice::Skipping scheduled build: release already exists at $release_url" >&2
     echo 'build_required=false'
@@ -46,6 +56,28 @@ if [[ -n "$target_sha" ]]; then
   if [[ -n "$tag_commit" && "$tag_commit" != "$target_sha" ]]; then
     echo "::error::Tag $tag points to $tag_commit, not the built commit $target_sha. Choose an unused version." >&2
     exit 1
+  fi
+  if [[ -z "$tag_commit" ]]; then
+    if [[ "$mode" == require || "$mode" == verify ]]; then
+      echo "::error::Reserved tag $tag is missing; refusing to release a different commit" >&2
+      exit 1
+    elif [[ "$mode" == reserve ]]; then
+      # Reserve before the expensive build while this commit's workflows are
+      # still current. contents:write can create a release from this existing
+      # tag later, even if main changes workflows. No tag is moved or deleted.
+      if created_sha="$(gh api --method POST "repos/$repository/git/refs" \
+          -f ref="refs/tags/$tag" -f sha="$target_sha" --jq '.object.sha')"; then
+        if [[ "$created_sha" != "$target_sha" ]]; then
+          echo "::error::Created tag did not match the requested build commit" >&2
+          exit 1
+        fi
+      else
+        # A concurrent setup may have reserved it. Accept only a successful
+        # read proving the same commit and no existing release; never force it.
+        bash "$0" "$event_name" "$repository" "$tag" "$target_sha" require
+        exit $?
+      fi
+    fi
   fi
 fi
 echo 'build_required=true'

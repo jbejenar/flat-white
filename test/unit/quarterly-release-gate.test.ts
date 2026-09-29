@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const gate = resolve("scripts/check-quarterly-release.sh");
@@ -27,9 +27,128 @@ afterEach(() => {
 });
 
 describe("quarterly release gate", () => {
+  function reservation(ref: unknown = null, creation = "success", mode = "reserve") {
+    const response = { data: { repository: { release: null, ref } } };
+    const env = environment(response);
+    const root = dirname(String(env.GATE_RESPONSE));
+    writeFileSync(
+      join(root, "after.json"),
+      JSON.stringify({
+        data: {
+          repository: {
+            release: null,
+            ref:
+              creation === "denied"
+                ? null
+                : {
+                    target: {
+                      __typename: "Commit",
+                      oid: creation === "race-other" ? "other-commit" : "built-commit",
+                    },
+                  },
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(root, "gh"),
+      `#!/usr/bin/env bash
+if [[ "$*" == *"--method POST"* ]]; then
+  printf '%s\\n' "$@" > "$GATE_ROOT/writes"
+  if [[ "$GATE_CREATION" == success ]]; then
+    echo built-commit
+  elif [[ "$GATE_CREATION" == wrong-response ]]; then
+    echo other-commit
+  else
+    cp "$GATE_ROOT/after.json" "$GATE_RESPONSE"
+    exit 1
+  fi
+else
+  cat "$GATE_RESPONSE"
+fi
+`,
+      { mode: 0o755 },
+    );
+    const result = spawnSync(
+      "bash",
+      [gate, "workflow_dispatch", "owner/repo", "v2026.08", "built-commit", mode],
+      {
+        env: { ...env, GATE_ROOT: root, GATE_CREATION: creation },
+        encoding: "utf8",
+      },
+    );
+    return {
+      ...result,
+      writes: existsSync(join(root, "writes")) ? readFileSync(join(root, "writes"), "utf8") : "",
+    };
+  }
+
+  it.each([
+    ["success", true],
+    ["race-same", true],
+    ["race-other", false],
+    ["denied", false],
+    ["wrong-response", false],
+  ] as const)("reserves the exact tag and handles %s", (creation, accepted) => {
+    const result = reservation(null, creation);
+    expect(result.status === 0).toBe(accepted);
+    expect(result.stdout.includes("build_required=true")).toBe(accepted);
+    expect(result.writes).toContain("ref=refs/tags/v2026.08");
+    expect(result.writes).toContain("sha=built-commit");
+    expect(result.writes).not.toContain("PATCH");
+    expect(result.writes).not.toContain("DELETE");
+  });
+
+  it("reuses a matching reservation without a write", () => {
+    const result = reservation({ target: { __typename: "Commit", oid: "built-commit" } });
+    expect(result.status).toBe(0);
+    expect(result.writes).toBe("");
+  });
+
+  it("refuses to move an existing tag", () => {
+    const result = reservation({ target: { __typename: "Commit", oid: "other-commit" } });
+    expect(result.status).toBe(1);
+    expect(result.writes).toBe("");
+  });
+
+  it.each(["check", "require", "verify"])("mode %s never creates a missing tag", (mode) => {
+    const result = reservation(null, "success", mode);
+    expect(result.status).toBe(mode === "check" ? 0 : 1);
+    expect(result.writes).toBe("");
+  });
+
+  it.each([null, { target: { __typename: "Commit", oid: "built-commit" } }])(
+    "skips held drafts on schedule and refuses manual replacement, with ref %j",
+    (ref) => {
+      const env = environment({
+        data: {
+          repository: {
+            release: {
+              url: "https://example.com/draft",
+              isDraft: true,
+            },
+            ref,
+          },
+        },
+      });
+      for (const event of ["schedule", "workflow_dispatch"]) {
+        const result = spawnSync("bash", [gate, event, "owner/repo", "v2026.08", "built-commit"], {
+          env,
+          encoding: "utf8",
+        });
+        expect(result.status).toBe(event === "schedule" ? 0 : 1);
+        expect(result.stdout).not.toContain("build_required=true");
+      }
+    },
+  );
+
   it.each([false, true])("skips an existing release (draft=%s)", (isDraft) => {
     const env = environment({
-      data: { repository: { release: { url: "https://example.com/release", isDraft } } },
+      data: {
+        repository: {
+          release: { url: "https://example.com/release", isDraft },
+        },
+      },
     });
     expect(
       execFileSync("bash", [gate, "schedule", "owner/repo", "v2026.08"], {
@@ -85,7 +204,11 @@ describe("quarterly release gate", () => {
     (isDraft) => {
       const result = spawnSync("bash", [gate, "workflow_dispatch", "owner/repo", "v2026.08"], {
         env: environment({
-          data: { repository: { release: { url: "https://example.com/release", isDraft } } },
+          data: {
+            repository: {
+              release: { url: "https://example.com/release", isDraft },
+            },
+          },
         }),
         encoding: "utf8",
       });
@@ -115,7 +238,9 @@ describe("quarterly release gate", () => {
       "bash",
       [gate, "workflow_dispatch", "owner/repo", "v2026.08", "built-commit"],
       {
-        env: environment({ data: { repository: { release: null, ref } } }),
+        env: environment({
+          data: { repository: { release: null, ref } },
+        }),
         encoding: "utf8",
       },
     );

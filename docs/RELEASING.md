@@ -51,7 +51,7 @@ versions. With `preflight_only=true`, all downstream jobs should be skipped.
 
 Preflight validates metadata and input eligibility. It does **not** inspect the
 archive contents, prove a complete loader run, measure production memory, or test
-release/S3 publication. The loaded database checks provide a later compatibility
+release/S3 publication. It does not reserve a release tag. The loaded database checks provide a later compatibility
 gate for the actual sources.
 
 The manual **Mini Quarterly** workflow also freezes and validates both source
@@ -102,6 +102,30 @@ Both setup and the final publication step check whether the release already
 exists. Scheduled runs skip existing releases; manual runs stop with an error.
 No run deletes an existing release or tag. New releases point to the exact commit
 used by the build. A pre-existing tag pointing elsewhere is rejected.
+
+## How release permissions work
+
+The workflow uses GitHub's built-in `GITHUB_TOKEN`; no extra App or release secret
+is required. Setup and publication have `contents: write`. Setup needs that access
+even for its read checks because GitHub hides drafts from a read-only token.
+
+After checking availability, a production run reserves the release tag at its
+exact commit **before** starting the state builds. Publication rechecks that tag
+and uses `gh release create --verify-tag`, then checks the commit again before
+publishing. It never substitutes the current tip of `main`. This also avoids
+asking GitHub to create a historical tag after workflow files have changed during
+the long build, which can require permissions unavailable to `GITHUB_TOKEN`.
+
+If a build fails, the reserved tag remains but no data release is published.
+Rerun the same commit to reuse that reservation. If the repair changes the commit,
+choose an unused patch version; the workflow will not move or delete the old tag.
+Tag creation or authorization failures stop in setup, before the expensive build.
+Metadata-only preflight and mirror recovery do not reserve tags.
+
+Keeping the built-in token also preserves the existing event behaviour: release
+tags do not launch another tag-triggered Docker publication. The catalogue runs
+from completion of Quarterly Build, and downstream notifications require a public
+release. A held draft is not announced as ready.
 
 ## Publish a correction
 
@@ -212,6 +236,10 @@ downloads the nine **published state files**, checks their sizes and SHA-256
 digests against GitHub's release records, and reconstructs the national gzip by
 concatenating those exact bytes. The original tag supplies the OpenSearch mapping
 and schema version. Seven-day workflow artifact expiry does not prevent recovery.
+The documented `adminBoundariesVersion: "manual"` marker is accepted for releases
+built from explicit source overrides. Recovery preserves that provenance; it does
+not invent a source quarter. Explicit quarter values must still satisfy the
+production version policy, and schema, geography, counts and asset checks still apply.
 Public status and asset metadata are checked again after downloading, before AWS
 credentials are configured. The manifest's pipeline fields identify the recovery
 run and its publishing code; its saved recovery plan records the release commit.

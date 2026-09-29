@@ -147,10 +147,17 @@ else:
     ]);
   }
 
-  it.each(["v2026.08", "v2026.08.1"])(
-    "recovers %s from public files without retained run artifacts",
-    (tag) => {
+  it.each([
+    ["v2026.08", "2026.08"],
+    ["v2026.08.1", "2026.08"],
+    ["v2026.08", "manual"],
+    ["v2026.08.1", "manual"],
+  ])(
+    "recovers %s with administrative source %s without retained run artifacts",
+    (tag, adminVersion) => {
       fixture(tag);
+      metadata.adminBoundariesVersion = adminVersion;
+      updateMetadata();
       expect(plan().status).toBe(0);
       const result = prepare();
       expect(result.status, result.stderr).toBe(0);
@@ -354,6 +361,11 @@ elif args[:2] != ['s3', 'ls']:
     ["asgsYear", 2021],
     ["totalCount", 10],
     ["schemaVersion", "1.1.0"],
+    ["adminBoundariesVersion", "2026.05"],
+    ["adminBoundariesVersion", "2026.09"],
+    ["adminBoundariesVersion", "MANUAL"],
+    ["adminBoundariesVersion", ""],
+    ["adminBoundariesVersion", null],
   ])("rejects inconsistent metadata %s", (field, value) => {
     metadata[field as string] = value;
     updateMetadata();

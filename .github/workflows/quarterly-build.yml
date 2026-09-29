@@ -60,7 +60,9 @@ jobs:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
-      contents: read
+      # Draft releases are visible only with push access. A read-only token
+      # can mistake a held draft for an unused quarter and rebuild all states.
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version || steps.recovery.outputs.version }}
       admin_bdys_version: ${{ steps.version.outputs.admin_bdys_version || steps.recovery.outputs.admin_bdys_version }}
@@ -68,7 +70,7 @@ jobs:
       schema_version: ${{ steps.version.outputs.schema_version || steps.recovery.outputs.schema_version }}
       mirror_only: ${{ steps.recovery.outputs.mirror_only || 'false' }}
       data_source_key: ${{ steps.version.outputs.data_source_key }}
-      build_required: ${{ steps.release-check.outputs.build_required }}
+      build_required: ${{ steps.reserve-tag.outputs.build_required || steps.release-check.outputs.build_required }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -150,6 +152,15 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: v${{ steps.version.outputs.release_version }}
         run: bash scripts/check-quarterly-release.sh "$EVENT_NAME" "$REPOSITORY" "$RELEASE_TAG" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Reserve release tag before building
+        if: steps.release-check.outputs.build_required == 'true' && !inputs.preflight_only
+        id: reserve-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: v${{ steps.version.outputs.release_version }}
+        run: bash scripts/check-quarterly-release.sh "$EVENT_NAME" "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$GITHUB_SHA" reserve >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
   # Job 1: Build each state in parallel
@@ -371,8 +382,7 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
     permissions:
       # contents: write — needed for the release job's git push to a feature
-      #   branch (the new CHANGELOG PR flow uses this) and for gh release
-      #   create/edit
+      #   branch (the CHANGELOG PR flow uses this) and release creation/edit.
       # pull-requests: write — REQUIRED for the new CHANGELOG PR flow.
       #   When a job-level permissions block is set, all unspecified scopes
       #   become 'none' (not the workflow default). Without this, gh pr list
@@ -883,13 +893,9 @@ jobs:
             echo "✓ CHANGELOG PR #${EXISTING_PR} already exists for v${RELEASE_VERSION} — branch updated via force-push"
           fi
 
-          # Switch back to main so subsequent steps in this job operate from
-          # the same git state they would have without this PR-creation flow.
-          # The remaining release-job steps (Create GitHub Release, Verify
-          # release, Notify downstream) all use the gh API and don't depend
-          # on git state, but checking out main is defensive for future
-          # changes.
-          git checkout main
+          # Publication guards must come from the commit that built the data,
+          # even when main advanced during the matrix build.
+          git checkout --detach "$GITHUB_SHA"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -902,13 +908,15 @@ jobs:
 
           # Recheck after the long build: another run may have published this tag.
           # Never delete a release/tag or overwrite an existing draft on rerun.
-          bash scripts/check-quarterly-release.sh workflow_dispatch "$GITHUB_REPOSITORY" "$TAG" "$GITHUB_SHA"
+          bash scripts/check-quarterly-release.sh workflow_dispatch "$GITHUB_REPOSITORY" "$TAG" "$GITHUB_SHA" require
           python3 scripts/check-release-asset-sizes.py "$ASSET_DIR"
 
-          # Create as draft — only publish after verification passes
+          # The exact tag was reserved before building. Do not ask GitHub to
+          # create an old target now: GITHUB_TOKEN cannot acquire workflow-write
+          # scope if main has since changed workflows. Never fall back to main.
           gh release create "$TAG" \
             --draft \
-            --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "flat-white ${TAG}" \
             --notes-file "$NOTES_FILE" \
             "$ASSET_DIR"/*
@@ -920,6 +928,10 @@ jobs:
         run: |
           RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
           TAG="v${RELEASE_VERSION}"
+
+          # Also catch an out-of-band tag move during asset upload. Existing
+          # draft visibility is expected here; only the tag identity is checked.
+          bash scripts/check-quarterly-release.sh workflow_dispatch "$GITHUB_REPOSITORY" "$TAG" "$GITHUB_SHA" verify
 
           echo "--- Release Details ---"
           gh release view "$TAG"
@@ -970,7 +982,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Notify downstream repositories
-        if: ${{ success() }}
+        if: ${{ success() && steps.verify_release.outputs.published == 'true' }}
         run: |
           VERSION="${{ needs.setup.outputs.version }}"
           RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"

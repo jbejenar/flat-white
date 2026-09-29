@@ -80,7 +80,12 @@ def resolve(repository, tag):
     require(isinstance(metadata, dict), "Invalid release metadata")
     require(metadata.get("version") == release_version and metadata.get("gnafVersion") == version,
             "Release metadata does not match the selected version")
-    validate_production_version(metadata.get("adminBoundariesVersion", ""), "Admin Boundaries")
+    # Supported URL overrides deliberately record "manual", not an inferred
+    # quarter. The original release's schema/load gates validated those sources;
+    # recovery preserves their provenance and verifies the published bytes.
+    admin_version = metadata.get("adminBoundariesVersion", "")
+    if admin_version != "manual":
+        validate_production_version(admin_version, "Admin Boundaries")
     schema = metadata.get("schemaVersion", "")
     require(re.fullmatch(r"1\.[0-9]+\.[0-9]+", schema) and metadata.get("asgsYear") == 2026,
             "Recovery requires the schema 1.x / ASGS 2026 contract")
