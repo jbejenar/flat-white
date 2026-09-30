@@ -58,13 +58,15 @@ flat-white — Australian address data, flattened and served.
 Usage:
   docker run flat-white --help
   docker run flat-white --fixture-only --output /output/
-  docker run -e GNAF_VERSION=2026.08 -e ADMIN_BDYS_VERSION=2026.08 -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
+  docker run -e GNAF_VERSION=2026.08 -v "$(pwd)/sources:/sources:ro" -v "$(pwd)/output:/output" flat-white --states VIC --compress --output /output/
 
 Environment:
   GNAF_VERSION       Required production quarter, YYYY.MM, 2026.08 or newer.
                      Release months: 02, 05, 08, 11. Fixtures default to 2026.02.
-  ADMIN_BDYS_VERSION Optional independent boundary quarter; same production rules.
-                     Omit for automatic discovery. Ignored by fixture mode.
+  SOURCE_LOCK_PATH  Required source lock; default /sources/source-lock.json.
+  SOURCE_ARCHIVE_DIR Verified ZIP inputs; default /sources.
+  ADMIN_BDYS_VERSION Optional boundary quarter assertion; must match the lock.
+                     Omit to use the lock. Ignored by fixture mode.
 
 Flags:
   --help              Show this help
@@ -194,6 +196,14 @@ else
   python3 "$VERSION_POLICY" "--admin-version=${ADMIN_BDYS_VERSION:-}" -- "$GNAF_VERSION"
 fi
 
+if [[ "$MODE" != "fixture" ]]; then
+  export SOURCE_LOCK_PATH="${SOURCE_LOCK_PATH:-/sources/source-lock.json}"
+  export SOURCE_ARCHIVE_DIR="${SOURCE_ARCHIVE_DIR:-/sources}"
+  export DATA_DIR="${DATA_DIR:-/data}"
+  BOUNDARY_REFERENCE_DATE=$(node /app/dist/source-lock.js inspect)
+  export BOUNDARY_REFERENCE_DATE
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 # ── Postgres cleanup trap ────────────────────────────────────────────────────
@@ -310,6 +320,10 @@ elif [[ -n "$RESTORE_DB" ]]; then
     log "ERROR: --restore-db file not found: $RESTORE_DB"
     exit 2
   fi
+  if ! python3 /app/scripts/cache_attestation.py verify --lock "$SOURCE_LOCK_PATH" --dump "$RESTORE_DB" --states "$STATES"; then
+    log "ERROR: Restored database failed validation (missing or mismatched source/runtime provenance)"
+    exit 2
+  fi
   log "Restoring database from cache: $RESTORE_DB"
   PGPASSWORD="$PGPASSWORD" pg_restore \
     -h localhost \
@@ -324,6 +338,8 @@ elif [[ -n "$RESTORE_DB" ]]; then
   }
   DUMP_SIZE=$(du -h "$RESTORE_DB" | cut -f1)
   log "Database restored from $DUMP_SIZE dump"
+  STATES="$STATES" DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
+    node /app/dist/source-lock.js verify-db || { log "ERROR: Restored database failed validation (source attestation)"; exit 2; }
   # validate-db-cache.sh prints "[cache-validate] FAIL: <reason>" to stderr
   # on the failing check; that line is the operator-actionable detail.
   # STATES is passed via inline env so the validator can apply state-aware
@@ -377,7 +393,7 @@ else
 
     # GNAF_VERSION is already validated/set above
 
-    if ! node /app/dist/download.js; then
+    if ! node /app/dist/source-lock.js extract; then
       log "ERROR: Download failed"
       exit 1
     fi
@@ -400,16 +416,17 @@ else
   # in address_full_prep.sql (the E1.21 bulk insert-then-5-updates shape)
   # is as fast as gnaf-loader's Part 5 and more reliable (no per-state
   # shapefile filter cascade). Part 5 is never called.
-  LOAD_ARGS="--geoscape-version $GEOSCAPE_VERSION --no-boundary-tag"
+  LOAD_ARGS=(--geoscape-version "$GEOSCAPE_VERSION" --no-boundary-tag --boundary-date "$BOUNDARY_REFERENCE_DATE" --data-dir "$DATA_DIR")
   if [[ -n "$STATES" ]]; then
-    LOAD_ARGS="$LOAD_ARGS --states $STATES"
+    read -r -a LOAD_STATES <<< "$STATES"
+    LOAD_ARGS+=(--states "${LOAD_STATES[@]}")
   fi
 
   LOAD_LOG="/tmp/load.log"
   rm -f "$LOAD_LOG"
 
   set +e
-  GNAF_VERSION="$GNAF_VERSION" node /app/dist/load.js $LOAD_ARGS 2>&1 | tee "$LOAD_LOG"
+  GNAF_VERSION="$GNAF_VERSION" PGPASSWORD="$PGPASSWORD" PGUSER="$PGUSER" PGDATABASE="$PGDB" node /app/dist/load.js "${LOAD_ARGS[@]}" 2>&1 | tee "$LOAD_LOG"
   LOAD_EXIT=${PIPESTATUS[0]}
   set -e
 
@@ -446,6 +463,7 @@ else
       log "ERROR: Database dump failed"
       exit 2
     }
+    python3 /app/scripts/cache_attestation.py create --lock "$SOURCE_LOCK_PATH" --dump "$DUMP_DB" --states "$STATES"
     DUMP_SIZE=$(du -h "$DUMP_DB" | cut -f1)
     log "Database dumped: $DUMP_DB ($DUMP_SIZE)"
     stage_end

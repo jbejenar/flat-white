@@ -189,3 +189,35 @@ it("publishes the same schema/geography metadata in OpenSearch mappings", () => 
   );
   expect(mappings).toMatchObject({ _meta: { schemaVersion: VERSION, asgsYear: ASGS_YEAR } });
 });
+
+describe("release evidence isolation", () => {
+  const manifest = () =>
+    buildAddressManifestV2({
+      version: "2026-08-1",
+      createdAt: "2026-09-30T00:00:00Z",
+      pipeline: { repo: "owner/repo", commit: "commit", run_id: "1" },
+      source: { name: "G-NAF", release: "August 2026", url: "https://example.test" },
+      files: [...baseFiles],
+      sourceKeys: [baseFiles[2].key],
+      artifacts: [
+        { key: "data/address/2026-08-1/source-lock.json", bytes: 42, sha256: "a".repeat(64) },
+      ],
+    });
+  it("preserves checksummed evidence without changing ingestion or address counts", () => {
+    const parsed = validateAddressManifestV2(manifest());
+    expect(parsed.artifacts).toHaveLength(1);
+    expect(parsed.total_records).toBe(5);
+    expect(parsed.index.source_keys).toEqual([baseFiles[2].key]);
+  });
+  it("rejects evidence used as input and overlapping keys", () => {
+    const value = manifest();
+    value.index.source_keys = [value.artifacts![0].key];
+    expect(() => validateAddressManifestV2(value)).toThrow("missing from files");
+    const duplicate = manifest();
+    duplicate.artifacts!.push(duplicate.artifacts![0]);
+    expect(() => validateAddressManifestV2(duplicate)).toThrow("overlapping");
+    const mappings = manifest();
+    mappings.artifacts![0].key = mappings.index.mappings_key;
+    expect(() => validateAddressManifestV2(mappings)).toThrow("overlapping");
+  });
+});

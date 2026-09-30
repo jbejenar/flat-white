@@ -68,7 +68,10 @@ address_principals.mb_2026_code
 A populated `abs_2021_mb` table cannot satisfy the requirement. Neither can an
 empty 2026 column with no matching codes. An old restored dump fails validation
 and is rebuilt from source by the state wrapper. The cache namespace is
-`v3-asgs2026`.
+`v4-locked-sources`. **New provenance checks** also require the dump's source,
+state, runtime and checksum sidecar to match. See [locked sources and boundary dates](RELEASING.md#locked-sources-and-boundary-dates).
+Electoral validity now uses the administrative package month-end, rather than
+the build date. The reference is recorded in each release's source lock.
 
 ## Coverage and verification
 

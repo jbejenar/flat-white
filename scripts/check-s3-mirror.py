@@ -14,8 +14,15 @@ from mirror_utils import file_sha256
 
 def head(bucket, key, allow_missing=False):
     command = [
-        "aws", "s3api", "head-object", "--bucket", bucket, "--key", key,
-        "--output", "json",
+        "aws",
+        "s3api",
+        "head-object",
+        "--bucket",
+        bucket,
+        "--key",
+        key,
+        "--output",
+        "json",
     ]
     if not allow_missing:
         command += ["--checksum-mode", "ENABLED"]
@@ -34,15 +41,23 @@ def head(bucket, key, allow_missing=False):
 
 
 def verify(bucket, prefix, manifest, mappings):
-    entries = [(Path(item["key"]).name, item["bytes"], item["sha256"]) for item in manifest["files"]]
+    entries = [
+        (Path(item["key"]).name, item["bytes"], item["sha256"])
+        for item in manifest["files"] + manifest.get("artifacts", [])
+    ]
     entries.append(("mappings.json", mappings.stat().st_size, file_sha256(mappings)))
     for name, size, checksum in entries:
         key = f"{prefix}/{name}"
         remote = head(bucket, key)
         expected = base64.b64encode(bytes.fromhex(checksum)).decode()
-        if (remote.get("ContentLength") != size or remote.get("ChecksumSHA256") != expected
-                or remote.get("ChecksumType") not in (None, "FULL_OBJECT")):
-            raise ValueError(f"Size or full-object SHA-256 mismatch: s3://{bucket}/{key}")
+        if (
+            remote.get("ContentLength") != size
+            or remote.get("ChecksumSHA256") != expected
+            or remote.get("ChecksumType") not in (None, "FULL_OBJECT")
+        ):
+            raise ValueError(
+                f"Size or full-object SHA-256 mismatch: s3://{bucket}/{key}"
+            )
         print(f"Verified {key}: {size} bytes and matching SHA-256")
 
 
@@ -58,16 +73,34 @@ def main():
     if args.mode == "exists":
         if not args.key:
             parser.error("exists requires --key")
-        print("skip=" + ("true" if head(args.bucket, args.key, allow_missing=True) is not None else "false"))
+        print(
+            "skip="
+            + (
+                "true"
+                if head(args.bucket, args.key, allow_missing=True) is not None
+                else "false"
+            )
+        )
     else:
         if not all((args.prefix, args.manifest, args.mappings)):
             parser.error("verify requires --prefix, --manifest and --mappings")
-        verify(args.bucket, args.prefix, json.loads(args.manifest.read_text()), args.mappings)
+        verify(
+            args.bucket,
+            args.prefix,
+            json.loads(args.manifest.read_text()),
+            args.mappings,
+        )
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        OSError,
+        subprocess.SubprocessError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

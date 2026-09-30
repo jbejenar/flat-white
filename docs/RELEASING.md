@@ -12,12 +12,12 @@ choosing a tag.
 
 ## Choose the sources and release version
 
-| Input                                                 | Behaviour                                                                                                       |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| No version input                                      | Discover the newest G-NAF and newest Admin Boundaries releases independently. Freeze both for this run.         |
-| `gnaf_version=2026.08`                                | Select August 2026 for both sources.                                                                            |
-| `gnaf_version=2026.08`, `patch_version=1`             | Rebuild that source quarter as release `v2026.08.1`.                                                            |
-| All three manual source overrides plus `gnaf_version` | Use the supplied URLs and extracted boundary directory; metadata records the administrative source as `manual`. |
+| Input                                                                 | Behaviour                                                                                                       |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| No version input                                                      | Discover the newest G-NAF and newest Admin Boundaries releases independently. Freeze both for this run.         |
+| `gnaf_version=2026.08`                                                | Select August 2026 for both sources.                                                                            |
+| `gnaf_version=2026.08`, `patch_version=1`                             | Rebuild that source quarter as release `v2026.08.1`.                                                            |
+| Manual source overrides, `gnaf_version` and `boundary_reference_date` | Use the supplied URLs and extracted boundary directory; metadata records the administrative source as `manual`. |
 
 `patch_version` is a positive integer. It never becomes part of the G-NAF version
 or a document's `_version`. Always pin `gnaf_version` when making a patch: leaving
@@ -28,11 +28,11 @@ be `2026.08` or newer. The quarterly and mini workflow setup steps, Docker entry
 and local build share this validation. Docker and local builds reject invalid versions before
 creating output directories or starting Postgres, including when reusing data
 or a database cache. The February fixture is exempt; leave its version unset.
-For direct Docker and local builds, an explicit `ADMIN_BDYS_VERSION` follows the
-same quarter and minimum-version rules. It is optional: the downloader discovers
-the boundary source when no override is given. Pin it to `2026.08` alongside
-`GNAF_VERSION=2026.08` when both sources must be August. Blank overrides remain
-unset, and surrounding whitespace is ignored as it is by the downloader.
+Production containers and local builds require a source lock. Acquire it using the
+[README example](../README.md#build-it-yourself), or let the workflow's `sources`
+job do that once for all states. During acquisition, `ADMIN_BDYS_VERSION` can pin
+a different compatible boundary quarter; otherwise it defaults to `GNAF_VERSION`.
+The resulting lock determines the actual sources and boundary reference date.
 
 The scheduled check runs **Monday at 02:00 UTC**. It skips quarters that already
 have a draft or published release. The data remains quarterly; checking weekly
@@ -60,7 +60,7 @@ release/S3 publication. It does not reserve a release tag. The loaded database c
 gate for the actual sources.
 
 The manual **Mini Quarterly** workflow also freezes and validates both source
-quarters and includes both in its database cache key. An explicit quarter pins
+quarters, acquires the archives once and includes their content identity in its database cache key. An explicit quarter pins
 both sources; automatic discovery may choose different compatible quarters.
 
 ## Publish a quarter
@@ -90,6 +90,21 @@ The workflow first creates a draft, verifies its assets and a programmatic
 download, then publishes it unless the comparison check reports anomalies. An
 anomaly leaves the release as a draft for investigation. A draft is not a
 consumer-ready release.
+
+**New full comparison:** after verification, the release job streams every PID and
+field against the preceding published release, one state at a time. It verifies
+the downloaded baseline checksums and rejects duplicates or unordered PIDs.
+`comparison.md` summarizes the result; `comparison-STATE.jsonl.gz` records every
+added, removed or changed document without keeping them all in memory.
+
+For a same-quarter patch, every added/removed PID and every field change must be
+accounted for. The current reviewed exception is August OT's missing federal
+assignment becoming Bean, Fenner or Lingiari; the independent OT snapshot gate
+checks the exact counts and remaining gaps. Other changes hold the release as a
+draft for investigation. Different quarters naturally change records; the report
+still captures every difference and the 1% count anomaly gate remains in place.
+A failed baseline download or comparison stops publication. An older release with
+no archive lock is explicitly identified as lacking historical source-byte evidence.
 
 The release verification report validates every document in each compressed state
 file. Build and release verification use the same per-state coverage floors,
@@ -197,22 +212,62 @@ curl --fail --silent --show-error \
 
 The Admin Boundaries package is `bdcf5b09-89bc-47ec-9281-6b8e9ee147aa`.
 
-When an operator needs explicit sources, provide **all three** workflow inputs
-and `gnaf_version` together:
+When an operator needs explicit sources, provide these workflow inputs together:
 
+- `gnaf_version`: the address quarter being built.
 - `download_url_gnaf`: the intended GDA2020 address ZIP.
 - `download_url_admin_bdys`: the intended GDA2020 boundary ZIP.
 - `admin_bdys_extracted_dir`: its extracted root, such as `AUG26_AdminBounds_GDA_2020_SHP`.
+- `boundary_reference_date`: the administrative snapshot date, in `YYYY-MM-DD` format.
 
-The equivalent container environment names are `DOWNLOAD_URL_GNAF`,
-`DOWNLOAD_URL_ADMIN_BDYS` and `ADMIN_BDYS_EXTRACTED_DIR`. Record the exact URLs with
-the build evidence. Manual sources use `adminBoundariesVersion: "manual"` because
-a URL override does not establish the source's quarter. The actual loaded tables
-must still contain the required 2026 census columns and matching mesh-block codes.
-`manual` is a metadata marker, not a valid `ADMIN_BDYS_VERSION` input. The state
-runner passes the complete manual URL/directory overrides to Docker and leaves
-the quarter selector empty. It validates normal quarters and rejects incomplete
-manual overrides before creating output/cache directories or invoking Docker.
+For local acquisition, the URL and directory variables are `DOWNLOAD_URL_GNAF`,
+`DOWNLOAD_URL_ADMIN_BDYS` and `ADMIN_BDYS_EXTRACTED_DIR`. Set
+`ADMIN_BDYS_VERSION=manual` **for acquisition only**, and provide
+`BOUNDARY_REFERENCE_DATE`. The marker does not establish the package quarter;
+loaded data must still pass the ASGS 2026 checks. Do not pass `manual` to the
+container's quarter selector. The container reads it from the validated lock.
+
+## Locked sources and boundary dates
+
+**New build requirement:** `source-lock.json` records the selected URLs, resource
+IDs where available, source editions, complete archive SHA-256 checksums, archive
+inventories and the code used to acquire them. The workflow downloads each archive
+once. Every state verifies those same bytes before extraction. A changed or damaged
+archive stops the build; an old directory name is not proof of a valid source.
+
+State and upper-house boundaries are evaluated at **00:00 UTC on the last day of
+the administrative package month**. A start date is inclusive; an end date is
+exclusive. Missing endpoints are unbounded. For August 2026, the reference is
+`2026-08-31`, regardless of when the build runs. This removes the previous dependency
+on the machine's current date. Manual packages require an explicit reference date.
+The frozen address fixture uses `2026-02-28`.
+
+For an exact-source rebuild, choose a new patch number and reuse a published lock:
+
+```bash
+gh workflow run quarterly-build.yml --ref main \
+  -f source_lock_release_tag=v2026.08.1 -f patch_version=2
+```
+
+These tags are examples, not a claim that those releases exist. The selected lock
+supplies the source quarters and URLs; do not combine it with URL overrides. The
+acquisition job downloads those URLs again and rejects changed bytes. A historical
+release without a lock cannot prove byte-identical upstream inputs. Its document
+files can still be compared, but do not invent missing archive checksums.
+
+Database caches now use namespace `v4-locked-sources`. The workflow computes the
+tracked build fingerprint once, before Python or Docker can create extra files,
+and reuses it for cache restore and save. Generated `__pycache__` files do not
+change that identity. Each dump also has a `.provenance.json` sidecar containing
+the source identity, selected states, boundary date, runtime/code fingerprint and
+dump checksum. Restore checks all of these, then verifies the database's own source
+record and its table/coverage checks. Old, incomplete or mismatched caches are rebuilt.
+Only the base G-NAF and Geoscape load belongs in this cache.
+
+Archives remain workflow artifacts for seven days; the small lock and release
+evidence persist as release assets. Keep sufficient scratch space for archives,
+extraction and database dumps. Retention of a lock does not guarantee that an
+upstream download URL will remain available forever.
 
 ## Build locally
 
@@ -222,17 +277,29 @@ for both. Leave `GNAF_VERSION` unset when using the fixture script.
 
 Use the fixture for code development. A national download or loader run is not a
 prerequisite for checking a change. The older `scripts/build-local.sh` is a lower-level
-helper for an already configured local database and source paths; it is not a
+helper that also requires `sources/source-lock.json` and its archives; it is not a
 replacement for the documented container setup.
 
 ## What gets published
+
+**New publication evidence:** the release's evidence index also travels through S3
+staging, checksum verification and mirror recovery. In the S3 manifest, `artifacts`
+contains evidence separately from `files`. Evidence never enters
+`index.source_keys` or address counts. Recovery downloads the selected release's
+assets and mappings; it does not substitute today's documentation or configuration.
+The manifest is still published last, after every data and evidence object is verified.
 
 | Artifact                      | Purpose                                                                                                   |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
 | Nine state `.ndjson.gz` files | Address documents, each from the same resolved build.                                                     |
 | `metadata.json`               | Release version, both source versions, schema version, ASGS year, timestamp and counts.                   |
 | `DOCUMENT-SCHEMA.md`          | Contract shipped with the release.                                                                        |
-| `verification-report.md`      | Verification evidence for the release.                                                                    |
+| `verification-report.md`      | Verification evidence for every compressed state file.                                                    |
+| `source-lock.json`            | Exact source checksums, inventories and administrative reference date.                                    |
+| `reconciliation-STATE.json`   | Exact eligible-source, loaded and exported PID comparison.                                                |
+| `build-provenance-STATE.json` | The state's source identity and database dump/runtime provenance.                                         |
+| `evidence-index.json`         | Release commit, version and SHA-256 checksums of the evidence files.                                      |
+| `MIGRATING-TO-ASGS-2026.md`   | Migration guidance shipped with that release.                                                             |
 | Combined national file        | Workflow artifact and S3 output; excluded from GitHub release assets because of the per-asset size limit. |
 
 A GitHub metadata excerpt for an illustrative patch is:

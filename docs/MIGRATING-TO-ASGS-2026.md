@@ -36,7 +36,7 @@ report even when the underlying addresses have not changed.
 | Loader join                 | `mb_2021_code` → `abs_2021_mb`                                       | `mb_2026_code` → `abs_2026_mb.mb_code_26`                             |
 | Missing census input        | Older build behaviour                                                | Incompatible or missing 2026 input fails validation; no 2021 fallback |
 | Production workflow sources | Older quarters                                                       | G-NAF and Admin Boundaries August 2026 or newer                       |
-| Database cache              | Previous cache namespace                                             | `v3-asgs2026`; incompatible restored dumps are rejected               |
+| Database cache              | Previous cache namespace                                             | `v4-locked-sources`; incompatible restored dumps are rejected         |
 
 Address IDs, labels, components, geocodes, aliases and secondary relationships
 retain their schema. LGA, ward and electoral fields retain their derivation from
@@ -162,6 +162,12 @@ can leave queries using the wrong edition. Keep older release assets intact;
 corrections should receive a new release version.
 
 ## If you operate the build
+
+**September 2026 build hardening:** production now requires a checksummed source lock,
+a fixed administrative reference date and attested database dumps. There is no new
+NDJSON field in this stage. Use the updated [production commands](../README.md#build-it-yourself)
+and [rebuild procedure](RELEASING.md#locked-sources-and-boundary-dates). Releases also
+carry an evidence index; S3 consumers must keep its `artifacts` separate from ingestion.
 
 Schema 1.0.0 uses the gnaf-loader `202608` line with a
 [pinned authority-cleanup repair](GNAF-LOADER-UPDATES.md#current-pin-and-upstream-repair)

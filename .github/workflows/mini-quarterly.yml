@@ -17,7 +17,7 @@ on:
 
 env:
   DOCKER_IMAGE: flat-white
-  DB_CACHE_VERSION: v3-asgs2026
+  DB_CACHE_VERSION: v4-locked-sources
 
 jobs:
   setup:
@@ -51,10 +51,46 @@ jobs:
             echo "data_source_key=gnaf-${VERSION}-admin-${ADMIN_BDYS_VERSION}"
           } >> "$GITHUB_OUTPUT"
 
+  sources:
+    needs: setup
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    outputs:
+      identity: ${{ steps.acquire.outputs.source_identity }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci && npm run build
+      - name: Acquire and verify shared source archives
+        id: acquire
+        env:
+          GNAF_VERSION: ${{ needs.setup.outputs.version }}
+          ADMIN_BDYS_VERSION: ${{ needs.setup.outputs.admin_bdys_version }}
+          SOURCE_ARCHIVE_DIR: sources
+        run: node dist/source-lock.js acquire >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source-archives
+          path: sources/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source-lock
+          path: sources/source-lock.json
+          if-no-files-found: error
+          retention-days: 30
+
   build:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 120
-    needs: setup
+    needs: [setup, sources]
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +99,17 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: true
+
+      - name: Freeze tracked build fingerprint
+        id: code
+        run: |
+          FINGERPRINT=$(python3 scripts/cache_fingerprint.py)
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+      - name: Download shared source archives
+        uses: actions/download-artifact@v8
+        with:
+          name: source-archives
+          path: sources
 
       - uses: docker/setup-buildx-action@v4
 
@@ -80,9 +127,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: cache
-          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.sources.outputs.identity }}-${{ matrix.state }}-${{ steps.code.outputs.fingerprint }}-${{ github.run_id }}
           restore-keys: |
-            mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-
+            mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.sources.outputs.identity }}-${{ matrix.state }}-${{ steps.code.outputs.fingerprint }}-
 
       - name: Run pipeline for ${{ matrix.state }}
         run: |
@@ -120,7 +167,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: cache
-          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          key: mini-gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.sources.outputs.identity }}-${{ matrix.state }}-${{ steps.code.outputs.fingerprint }}-${{ github.run_id }}
 
       - name: Verify output
         run: |
@@ -152,6 +199,8 @@ jobs:
           name: mini-quarterly-output-${{ matrix.state }}
           path: |
             output/flat-white-*.ndjson.gz
+            output/flat-white-*.ndjson.reconciliation.json
+            output/build-provenance-*.json
           retention-days: 7
 
       - name: Upload mini-quarterly telemetry

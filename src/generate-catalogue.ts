@@ -211,7 +211,18 @@ export function processReleases(
         }
       : parseLegacyReleaseNotes(r);
     const dataAssets = r.assets
-      .filter((a) => a.name.endsWith(".ndjson.gz") || a.name === "metadata.json")
+      .filter(
+        (a) =>
+          a.name.endsWith(".ndjson.gz") ||
+          [
+            "metadata.json",
+            "source-lock.json",
+            "evidence-index.json",
+            "verification-report.md",
+            "DOCUMENT-SCHEMA.md",
+            "MIGRATING-TO-ASGS-2026.md",
+          ].includes(a.name),
+      )
       .map((a) => ({
         name: a.name,
         url: a.browser_download_url,

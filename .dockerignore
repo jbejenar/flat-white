@@ -4,6 +4,10 @@ node_modules/
 
 # Data (downloaded at runtime, not baked in)
 data/
+sources/
+pinned-source/
+cache/
+**/__pycache__/
 output/
 
 # Git

@@ -4,7 +4,7 @@
 #          TypeScript flattener. One container, one NDJSON file.
 #
 # Build:  docker build -t flat-white .
-# Run:    docker run -v $(pwd)/output:/output flat-white --states VIC --compress --output /output/
+# Run:    see README.md for source acquisition and read-only /sources mounting.
 
 # ---------------------------------------------------------------------------
 # Stage 1: Build TypeScript
@@ -76,6 +76,7 @@ COPY scripts/build-local.sh ./scripts/build-local.sh
 COPY scripts/extract-boundary-prelude.mjs ./scripts/extract-boundary-prelude.mjs
 COPY scripts/extract-census-prep.mjs ./scripts/extract-census-prep.mjs
 COPY scripts/source_version_policy.py ./scripts/source_version_policy.py
+COPY scripts/zip_inventory.py scripts/cache_attestation.py ./scripts/
 COPY scripts/validate-db-cache.sh ./scripts/validate-db-cache.sh
 RUN chmod +x ./scripts/validate-db-cache.sh
 

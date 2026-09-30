@@ -8,8 +8,8 @@ The `gnaf-loader Update Check` workflow checks `minus34/gnaf-loader` every Monda
 
 ## Current pin and upstream repair
 
-The pin is [`c2f6de7`](https://github.com/jbejenar/gnaf-loader/commit/c2f6de7cc9b511cfc850ace2d06345de5169895b),
-the `202608` release plus the fix submitted in
+The pin is [`a0fec3b`](https://github.com/jbejenar/gnaf-loader/commit/a0fec3b6efceeca1a6a48beff8d10c9da586342d),
+the `202608` release plus three submitted repairs. The authority fix in
 [upstream PR #103](https://github.com/minus34/gnaf-loader/pull/103). The release's
 authority-table query contains a literal `%` before the schema name and selects
 no tables. That skips field-name normalization, deduplication and authority keys;
@@ -21,11 +21,20 @@ upstream review is pending. The submodule working tree stays clean; no build-tim
 patch is applied. This is a temporary pin exception, not a new source contract.
 The census preparation SQL and NDJSON baseline are unchanged by this repair.
 
-CI now runs seven small database tests from the pinned loader inside the built
+**New loader repairs:** [PR #104](https://github.com/minus34/gnaf-loader/pull/104)
+loads the ACT/NT federal dependencies needed by OT without exporting those states.
+[PR #105](https://github.com/minus34/gnaf-loader/pull/105) adds an explicit boundary
+reference date. flat-white supplies the administrative package month-end; the
+upstream default remains backward compatible. All three repairs are included in
+the temporary fork pin.
+
+CI now runs nine small database tests from the pinned loader inside the built
 production image, with networking disabled. They exercise the actual cleanup
 function for both raw schemas, legacy DBF columns, duplicate/conflicting codes,
 schema isolation and repeated cleanup. They also execute the real electoral
-preparation SQL and require populated tables with unique polygon IDs.
+preparation SQL and require populated tables with unique polygon IDs. Nine further
+selection/date unit tests cover required OT dependencies and strict date parsing.
+The database suite checks inclusive start/exclusive end dates in two time zones.
 
 ```bash
 docker build -t flat-white:ci .

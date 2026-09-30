@@ -14,10 +14,17 @@
  *   await load({ states: ['VIC'], dataDir: './data' });
  */
 
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve, relative, join, dirname } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  databaseSourceProvenance,
+  quarterEnd,
+  readSourceLock,
+  sourceIdentity,
+  validateBoundaryDate,
+} from "./source-lock.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
@@ -45,6 +52,8 @@ export interface LoadOptions {
   maxProcesses?: number;
   /** Skip gnaf-loader boundary tagging and rely on flat-white's SQL fallback. */
   noBoundaryTag?: boolean;
+  /** Administrative package reference date, YYYY-MM-DD. */
+  boundaryDate?: string;
   /**
    * The path the Postgres SERVER sees for the data directory.
    * When Postgres runs in Docker with ./data mounted as /data,
@@ -107,6 +116,7 @@ export function resolveGnafTablesPath(dataDir: string): string {
   // Find the versioned subdirectory (e.g. "G-NAF FEBRUARY 2026")
   const entries = readdirSync(base).filter((e) => e.startsWith("G-NAF "));
   if (entries.length === 0) throw new Error(`No G-NAF version directory found in ${base}`);
+  if (entries.length !== 1) throw new Error(`Ambiguous G-NAF version directories in ${base}`);
 
   const versionPath = resolve(base, entries[0]);
   const standardPath = resolve(versionPath, "Standard");
@@ -126,6 +136,7 @@ export function resolveAdminBdysPath(dataDir: string): string {
     (e) => e.includes("AdminBounds") && !e.endsWith(".zip"),
   );
   if (entries.length === 0) throw new Error(`Admin Boundaries directory not found in ${dataDir}`);
+  if (entries.length !== 1) throw new Error(`Ambiguous Admin Boundaries directories in ${dataDir}`);
 
   return resolve(dataDir, entries[0]);
 }
@@ -173,6 +184,12 @@ export function buildArgs(opts: LoadOptions): string[] {
     gnafTablesPath,
     "--admin-bdys-path",
     adminBdysPath,
+    "--boundary-date",
+    validateBoundaryDate(
+      opts.boundaryDate ??
+        process.env.BOUNDARY_REFERENCE_DATE ??
+        quarterEnd(geoscapeVersion.slice(0, 4) + "." + geoscapeVersion.slice(4)),
+    ),
   ];
 
   // Only remap paths when Postgres runs in a separate container (docker-compose).
@@ -228,6 +245,51 @@ async function validatePrerequisites(opts: LoadOptions): Promise<void> {
  * Run gnaf-loader to load G-NAF and Admin Boundaries into Postgres.
  */
 export async function load(opts: LoadOptions = {}): Promise<void> {
+  validateGeoscapeVersion(opts.geoscapeVersion ?? deriveGeoscapeVersion() ?? "");
+  opts = {
+    ...opts,
+    pgHost: opts.pgHost ?? process.env.PGHOST,
+    pgPort: opts.pgPort ?? (process.env.PGPORT ? Number(process.env.PGPORT) : undefined),
+    pgUser: opts.pgUser ?? process.env.PGUSER,
+    pgDb: opts.pgDb ?? process.env.PGDATABASE,
+    pgPassword: opts.pgPassword ?? process.env.PGPASSWORD,
+  };
+  const lockPath = process.env.SOURCE_LOCK_PATH;
+  if (!lockPath)
+    throw new Error(
+      "SOURCE_LOCK_PATH is required; acquire and extract locked source archives before loading",
+    );
+  const lock = await readSourceLock(lockPath);
+  const dataDir = resolve(opts.dataDir ?? resolve(PROJECT_ROOT, "data"));
+  if (
+    readFileSync(join(dataDir, ".flat-white-source-identity"), "utf8").trim() !==
+    sourceIdentity(lock)
+  )
+    throw new Error(
+      "Extracted data does not match the source lock; extract the locked archives again",
+    );
+  if (
+    (process.env.GNAF_VERSION && process.env.GNAF_VERSION !== lock.gnafVersion) ||
+    (opts.geoscapeVersion && opts.geoscapeVersion !== lock.gnafVersion.replace(".", ""))
+  )
+    throw new Error("Loader and locked source versions disagree");
+  if (opts.boundaryDate && opts.boundaryDate !== lock.boundaryReferenceDate)
+    throw new Error("Boundary date disagrees with source lock");
+  const expectedGnaf = join(dataDir, lock.sources[0].extractedDir);
+  const expectedAdmin = join(dataDir, lock.sources[1].extractedDir);
+  if (expectedGnaf !== join(dataDir, "G-NAF") || resolveAdminBdysPath(dataDir) !== expectedAdmin)
+    throw new Error("Loader paths disagree with the locked extraction destinations");
+  if (
+    (process.env.GNAF_DATA_PATH && resolve(process.env.GNAF_DATA_PATH) !== expectedGnaf) ||
+    (process.env.ADMIN_BDYS_PATH && resolve(process.env.ADMIN_BDYS_PATH) !== expectedAdmin)
+  )
+    throw new Error("Custom data paths must match the locked extraction destinations");
+  opts = {
+    ...opts,
+    geoscapeVersion: lock.gnafVersion.replace(".", ""),
+    boundaryDate: lock.boundaryReferenceDate,
+    noBoundaryTag: true,
+  };
   await validatePrerequisites(opts);
 
   const args = buildArgs(opts);
@@ -238,7 +300,7 @@ export async function load(opts: LoadOptions = {}): Promise<void> {
 
   const startTime = Date.now();
 
-  return new Promise<void>((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const child = spawn("python3", args, {
       cwd: PROJECT_ROOT,
       stdio: ["ignore", "pipe", "pipe"],
@@ -266,6 +328,18 @@ export async function load(opts: LoadOptions = {}): Promise<void> {
         reject(new Error(`gnaf-loader exited with code ${code} after ${elapsed} minutes`));
       }
     });
+  });
+  const connection = new URL("postgres://localhost/gnaf");
+  connection.hostname = opts.pgHost ?? "localhost";
+  connection.port = String(opts.pgPort ?? 5432);
+  connection.username = opts.pgUser ?? "postgres";
+  connection.password = opts.pgPassword ?? "postgres";
+  connection.pathname = "/" + (opts.pgDb ?? "gnaf");
+  await databaseSourceProvenance({
+    lockPath,
+    connectionString: connection.href,
+    states: opts.states?.length ? opts.states : VALID_STATES,
+    create: true,
   });
 }
 
@@ -322,6 +396,9 @@ async function main(): Promise<void> {
         break;
       case "--no-boundary-tag":
         opts.noBoundaryTag = true;
+        break;
+      case "--boundary-date":
+        opts.boundaryDate = args[++i];
         break;
       default:
         console.error(`Unknown argument: ${args[i]}`);

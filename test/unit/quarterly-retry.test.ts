@@ -41,6 +41,9 @@ if [[ "$calls" == 1 ]]; then
   cat failure.log
   exit 1
 fi
+if [[ "\${OMIT_PROVENANCE:-false}" != true ]]; then
+  printf '%s\\n' '{"context":{},"dumpSha256":"test-dump"}' > cache/ACT.dump.provenance.json
+fi
 exit 0
 `,
     );
@@ -82,6 +85,13 @@ exit 0
       },
     };
   }
+
+  it("rejects success without provenance and reports the failed run accurately", () => {
+    const result = run("[download] Failure kind: transient", { OMIT_PROVENANCE: "true" });
+    expect(result.status).toBe(1);
+    expect(result.telemetry.success).toBe(false);
+    expect(result.output).toContain("no usable database provenance");
+  });
 
   const manualSources = {
     ADMIN_BDYS_VERSION_EFFECTIVE: "manual",

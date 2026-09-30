@@ -183,20 +183,24 @@ mkdir -p output
 docker run --rm -v "$PWD/output:/output" flat-white --fixture-only --output /output
 ```
 
-A production build downloads and processes the full source archives. It needs an
-explicit, compatible G-NAF quarter and enough disk and memory for loading. This
-illustrative command builds Victoria from August 2026 sources; it is not a test:
+A production build processes the full source archives. **New source-lock requirement:**
+acquire them once before starting the container. Each build checks the archives against
+the recorded checksums. This example builds Victoria from August 2026; use the small
+fixture above for development.
 
 ```bash
-docker run --rm -e GNAF_VERSION=2026.08 -e ADMIN_BDYS_VERSION=2026.08 \
-  -v "$PWD/output:/output" flat-white --states VIC --compress --output /output
+npm run build
+GNAF_VERSION=2026.08 ADMIN_BDYS_VERSION=2026.08 node dist/source-lock.js acquire
+mkdir -p output
+docker run --rm -e GNAF_VERSION=2026.08 \
+  -v "$PWD/sources:/sources:ro" -v "$PWD/output:/output" \
+  flat-white --states VIC --compress --output /output
 ```
 
-Omit `--states` for all states and territories. The [release guide](docs/RELEASING.md)
-explains version discovery, URL overrides, metadata-only preflight and patch releases.
-The optional `ADMIN_BDYS_VERSION` pins boundaries independently; omitting it uses
-automatic discovery. Both explicit quarters must be August 2026 or newer and are
-checked before output creation or database startup, including cached builds.
+Omit `--states` for all states and territories. Both source quarters must be August
+2026 or newer. The [release guide](docs/RELEASING.md#locked-sources-and-boundary-dates)
+explains source discovery, exact-source rebuilds, boundary dates and cache validation.
+The document contract remains schema 1.0.0; this change makes build inputs traceable.
 
 ## Distribution
 

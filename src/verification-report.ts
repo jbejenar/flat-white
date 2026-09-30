@@ -24,6 +24,7 @@ import { z } from "zod";
 import { VERSION } from "./index.js";
 import { ASGS_YEAR } from "./schema.js";
 import { checkAugustOtFederal } from "./release-quality.js";
+import { readSourceLock, sourceIdentity } from "./source-lock.js";
 import { PER_STATE_BOUNDARY_THRESHOLDS, ENUM_FIELD_PATHS } from "./verify.js";
 import type { EnumSets, EnumUnknownCounts } from "./verify.js";
 
@@ -73,6 +74,8 @@ const releaseMetadataSchema = z.object({
   adminBoundariesVersion: z.string().optional(),
   schemaVersion: z.literal(VERSION),
   asgsYear: z.literal(ASGS_YEAR),
+  sourceLock: z.literal("source-lock.json").optional(),
+  boundaryReferenceDate: z.string().optional(),
   states: z.record(z.string(), z.number().int().positive()),
   totalCount: z.number().int().positive(),
 });
@@ -89,6 +92,46 @@ export function parseReleaseMetadata(value: unknown) {
     throw new Error("Release version and G-NAF source quarter disagree");
   }
   return metadata;
+}
+
+/** State artifacts must all derive from the one acquired source set. */
+export async function verifyBuildProvenance(
+  assetDir: string,
+  metadata: ReturnType<typeof parseReleaseMetadata>,
+): Promise<void> {
+  if (
+    !metadata.sourceLock ||
+    Object.keys(metadata.states).sort().join() !== [...DEFAULT_STATES].sort().join()
+  )
+    throw new Error("Production releases require a source lock and all nine states");
+  const lock = await readSourceLock(join(assetDir, metadata.sourceLock));
+  if (
+    lock.gnafVersion !== metadata.gnafVersion ||
+    lock.adminVersion !== metadata.adminBoundariesVersion ||
+    lock.boundaryReferenceDate !== metadata.boundaryReferenceDate
+  )
+    throw new Error("Release metadata disagrees with source lock");
+  const checksum = z.string().regex(/^[a-f0-9]{64}$/);
+  let runtimeFingerprint: string | undefined;
+  for (const state of DEFAULT_STATES) {
+    const report = z
+      .object({
+        context: z.object({
+          formatVersion: z.literal(1),
+          sourceIdentity: z.literal(sourceIdentity(lock)),
+          gnafVersion: z.literal(lock.gnafVersion),
+          boundaryReferenceDate: z.literal(lock.boundaryReferenceDate),
+          states: z.tuple([z.literal(state)]),
+          runtimeFingerprint: checksum,
+          scope: z.literal("base-gnaf-geoscape"),
+        }),
+        dumpSha256: checksum,
+      })
+      .parse(JSON.parse(await readFile(join(assetDir, `build-provenance-${state}.json`), "utf8")));
+    if (runtimeFingerprint && runtimeFingerprint !== report.context.runtimeFingerprint)
+      throw new Error("State artifacts were prepared by different code or runtimes");
+    runtimeFingerprint = report.context.runtimeFingerprint;
+  }
 }
 
 /** Validate evidence produced by the database reconciliation, before trusting its digest. */
@@ -565,6 +608,7 @@ async function main(): Promise<void> {
   const fixtureOnly = process.argv.includes("--fixture-only");
   if (fixtureOnly && sourceVersion !== "2026.02")
     throw new Error("Fixture verification requires the frozen 2026.02 snapshot");
+  if (!fixtureOnly) await verifyBuildProvenance(assetDir, metadata);
 
   const stateFiles = findStateFiles(assetDir, version, states);
 

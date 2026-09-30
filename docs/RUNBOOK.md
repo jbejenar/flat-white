@@ -64,13 +64,19 @@ Correct or unset that selector; do not pass the metadata marker `manual` as a
 quarter. Manual builds use the documented URL and directory overrides instead.
 Do not rename an older quarter to satisfy the check. Use the old release's code
 for an old-data rebuild, or select compatible sources. Manual overrides require
-both URLs, the extracted boundary directory and an explicit G-NAF version.
+both URLs, the extracted boundary directory, an explicit G-NAF version and a boundary reference date.
 
 Docker and local production builds apply the same quarter check before starting
 Postgres or downloading anything. Use `YYYY.MM` with month `02`, `05`, `08` or
 `11`; a release patch such as `2026.08.1` is not a valid `GNAF_VERSION`.
 
 ## Download or extraction failed
+
+**New source-lock checks:** inspect the shared `sources` job first. A checksum mismatch
+means the downloaded bytes differ from the selected lock. Do not edit the checksum to
+force an exact-source rebuild through. Investigate the source replacement and, if it is
+intentional, acquire a new lock under a new release version. Missing extraction stamps
+or ambiguous edition folders require a clean extraction from the locked archives.
 
 Read the error immediately before `Download failed`:
 
@@ -126,7 +132,7 @@ cannot inflate the matching count.
 
 `Restored database failed validation` makes the state wrapper discard that local
 dump and retry from source within its attempt budget. Schema 1.0.0 also uses cache
-namespace `v3-asgs2026`. Do not restore an old dump under the new key or remove
+namespace `v4-locked-sources`. Missing or mismatched `.provenance.json` sidecars also invalidate a dump. Do not restore an old dump under the new key or remove
 validation to make it pass. If a fresh load fails the same check, investigate the
 source/loader compatibility rather than repeatedly clearing caches.
 

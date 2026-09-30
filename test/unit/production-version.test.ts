@@ -27,6 +27,14 @@ describe("production version guards", () => {
       '#!/usr/bin/env bash\necho "REACHED_OUTPUT_SETUP version=${GNAF_VERSION:-unset}"\nexit 97\n',
     );
     chmodSync(mkdir, 0o755);
+    // Source-lock validation is separately tested with real archives. Here the
+    // inspector is isolated so this test still observes version-guard ordering.
+    const node = join(root, "bin", "node");
+    writeFileSync(
+      node,
+      '#!/usr/bin/env bash\nif [[ "$1" == /app/dist/source-lock.js && "$2" == inspect ]]; then echo 2026-08-31; exit 0; fi\nexit 98\n',
+    );
+    chmodSync(node, 0o755);
   });
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));

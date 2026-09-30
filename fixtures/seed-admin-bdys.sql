@@ -419,7 +419,7 @@ INSERT INTO raw_admin_bdys_202602.aus_wards (gid, ward_pid, lga_pid, ward_name, 
 (244, 'wadzWnDzRGqmtuN', 'lga227fb535494c', 'You Yangs Ward', 'VIC', ST_GeomFromText('MULTIPOLYGON(((144.40043799999998 -38.033471,144.40053799999998 -38.033471,144.40053799999998 -38.033570999999995,144.40043799999998 -38.033570999999995,144.40043799999998 -38.033471)),((144.42539499999998 -38.030183,144.42539499999998 -38.030283,144.425295 -38.030283,144.425295 -38.030183,144.42539499999998 -38.030183)),((144.362214 -38.017313,144.362214 -38.017413,144.362114 -38.017413,144.362114 -38.017313,144.362214 -38.017313)))', 7844));
 CREATE TABLE IF NOT EXISTS raw_admin_bdys_202602.aus_state_electoral_class_aut (code text PRIMARY KEY, name text NOT NULL);
 INSERT INTO raw_admin_bdys_202602.aus_state_electoral_class_aut (code, name) VALUES ('1', 'Legislative Assembly (Lower House)'), ('3', 'Legislative Council (Upper House)');
-CREATE TABLE IF NOT EXISTS raw_admin_bdys_202602.aus_state_electoral (se_pid text PRIMARY KEY, name text NOT NULL, dt_gazetd text, eff_start timestamp DEFAULT now(), eff_end timestamp DEFAULT NULL, secl_code text NOT NULL, state_pid text NOT NULL);
+CREATE TABLE IF NOT EXISTS raw_admin_bdys_202602.aus_state_electoral (se_pid text PRIMARY KEY, name text NOT NULL, dt_gazetd text, eff_start timestamp DEFAULT TIMESTAMP '2026-02-01 00:00:00', eff_end timestamp DEFAULT NULL, secl_code text NOT NULL, state_pid text NOT NULL);
 INSERT INTO raw_admin_bdys_202602.aus_state_electoral (se_pid, name, secl_code, state_pid) VALUES
 ('VIC304', 'KEW', '1', 'STE-VIC'),
 ('VIC305', 'KOROROIT', '1', 'STE-VIC'),

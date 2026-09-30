@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -43,6 +46,8 @@ print(json.dumps(module.resolve_quarterly_inputs(
     download_url_gnaf=${JSON.stringify(args.download_url_gnaf ?? "")},
     download_url_admin_bdys=${JSON.stringify(args.download_url_admin_bdys ?? "")},
     admin_bdys_extracted_dir=${JSON.stringify(args.admin_bdys_extracted_dir ?? "")},
+    boundary_reference_date=${JSON.stringify(args.boundary_reference_date ?? "")},
+    source_lock=${JSON.stringify(args.source_lock ?? "")},
     discover=discover,
 )))
 `;
@@ -73,7 +78,9 @@ try:
         download_url_gnaf=${JSON.stringify(args.download_url_gnaf ?? "")},
         download_url_admin_bdys=${JSON.stringify(args.download_url_admin_bdys ?? "")},
         admin_bdys_extracted_dir=${JSON.stringify(args.admin_bdys_extracted_dir ?? "")},
-        discover=discover,
+        boundary_reference_date=${JSON.stringify(args.boundary_reference_date ?? "")},
+    source_lock=${JSON.stringify(args.source_lock ?? "")},
+    discover=discover,
     )
 except Exception as exc:
     print(str(exc))
@@ -99,6 +106,7 @@ describe("resolve_quarterly_inputs.py", () => {
   it("skips discovery entirely when complete manual overrides are supplied", () => {
     const result = resolveInputs(
       {
+        boundary_reference_date: "2026-11-30",
         gnaf_version: "2026.11",
         download_url_gnaf: "https://example.com/gnaf.zip",
         download_url_admin_bdys: "https://example.com/admin.zip",
@@ -141,6 +149,56 @@ describe("resolve_quarterly_inputs.py", () => {
       manual_source: false,
       auto_discovered_gnaf: false,
     });
+  });
+
+  it("does not rediscover explicit or locked source editions", () => {
+    expect(resolveInputs({ gnaf_version: "2026.08" }, "raise").version).toBe("2026.08");
+    const directory = mkdtempSync(join(tmpdir(), "setup-lock-"));
+    try {
+      const path = join(directory, "source-lock.json");
+      writeFileSync(
+        path,
+        JSON.stringify({
+          formatVersion: 1,
+          gnafVersion: "2026.11",
+          adminVersion: "2026.08",
+          boundaryReferenceDate: "2026-08-31",
+        }),
+      );
+      expect(resolveInputs({ source_lock: path, patch_version: "1" }, "raise")).toMatchObject({
+        version: "2026.11",
+        admin_bdys_version: "2026.08",
+        release_version: "2026.11.1",
+      });
+      expect(resolveInputsFailure({ source_lock: path, gnaf_version: "2026.08" })).toContain(
+        "disagrees",
+      );
+      expect(
+        resolveInputsFailure({ source_lock: path, boundary_reference_date: "2026-09-30" }),
+      ).toContain("disagrees");
+      writeFileSync(path, "{}");
+      expect(resolveInputsFailure({ source_lock: path })).toContain(
+        "Unsupported pinned source lock",
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("validates the manual reference date before source acquisition", () => {
+    const manual = {
+      gnaf_version: "2026.08",
+      download_url_gnaf: "https://example.com/gnaf.zip",
+      download_url_admin_bdys: "https://example.com/admin.zip",
+      admin_bdys_extracted_dir: "AdminBounds",
+    };
+    expect(resolveInputsFailure(manual)).toContain("require boundary_reference_date");
+    expect(resolveInputsFailure({ ...manual, boundary_reference_date: "2026-02-30" })).toContain(
+      "day is out of range",
+    );
+    expect(
+      resolveInputsFailure({ gnaf_version: "2026.08", boundary_reference_date: "2026-08-30" }),
+    ).toContain("package month-end");
   });
 
   it("applies patch_version only to release_version", () => {

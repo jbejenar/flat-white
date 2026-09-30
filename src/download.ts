@@ -538,7 +538,7 @@ function sleep(ms: number): Promise<void> {
 
 // --- Core download ---
 
-async function downloadFile(
+export async function downloadFile(
   url: string,
   destPath: string,
   name: string,
@@ -652,7 +652,7 @@ async function downloadFile(
 
 // --- Extraction ---
 
-function extractZip(zipPath: string, outputDir: string): Promise<void> {
+export function extractZip(zipPath: string, outputDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile("unzip", ["-o", "-q", zipPath, "-d", outputDir], (error, _stdout, stderr) => {
       if (error) {
