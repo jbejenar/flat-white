@@ -8,6 +8,13 @@ export interface ManifestFile {
   sha256: string;
 }
 
+/** Release evidence is downloadable, but never an address ingestion input. */
+export interface ManifestArtifact {
+  key: string;
+  bytes: number;
+  sha256: string;
+}
+
 export interface ManifestPipeline {
   repo: string;
   commit: string;
@@ -42,6 +49,7 @@ export interface AddressManifestV2 {
   pipeline: ManifestPipeline;
   source: ManifestSource;
   files: ManifestFile[];
+  artifacts?: ManifestArtifact[];
   total_records: number;
   index: ManifestIndex;
 }
@@ -52,6 +60,7 @@ interface BuildAddressManifestOptions {
   pipeline: ManifestPipeline;
   source: ManifestSource;
   files: ManifestFile[];
+  artifacts?: ManifestArtifact[];
   sourceKeys: string[];
   mappingsKey?: string;
   settings?: ManifestIndexSettings;
@@ -88,6 +97,7 @@ export function buildAddressManifestV2(options: BuildAddressManifestOptions): Ad
     pipeline: options.pipeline,
     source: options.source,
     files: options.files,
+    ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
     total_records: recordsForSourceKeys(options.files, options.sourceKeys),
     index: {
       mappings_key: mappingsKey,
@@ -172,6 +182,15 @@ export function validateAddressManifestV2(
     throw new Error("Manifest field must be an object: index");
   }
   const sourceKeys = parseSourceKeys(manifest.index.source_keys);
+  const mappingsKey = parseString(manifest.index.mappings_key, "index.mappings_key");
+  const artifacts = parseArtifacts(manifest.artifacts);
+  const keys = [
+    ...files.map((file) => file.key),
+    mappingsKey,
+    ...(artifacts ?? []).map((a) => a.key),
+  ];
+  if (new Set(keys).size !== keys.length || new Set(sourceKeys).size !== sourceKeys.length)
+    throw new Error("Manifest contains duplicate or overlapping file, evidence or source keys");
 
   if (expectedSourceKeys != null) {
     if (sourceKeys.length !== expectedSourceKeys.length) {
@@ -224,11 +243,28 @@ export function validateAddressManifestV2(
       url: parseString((manifest.source as Record<string, unknown>).url, "source.url"),
     },
     files,
+    ...(artifacts === undefined ? {} : { artifacts }),
     total_records: totalRecords,
     index: {
-      mappings_key: parseString(manifest.index.mappings_key, "index.mappings_key"),
+      mappings_key: mappingsKey,
       settings,
       source_keys: sourceKeys,
     },
   };
+}
+
+function parseArtifacts(value: unknown): ManifestArtifact[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("Manifest artifacts must be an array");
+  return value.map((item, index) => {
+    if (!isRecord(item)) throw new Error(`Invalid manifest artifact ${index}`);
+    const key = parseString(item.key, `artifacts[${index}].key`);
+    const sha256 = parseString(item.sha256, `artifacts[${index}].sha256`);
+    if (
+      !/^data\/address\/[0-9-]+\/[A-Za-z0-9][A-Za-z0-9_.-]*\.(json|md|jsonl\.gz)$/.test(key) ||
+      !/^[a-f0-9]{64}$/.test(sha256)
+    )
+      throw new Error(`Invalid evidence key or checksum: ${key}`);
+    return { key, bytes: parseNonNegativeInteger(item.bytes, `artifacts[${index}].bytes`), sha256 };
+  });
 }

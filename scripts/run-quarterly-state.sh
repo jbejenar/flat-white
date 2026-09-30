@@ -6,6 +6,7 @@ VERSION="${2:?version is required}"
 DOCKER_IMAGE="${3:?docker image is required}"
 OUTPUT_DIR="${4:-output}"
 CACHE_DIR="${5:-cache}"
+SOURCE_DIR="${SOURCE_DIR:-sources}"
 
 # "manual" is release provenance, not a quarter for the downloader to select.
 # Only the complete URL override path may use that marker.
@@ -13,7 +14,7 @@ ADMIN_DOWNLOAD_VERSION="${ADMIN_BDYS_VERSION_EFFECTIVE:-}"
 if [[ "$ADMIN_DOWNLOAD_VERSION" == manual ]]; then
   if [[ ! "${DOWNLOAD_URL_GNAF_EFFECTIVE:-}" =~ [^[:space:]] ||
         ! "${DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE:-}" =~ [^[:space:]] ||
-        ! "${ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE:-}" =~ [^[:space:]] ]]; then
+        ! "${ADMIN_BDYS_EXTRACTED_DIR_EFFECTIVE:-}" =~ [^[:space:]] ]] && [[ ! -f "$SOURCE_DIR/source-lock.json" ]]; then
     echo "ERROR: Manual sources require both download URLs and the extracted boundary directory" >&2
     exit 1
   fi
@@ -28,6 +29,19 @@ LOG_DIR="${OUTPUT_DIR}/logs"
 TELEMETRY_FILE="${OUTPUT_DIR}/quarterly-telemetry-${STATE}.json"
 
 mkdir -p "$OUTPUT_DIR" "$CACHE_DIR" "$LOG_DIR"
+# Accept both the normal relative workflow directories and absolute local paths.
+OUTPUT_MOUNT=$(cd "$OUTPUT_DIR" && pwd)
+CACHE_MOUNT=$(cd "$CACHE_DIR" && pwd)
+SOURCE_MOUNT=$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$SOURCE_DIR")
+
+write_build_provenance() {
+python3 - "$CACHE_FILE.provenance.json" "$OUTPUT_DIR/build-provenance-$STATE.json" <<'PYTHON'
+import json, sys
+from pathlib import Path
+source = json.loads(Path(sys.argv[1]).read_text())
+Path(sys.argv[2]).write_text(json.dumps({key: source[key] for key in ('context', 'dumpSha256')}, indent=2) + '\n')
+PYTHON
+}
 
 attempt=0
 success=false
@@ -64,8 +78,11 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
 
   set +e
   docker run --rm \
-    -v "$(pwd)/${OUTPUT_DIR}:/output" \
-    -v "$(pwd)/${CACHE_DIR}:/cache" \
+    -v "${OUTPUT_MOUNT}:/output" \
+    -v "${CACHE_MOUNT}:/cache" \
+    -v "${SOURCE_MOUNT}:/sources:ro" \
+    -e SOURCE_LOCK_PATH=/sources/source-lock.json \
+    -e SOURCE_ARCHIVE_DIR=/sources \
     -e "GNAF_VERSION=${VERSION}" \
     -e "DOWNLOAD_URL_GNAF=${DOWNLOAD_URL_GNAF_EFFECTIVE:-}" \
     -e "DOWNLOAD_URL_ADMIN_BDYS=${DOWNLOAD_URL_ADMIN_BDYS_EFFECTIVE:-}" \
@@ -81,6 +98,11 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
   set -e
 
   if [[ $final_exit_code -eq 0 ]]; then
+    if ! write_build_provenance; then
+      echo "::error::${STATE}: successful container produced no usable database provenance"
+      final_exit_code=2
+      break
+    fi
     success=true
     if [[ $attempt -gt 1 ]]; then
       echo "::warning::${STATE}: succeeded on attempt ${attempt} after $((attempt - 1)) retry(ies)"
@@ -92,7 +114,7 @@ while [[ $attempt -le $MAX_RETRIES ]]; do
     echo "::warning::${STATE}: cached restore failed validation on attempt ${attempt}; rebuilding from source"
     restore_validation_failed=true
     use_restore=false
-    rm -f "${CACHE_FILE}"
+    rm -f "${CACHE_FILE}" "${CACHE_FILE}.provenance.json"
     continue
   fi
 

@@ -78,6 +78,14 @@ BUILD_START=$(date +%s)
 echo ""
 echo "[build] Step 0: Checking prerequisites..."
 
+npm run build --silent 2>/dev/null
+export SOURCE_LOCK_PATH="${SOURCE_LOCK_PATH:-$PROJECT_DIR/sources/source-lock.json}"
+export SOURCE_ARCHIVE_DIR="${SOURCE_ARCHIVE_DIR:-$PROJECT_DIR/sources}"
+export DATA_DIR="$PROJECT_DIR/data"
+export GNAF_VERSION="$VERSION"
+BOUNDARY_REFERENCE_DATE=$(node dist/source-lock.js inspect)
+export BOUNDARY_REFERENCE_DATE
+
 if ! docker compose ps db --format '{{.Status}}' 2>/dev/null | grep -q "Up"; then
   echo "[build] Starting Postgres..."
   docker compose up -d db
@@ -88,7 +96,11 @@ fi
 ensure_db_container
 DB_URL="$(resolve_db_url)"
 
-npm run build --silent 2>/dev/null
+if [[ "$SKIP_LOAD" == false ]]; then
+  node dist/source-lock.js extract
+else
+  STATES="$STATES" DATABASE_URL="$DB_URL" node dist/source-lock.js verify-db
+fi
 
 echo "[build] Prerequisites OK"
 

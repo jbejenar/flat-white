@@ -31,6 +31,14 @@ on:
         description: "Optional manual override for the extracted Admin Boundaries directory name inside /data (e.g. AUG26_AdminBounds_GDA_2020_SHP). Only needed with manual URL overrides."
         required: false
         default: ""
+      source_lock_release_tag:
+        description: "Reuse a published source-lock.json (e.g. v2026.08.1); fail if upstream archive bytes changed."
+        required: false
+        default: ""
+      boundary_reference_date:
+        description: "Required with manual URLs: administrative source reference date YYYY-MM-DD. Normal sources use package month-end."
+        required: false
+        default: ""
       runner:
         description: "Runner label (e.g. 'self-hosted', 'high-memory'). Default: ubuntu-latest"
         required: false
@@ -45,7 +53,7 @@ env:
   # These can roll out on data.gov.au at different times, so setup discovers
   # both once and freezes them for the whole run.
   DOCKER_IMAGE: flat-white
-  DB_CACHE_VERSION: v3-asgs2026
+  DB_CACHE_VERSION: v4-locked-sources
   # Optional manual release-data overrides.
   # Priority inside the downloader: workflow_dispatch input > data.gov.au auto-discovery
   DOWNLOAD_URL_GNAF_EFFECTIVE: ${{ inputs.download_url_gnaf || '' }}
@@ -68,12 +76,44 @@ jobs:
       admin_bdys_version: ${{ steps.version.outputs.admin_bdys_version || steps.recovery.outputs.admin_bdys_version }}
       release_version: ${{ steps.version.outputs.release_version || steps.recovery.outputs.release_version }}
       schema_version: ${{ steps.version.outputs.schema_version || steps.recovery.outputs.schema_version }}
+      source_commit: ${{ steps.recovery.outputs.source_commit || github.sha }}
       mirror_only: ${{ steps.recovery.outputs.mirror_only || 'false' }}
       data_source_key: ${{ steps.version.outputs.data_source_key }}
       build_required: ${{ steps.reserve-tag.outputs.build_required || steps.release-check.outputs.build_required }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Retrieve pinned source lock
+        if: inputs.source_lock_release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOCK_TAG: ${{ inputs.source_lock_release_tag }}
+        run: |
+          [[ "$LOCK_TAG" =~ ^v[0-9]{4}\.(02|05|08|11)(\.[1-9][0-9]*)?$ ]] || exit 1
+          python3 scripts/prepare-mirror-recovery.py resolve \
+            --repository="$GITHUB_REPOSITORY" --tag="$LOCK_TAG" --plan=pinned-release.json
+          jq -e '.evidence["source-lock.json"]' pinned-release.json >/dev/null
+          mkdir -p pinned-source
+          gh release download "$LOCK_TAG" --repo "$GITHUB_REPOSITORY" --pattern source-lock.json --dir pinned-source
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.mirror_utils import file_sha256
+          expected = json.loads(Path('pinned-release.json').read_text())['evidence']['source-lock.json']
+          lock = Path('pinned-source/source-lock.json')
+          if lock.stat().st_size != expected['bytes'] or file_sha256(lock) != expected['sha256']:
+              raise ValueError('Pinned source lock does not match its published checksum')
+          PY
+          echo "PINNED_SOURCE_LOCK=$PWD/pinned-source/source-lock.json" >> "$GITHUB_ENV"
+      - name: Save pinned source lock
+        if: inputs.source_lock_release_tag != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: pinned-source-lock
+          path: pinned-source/source-lock.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Determine version
         if: inputs.mirror_release_tag == ''
@@ -84,13 +124,16 @@ jobs:
           DOWNLOAD_GNAF_INPUT: ${{ inputs.download_url_gnaf }}
           DOWNLOAD_ADMIN_INPUT: ${{ inputs.download_url_admin_bdys }}
           ADMIN_DIR_INPUT: ${{ inputs.admin_bdys_extracted_dir }}
+          BOUNDARY_DATE_INPUT: ${{ inputs.boundary_reference_date }}
         run: |
           SETUP_JSON="$(python3 scripts/resolve_quarterly_inputs.py \
             --gnaf-version "$GNAF_INPUT" \
             --patch-version "$PATCH_INPUT" \
             --download-url-gnaf "$DOWNLOAD_GNAF_INPUT" \
             --download-url-admin-bdys "$DOWNLOAD_ADMIN_INPUT" \
-            --admin-bdys-extracted-dir "$ADMIN_DIR_INPUT")"
+            --admin-bdys-extracted-dir "$ADMIN_DIR_INPUT" \
+            --boundary-reference-date "$BOUNDARY_DATE_INPUT" \
+            --source-lock "${PINNED_SOURCE_LOCK:-}")"
 
           VERSION="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["version"])' "$SETUP_JSON")"
           ADMIN_BDYS_VERSION="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["admin_bdys_version"])' "$SETUP_JSON")"
@@ -124,7 +167,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MIRROR_TAG: ${{ inputs.mirror_release_tag }}
           PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
-          BUILD_INPUTS: ${{ format('{0}{1}{2}{3}{4}', inputs.gnaf_version, inputs.patch_version, inputs.download_url_gnaf, inputs.download_url_admin_bdys, inputs.admin_bdys_extracted_dir) }}
+          BUILD_INPUTS: ${{ format('{0}{1}{2}{3}{4}{5}{6}', inputs.gnaf_version, inputs.patch_version, inputs.download_url_gnaf, inputs.download_url_admin_bdys, inputs.admin_bdys_extracted_dir, inputs.source_lock_release_tag, inputs.boundary_reference_date) }}
         run: |
           if [[ "$PREFLIGHT_ONLY" == true || -n "$BUILD_INPUTS" ]]; then
             echo "::error::Mirror recovery cannot be combined with preflight or build inputs"
@@ -162,13 +205,63 @@ jobs:
           RELEASE_TAG: v${{ steps.version.outputs.release_version }}
         run: bash scripts/check-quarterly-release.sh "$EVENT_NAME" "$GITHUB_REPOSITORY" "$RELEASE_TAG" "$GITHUB_SHA" reserve >> "$GITHUB_OUTPUT"
 
+  sources:
+    needs: setup
+    if: inputs.preflight_only != true && needs.setup.outputs.build_required == 'true'
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    outputs:
+      identity: ${{ steps.acquire.outputs.source_identity }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci && npm run build
+      - name: Download pinned source lock
+        if: inputs.source_lock_release_tag != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: pinned-source-lock
+          path: pinned-source
+      - name: Select pinned source lock
+        if: inputs.source_lock_release_tag != ''
+        run: echo "PINNED_SOURCE_LOCK=$PWD/pinned-source/source-lock.json" >> "$GITHUB_ENV"
+      - name: Acquire and verify shared source archives
+        id: acquire
+        env:
+          GNAF_VERSION: ${{ needs.setup.outputs.version }}
+          ADMIN_BDYS_VERSION: ${{ needs.setup.outputs.admin_bdys_version }}
+          DOWNLOAD_URL_GNAF: ${{ inputs.download_url_gnaf }}
+          DOWNLOAD_URL_ADMIN_BDYS: ${{ inputs.download_url_admin_bdys }}
+          ADMIN_BDYS_EXTRACTED_DIR: ${{ inputs.admin_bdys_extracted_dir }}
+          BOUNDARY_REFERENCE_DATE: ${{ inputs.boundary_reference_date }}
+          SOURCE_ARCHIVE_DIR: sources
+        run: node dist/source-lock.js acquire >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source-archives
+          path: sources/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source-lock
+          path: sources/source-lock.json
+          if-no-files-found: error
+          retention-days: 30
+
   # ---------------------------------------------------------------------------
   # Job 1: Build each state in parallel
   # ---------------------------------------------------------------------------
   build:
     if: inputs.preflight_only != true && needs.setup.outputs.build_required == 'true'
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
-    needs: setup
+    needs: [setup, sources]
     # 360 min is the GitHub Actions free-tier maximum. We need this generous
     # budget because the spatial-join fallback in address_full_prep.sql can
     # take 30min-3hr for NSW (~4.6M addresses) when it's the primary path
@@ -188,6 +281,17 @@ jobs:
         with:
           submodules: true
 
+      - name: Freeze tracked build fingerprint
+        id: code
+        run: |
+          FINGERPRINT=$(python3 scripts/cache_fingerprint.py)
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+      - name: Download shared source archives
+        uses: actions/download-artifact@v8
+        with:
+          name: source-archives
+          path: sources
+
       - uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image
@@ -204,9 +308,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: cache
-          key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.sources.outputs.identity }}-${{ matrix.state }}-${{ steps.code.outputs.fingerprint }}-${{ github.run_id }}
           restore-keys: |
-            gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-
+            gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.sources.outputs.identity }}-${{ matrix.state }}-${{ steps.code.outputs.fingerprint }}-
 
       - name: Run pipeline for ${{ matrix.state }}
         run: |
@@ -247,7 +351,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: cache
-          key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.setup.outputs.data_source_key }}-${{ matrix.state }}-${{ hashFiles('gnaf-loader/**', 'docker-entrypoint.sh', 'scripts/**', 'sql/**') }}-${{ github.run_id }}
+          key: gnaf-${{ env.DB_CACHE_VERSION }}-${{ needs.sources.outputs.identity }}-${{ matrix.state }}-${{ steps.code.outputs.fingerprint }}-${{ github.run_id }}
 
       - name: Report cache status
         if: always()
@@ -296,6 +400,7 @@ jobs:
           path: |
             output/flat-white-*.ndjson.gz
             output/flat-white-*.ndjson.reconciliation.json
+            output/build-provenance-*.json
             output/${{ matrix.state }}.count
           retention-days: 7
 
@@ -378,7 +483,7 @@ jobs:
   # ---------------------------------------------------------------------------
   release:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    timeout-minutes: 120
     needs: [setup, build, concatenate]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
     permissions:
@@ -408,6 +513,12 @@ jobs:
           path: artifacts
           pattern: flat-white-*
 
+      - name: Download source lock
+        uses: actions/download-artifact@v8
+        with:
+          name: source-lock
+          path: locked-source
+
       - name: Collect assets and generate metadata
         id: collect
         run: |
@@ -416,6 +527,7 @@ jobs:
           ADMIN_BDYS_VERSION="${{ needs.setup.outputs.admin_bdys_version }}"
           ASSET_DIR="release-assets"
           mkdir -p "$ASSET_DIR"
+          cp locked-source/source-lock.json "$ASSET_DIR/source-lock.json"
 
           # Collect per-state gzips and count files. Source filenames are
           # `flat-white-${VERSION}-${state}.ndjson.gz` (built using gnaf data
@@ -446,6 +558,7 @@ jobs:
 
             cp "$GZ_FILE" "$ASSET_DIR/flat-white-${RELEASE_VERSION}-${STATE_LOWER}.ndjson.gz"
             cp "artifacts/flat-white-${state}/flat-white-${STATE_LOWER}.ndjson.reconciliation.json" "$ASSET_DIR/reconciliation-${state}.json"
+            cp "artifacts/flat-white-${state}/build-provenance-${state}.json" "$ASSET_DIR/build-provenance-${state}.json"
 
             COUNT=$(cat "$COUNT_FILE")
             TOTAL=$((TOTAL + COUNT))
@@ -475,6 +588,8 @@ jobs:
             "adminBoundariesVersion": "${ADMIN_BDYS_VERSION}",
             "schemaVersion": "${SCHEMA_VERSION}",
             "asgsYear": 2026,
+            "sourceLock": "source-lock.json",
+            "boundaryReferenceDate": "$(python3 -c 'import json; print(json.load(open("locked-source/source-lock.json"))["boundaryReferenceDate"])')",
             "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "states": ${STATES_JSON},
             "totalCount": ${TOTAL}
@@ -485,6 +600,7 @@ jobs:
 
           # Copy DOCUMENT-SCHEMA.md
           cp docs/DOCUMENT-SCHEMA.md "$ASSET_DIR/DOCUMENT-SCHEMA.md"
+          cp docs/MIGRATING-TO-ASGS-2026.md "$ASSET_DIR/MIGRATING-TO-ASGS-2026.md"
 
           # Export for later steps
           {
@@ -518,7 +634,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .nvmrc
 
       - name: Build verification tools
         run: npm ci && npm run build
@@ -558,56 +674,40 @@ jobs:
           # GitHub limits each asset; valid state files may exceed 2 GiB together.
           python3 scripts/check-release-asset-sizes.py "$ASSET_DIR"
 
-      - name: Compare with prior release (P4.03)
+      - name: Compare every PID and field with the prior release
         id: compare
-        run: |
-          VERSION="${{ needs.setup.outputs.version }}"
-          RELEASE_VERSION="${{ needs.setup.outputs.release_version }}"
-          ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
-          HAS_ANOMALIES=false
-
-          # Try to get prior release metadata (exclude drafts to avoid comparing against ourselves on re-runs)
-          PRIOR_TAG=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
-
-          if [[ -z "$PRIOR_TAG" ]]; then
-            echo "No prior release found — skipping comparison"
-            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
-          elif [[ "$PRIOR_TAG" == "v${RELEASE_VERSION}" ]]; then
-            echo "Prior release is same version (${PRIOR_TAG}) — skipping comparison (manual rebuild)"
-            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
-          elif [[ "$RELEASE_VERSION" != "$VERSION" && "$PRIOR_TAG" == "v${VERSION}" ]]; then
-            # Patch release: prior is the parent quarterly cut. Counts should be ~identical
-            # (same data, same code path). Skip count anomaly comparison.
-            echo "Patch release: prior is parent quarterly v${VERSION} — skipping count comparison (same underlying data)"
-            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Comparing against prior release: $PRIOR_TAG"
-            mkdir -p /tmp/prior
-            if gh release download "$PRIOR_TAG" --pattern "metadata.json" --dir /tmp/prior 2>/dev/null; then
-              set +e
-              node dist/compare-releases.js "$ASSET_DIR/metadata.json" "/tmp/prior/metadata.json" --threshold 1.0
-              COMPARE_EXIT=$?
-              set -e
-
-              if [[ $COMPARE_EXIT -eq 2 ]]; then
-                echo "::warning::Build-over-build anomalies detected — review before publishing"
-                HAS_ANOMALIES=true
-                # Copy comparison report to release assets
-                find . -maxdepth 1 -name 'comparison-*.md' -exec cp {} "$ASSET_DIR/" \;
-                if ! ls "$ASSET_DIR"/comparison-*.md >/dev/null 2>&1; then
-                  echo "::warning::Comparison report not copied to release assets"
-                fi
-              elif [[ $COMPARE_EXIT -ne 0 ]]; then
-                echo "::error::Release comparison failed (exit ${COMPARE_EXIT})"
-                exit "$COMPARE_EXIT"
-              fi
-            else
-              echo "Could not download prior metadata — skipping comparison"
-            fi
-            echo "has_anomalies=${HAS_ANOMALIES}" >> "$GITHUB_OUTPUT"
-          fi
         env:
           GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          python3 scripts/compare_release_files.py --directory=release-assets --repository="$GITHUB_REPOSITORY"
+          COMPARE_EXIT=$?
+          set -e
+          if [[ "$COMPARE_EXIT" -ne 0 && "$COMPARE_EXIT" -ne 2 ]]; then
+            echo "::error::Full release comparison failed"
+            exit "$COMPARE_EXIT"
+          fi
+          if [[ "$COMPARE_EXIT" -eq 2 ]]; then
+            echo "has_anomalies=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_anomalies=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Index release evidence
+        run: |
+          python3 scripts/release_evidence.py index --directory=release-assets \
+            --version="${{ needs.setup.outputs.release_version }}" --commit="$GITHUB_SHA"
+          python3 scripts/check-release-asset-sizes.py release-assets
+      - name: Save release evidence for the mirror
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-evidence
+          path: |
+            release-assets/*.json
+            release-assets/*.md
+            release-assets/comparison-*.jsonl.gz
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Generate release notes
         id: notes
@@ -1058,6 +1158,7 @@ jobs:
       AWS_ROLE: arn:aws:iam::493712557159:role/flat-white-role
       S3_BUCKET: flat-white-address-493712557159-ap-southeast-2-an
       MIRROR_SCHEMA_VERSION: ${{ needs.setup.outputs.schema_version }}
+      MIRROR_SOURCE_COMMIT: ${{ needs.setup.outputs.source_commit }}
       MAPPINGS_SOURCE: ${{ needs.setup.outputs.mirror_only == 'true' && 'mirror-source/mappings.json' || 'opensearch/address-mappings.json' }}
     steps:
       - uses: actions/checkout@v6
@@ -1068,6 +1169,13 @@ jobs:
         with:
           path: artifacts
           pattern: flat-white-*
+
+      - name: Download release evidence
+        if: needs.setup.outputs.mirror_only != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: release-evidence
+          path: artifacts/release-evidence
 
       - name: Download mirror recovery plan
         if: needs.setup.outputs.mirror_only == 'true'
@@ -1252,6 +1360,17 @@ jobs:
             --content-type "application/json" >/dev/null
           echo "✓ Mappings uploaded to staging"
 
+          python3 scripts/release_evidence.py manifest --directory=artifacts/release-evidence \
+            --prefix="data/address/${VERSION_DASH}" > /tmp/evidence-files.json
+          while IFS= read -r NAME; do
+            EVIDENCE_PATH="artifacts/release-evidence/${NAME}"
+            EVIDENCE_SHA256_B64="$(openssl dgst -sha256 -binary "$EVIDENCE_PATH" | openssl base64 -A)"
+            aws s3api put-object --bucket "$S3_BUCKET" --key "${STAGING_PREFIX}/${NAME}" \
+              --body "$EVIDENCE_PATH" --checksum-algorithm SHA256 \
+              --checksum-sha256 "$EVIDENCE_SHA256_B64" >/dev/null
+          done < <(jq -r '.[].key | split("/")[-1]' /tmp/evidence-files.json)
+
+
           # Export for subsequent steps
           {
             echo "version_dash=${VERSION_DASH}"
@@ -1281,12 +1400,13 @@ jobs:
             --arg version "$VERSION_DASH" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg repo "${{ github.repository }}" \
-            --arg commit "${{ github.sha }}" \
+            --arg commit "$MIRROR_SOURCE_COMMIT" \
             --arg run_id "${{ github.run_id }}" \
             --arg source_name "G-NAF" \
             --arg source_release "$SOURCE_RELEASE" \
             --arg source_url "https://data.gov.au/dataset/geocoded-national-address-file-g-naf" \
             --argjson files "$FILES_JSON" \
+            --argjson artifacts "$(cat /tmp/evidence-files.json)" \
             --argjson total_records "$TOTAL_RECORDS" \
             '{
               manifest_version: $manifest_version,
@@ -1298,6 +1418,7 @@ jobs:
               pipeline: { repo: $repo, commit: $commit, run_id: $run_id },
               source: { name: $source_name, release: $source_release, url: $source_url },
               files: $files,
+              artifacts: $artifacts,
               total_records: $total_records,
               index: {
                 mappings_key: ("data/address/" + $version + "/mappings.json"),
@@ -1336,6 +1457,10 @@ jobs:
               .schema_version == $schema_version and .asgs_year == 2026 and
               (.files | type) == "array" and
               ([.files[].key] | sort) == ($expected_file_keys | sort) and
+              (.artifacts | type) == "array" and
+              ([.files[].key, .artifacts[].key, .index.mappings_key] | length) ==
+                ([.files[].key, .artifacts[].key, .index.mappings_key] | unique | length) and
+              (all(.artifacts[]; (.sha256 | test("^[a-f0-9]{64}$")) and .bytes > 0)) and
               (.index.source_keys | type) == "array" and
               (.index.source_keys | length) == 1 and
               .index.source_keys[0] == $expected_source_key and
@@ -1400,10 +1525,16 @@ jobs:
             --key "${S3_PREFIX}/mappings.json" >/dev/null
           echo "  ✓ mappings.json"
 
+          while IFS= read -r NAME; do
+            aws s3api copy-object --bucket "$S3_BUCKET" \
+              --copy-source "${S3_BUCKET}/${STAGING_PREFIX}/${NAME}" \
+              --key "${S3_PREFIX}/${NAME}" >/dev/null
+          done < <(jq -r '.[].key | split("/")[-1]' /tmp/evidence-files.json)
+
           # Clean up staging
           aws s3 rm "s3://${S3_BUCKET}/${STAGING_PREFIX}/" --recursive
           echo ""
-          echo "✓ All 11 files promoted, staging cleaned up"
+          echo "✓ Data, mappings and release evidence promoted, staging cleaned up"
 
       - name: Verify published data files (pre-manifest gate)
         if: steps.check_existing.outputs.skip != 'true'

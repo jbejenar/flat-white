@@ -13,6 +13,7 @@ flat-white transforms Australian Government G-NAF address data into pre-joined, 
 
 ```
 src/
+  source-lock.ts        — acquire and verify shared source archives; database provenance
   index.ts              — package entry point, schema/package version export
   schema.ts             — TypeScript types + Zod validation; ASGS_YEAR = 2026
   download.ts           — source discovery, download and archive validation
@@ -63,7 +64,7 @@ npm run typecheck               # Type-check (tsc --noEmit)
 docker compose up db            # Start local Postgres + PostGIS
 ```
 
-**Source versions:** Production builds require `GNAF_VERSION` in `YYYY.MM` format, `2026.08` or newer (months `02`, `05`, `08`, `11`). `build-local.sh` also accepts `--version`. An optional independent `ADMIN_BDYS_VERSION` follows the same rules. Invalid or older explicit quarters fail before build side effects, including on cached paths. The `manual` metadata marker is not a quarter input. Fixture builds default to `2026.02` (the frozen snapshot) and ignore production boundary overrides. Leave `GNAF_VERSION` unset for fixtures. See [releasing](docs/RELEASING.md) for source configuration.
+**Source versions:** Production builds require `GNAF_VERSION` in `YYYY.MM` format, `2026.08` or newer (months `02`, `05`, `08`, `11`). `build-local.sh` also accepts `--version`. An optional independent `ADMIN_BDYS_VERSION` follows the same rules. Invalid or older explicit quarters fail before build side effects, including on cached paths. The `manual` metadata marker is not a quarter input. Fixture builds default to `2026.02` (the frozen snapshot) and ignore production boundary overrides. Leave `GNAF_VERSION` unset for fixtures. Production also requires `SOURCE_LOCK_PATH` (default `/sources/source-lock.json` in Docker) and the locked archives. Acquire them once with `node dist/source-lock.js acquire`; state jobs never independently discover sources. See [releasing](docs/RELEASING.md#locked-sources-and-boundary-dates) for source configuration.
 
 ## Principles (MUST follow)
 

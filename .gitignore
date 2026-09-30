@@ -9,3 +9,8 @@ data/
 .DS_Store
 .claude/worktrees/
 .claude-loop/
+
+# Locked source archives and reusable local database dumps
+sources/
+pinned-source/
+cache/

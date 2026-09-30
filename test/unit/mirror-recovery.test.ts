@@ -49,6 +49,8 @@ if args[:3] == ['api', '--method', 'GET']:
         value['draft'] = True
     if isinstance(value, dict) and 'raw' in value: sys.stdout.write(value['raw'])
     else: print(json.dumps(value))
+elif args[:2] == ['release', 'list']:
+    print(json.dumps([{'tagName':'v2026.08.1','isDraft':False,'isPrerelease':False}]))
 elif args[:2] == ['release', 'download']:
     name = args[args.index('--pattern') + 1]
     target = Path(args[args.index('--dir') + 1]) / name
@@ -147,6 +149,183 @@ else:
     ]);
   }
 
+  it.each(["expected", "unexpected", "corrupt"])(
+    "executes full nine-state publication comparison: %s",
+    (mode) => {
+      const current = join(root, "current");
+      mkdirSync(current);
+      writeFileSync(
+        join(current, "metadata.json"),
+        JSON.stringify({ ...metadata, version: "2026.08.2" }),
+      );
+      for (const state of states) {
+        const old = {
+          _id: `GA${state}_1`,
+          _version: "2026.08",
+          state,
+          postcode: "2000",
+          boundaries: { commonwealthElectorate: null },
+        };
+        const data = gzipSync(JSON.stringify(old) + "\n");
+        const asset = release.assets.find(
+          (a) => a.name === `flat-white-2026.08.1-${state.toLowerCase()}.ndjson.gz`,
+        )!;
+        writeFileSync(join(root, "public", asset.name), data);
+        asset.size = data.length;
+        asset.digest = `sha256:${sha(data)}`;
+        const updated =
+          state === "OT"
+            ? {
+                ...old,
+                boundaries: { commonwealthElectorate: { name: "BEAN" } },
+                ...(mode === "unexpected" ? { postcode: "9999" } : {}),
+              }
+            : old;
+        writeFileSync(
+          join(current, `flat-white-2026.08.2-${state.toLowerCase()}.ndjson.gz`),
+          gzipSync(JSON.stringify(updated) + "\n"),
+        );
+      }
+      if (mode === "corrupt") writeFileSync(join(root, "corrupt-download"), "true");
+      save();
+      const result = spawnSync(
+        "python3",
+        [
+          resolve("scripts/compare_release_files.py"),
+          "--directory",
+          current,
+          "--repository",
+          "owner/repo",
+        ],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${join(root, "bin")}:${process.env.PATH}`,
+            MIRROR_TEST_ROOT: root,
+          },
+        },
+      );
+      if (mode === "corrupt") {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain("Prior release checksum mismatch");
+        return;
+      }
+      expect(result.status, result.stderr).toBe(mode === "unexpected" ? 2 : 0);
+      const report = JSON.parse(readFileSync(join(current, "comparison.json"), "utf8"));
+      expect(report.states).toHaveLength(9);
+      expect(report.sourceArchiveBytesMatch).toBeNull();
+      expect(report.hasAnomalies).toBe(mode === "unexpected");
+      expect(report.states.find((s: { state: string }) => s.state === "OT").changed).toBe(1);
+      expect(readFileSync(join(current, "comparison.md"), "utf8")).toContain(
+        "does not prove identical historical upstream",
+      );
+    },
+  );
+
+  function addEvidence() {
+    metadata.sourceLock = "source-lock.json";
+    updateMetadata();
+    writeFileSync(join(root, "public/metadata.json"), JSON.stringify(metadata));
+    for (const name of [
+      "source-lock.json",
+      "verification-report.json",
+      "DOCUMENT-SCHEMA.md",
+      "comparison.json",
+      "comparison.md",
+      ...states.map((state) => `comparison-${state}.jsonl.gz`),
+      ...states.flatMap((state) => [
+        `reconciliation-${state}.json`,
+        `build-provenance-${state}.json`,
+      ]),
+    ]) {
+      writeFileSync(join(root, "public", name), "{}\n");
+    }
+    const indexed = spawnSync(
+      "python3",
+      [
+        resolve("scripts/release_evidence.py"),
+        "index",
+        "--directory",
+        join(root, "public"),
+        "--version",
+        release.tag_name.slice(1),
+        "--commit",
+        commit,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(indexed.status, indexed.stderr).toBe(0);
+    const index = JSON.parse(readFileSync(join(root, "public/evidence-index.json"), "utf8"));
+    for (const name of [
+      ...index.files.map((file: { name: string }) => file.name),
+      "evidence-index.json",
+    ]) {
+      const raw = readFileSync(join(root, "public", name), "utf8");
+      let asset = release.assets.find((item) => item.name === name);
+      if (!asset) {
+        asset = { id: release.assets.length + 1, name, size: 0, digest: "", state: "uploaded" };
+        release.assets.push(asset);
+      }
+      asset.size = Buffer.byteLength(raw);
+      asset.digest = `sha256:${sha(raw)}`;
+      responses[`${prefix}/releases/assets/${asset.id}`] = { raw };
+    }
+  }
+
+  it("recovers the selected release's checksummed evidence independently of ingestion files", () => {
+    addEvidence();
+    expect(plan().status).toBe(0);
+    const result = prepare();
+    expect(result.status, result.stderr).toBe(0);
+    const manifest = spawnSync(
+      "python3",
+      [
+        resolve("scripts/release_evidence.py"),
+        "manifest",
+        "--directory",
+        join(root, "artifacts/release-evidence"),
+        "--prefix",
+        "data/address/2026-08-1",
+      ],
+      { encoding: "utf8" },
+    );
+    expect(manifest.status, manifest.stderr).toBe(0);
+    const entries = JSON.parse(manifest.stdout);
+    expect(entries).toHaveLength(35);
+    expect(entries.every((item: { key: string }) => !item.key.endsWith(".ndjson.gz"))).toBe(true);
+    writeFileSync(join(root, "artifacts/release-evidence/source-lock.json"), "corruption");
+    const corrupted = spawnSync(
+      "python3",
+      [
+        resolve("scripts/release_evidence.py"),
+        "manifest",
+        "--directory",
+        join(root, "artifacts/release-evidence"),
+        "--prefix",
+        "data/address/2026-08-1",
+      ],
+      { encoding: "utf8" },
+    );
+    expect(corrupted.status).not.toBe(0);
+    expect(corrupted.stderr).toContain("Evidence checksum mismatch");
+  });
+
+  it.each(["missing-index", "missing-source", "different-digest"])(
+    "refuses incomplete source-locked recovery: %s",
+    (mode) => {
+      addEvidence();
+      if (mode === "missing-index")
+        release.assets = release.assets.filter((a) => a.name !== "evidence-index.json");
+      if (mode === "missing-source")
+        release.assets = release.assets.filter((a) => a.name !== "source-lock.json");
+      if (mode === "different-digest")
+        release.assets.find((a) => a.name === "source-lock.json")!.digest =
+          "sha256:" + "f".repeat(64);
+      expect(plan().status).not.toBe(0);
+    },
+  );
+
   it.each([
     ["v2026.08", "2026.08"],
     ["v2026.08.1", "2026.08"],
@@ -182,14 +361,17 @@ else:
 
   // Execute the actual publisher shell steps on Linux (GNU stat/date and bash).
   // The fake AWS CLI stores objects locally and rejects unsupported commands.
-  it.skipIf(process.platform !== "linux").each(["publish", "existing", "denied"])(
+  it
+    .skipIf(process.platform !== "linux")
+    .each(["publish", "publish-evidence", "existing", "denied"])(
     "runs the shared mirror publisher safely: %s",
     (mode) => {
+      if (mode === "publish-evidence") addEvidence();
       expect(plan().status).toBe(0);
       const prepared = prepare();
       expect(prepared.status, prepared.stderr).toBe(0);
       mkdirSync(join(root, "scripts"));
-      for (const name of ["check-s3-mirror.py", "mirror_utils.py"])
+      for (const name of ["check-s3-mirror.py", "mirror_utils.py", "release_evidence.py"])
         copyFileSync(resolve("scripts", name), join(root, "scripts", name));
       writeFileSync(
         join(root, "bin/aws"),
@@ -275,7 +457,8 @@ elif args[:2] != ['s3', 'ls']:
             if (!(key in values)) throw new Error(`Unhandled workflow input: ${key}`);
             return values[key];
           })
-          .replaceAll("/tmp/manifest", join(root, "manifest"));
+          .replaceAll("/tmp/manifest", join(root, "manifest"))
+          .replaceAll("/tmp/evidence-files.json", join(root, "evidence-files.json"));
         const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], {
           cwd: root,
           encoding: "utf8",
@@ -286,6 +469,7 @@ elif args[:2] != ['s3', 'ls']:
             MIRROR_AWS_TEST: mode,
             S3_BUCKET: "bucket",
             MIRROR_SCHEMA_VERSION: "1.0.0",
+            MIRROR_SOURCE_COMMIT: commit,
             MAPPINGS_SOURCE: join(root, "source/mappings.json"),
             VERSION_DASH: outputs.version_dash ?? "",
             GITHUB_OUTPUT: join(root, "outputs"),
@@ -305,7 +489,7 @@ elif args[:2] != ['s3', 'ls']:
         .split("\n")
         .map((line) => JSON.parse(line));
       const writes = calls.filter((args) => ["put-object", "copy-object", "rm"].includes(args[1]));
-      if (mode === "publish") {
+      if (mode.startsWith("publish")) {
         expect(status).toBe(0);
         const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
         expect(manifest).toMatchObject({
@@ -315,6 +499,8 @@ elif args[:2] != ['s3', 'ls']:
           total_records: 9,
         });
         expect(manifest.files).toHaveLength(10);
+        expect(manifest.artifacts).toHaveLength(mode === "publish-evidence" ? 35 : 0);
+        expect(manifest.index.source_keys).toEqual(["data/address/2026-08-1/all.ndjson.gz"]);
         expect(writes.at(-1)).toContain("--if-none-match");
         expect(writes.at(-1)).toContain("manifests/address-2026-08-1.json");
         const national = readFileSync(join(root, "s3/data/address/2026-08-1/all.ndjson.gz"));

@@ -3,7 +3,7 @@
 > **Schema 1.0.0 change — current clarification.**
 > Postgres still runs as temporary build infrastructure. Validated database dump
 > artifacts can be cached to avoid repeating a load; this does not make the database
-> a persistent service. The ASGS migration uses cache namespace `v3-asgs2026` and
+> a persistent service. The ASGS migration uses cache namespace `v4-locked-sources` and
 > rejects incompatible restored dumps. See [cache recovery](../RUNBOOK.md#load-or-cache-validation-failed).
 
 ## Status
