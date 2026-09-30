@@ -132,6 +132,30 @@ tags do not launch another tag-triggered Docker publication. The catalogue runs
 from completion of Quarterly Build, and downstream notifications require a public
 release. A held draft is not announced as ready.
 
+## Check the catalogue
+
+The [public catalogue](https://jbejenar.github.io/flat-white/) updates automatically
+when a successful Quarterly Build on `main` completes. Check its release version,
+address total, state counts, schema version and ASGS year against `metadata.json`.
+The generator reads and validates that published asset; it does not derive current
+release facts from the wording of the release notes. Older metadata can omit the
+ASGS year, which is then left unstated.
+
+A missing asset on a legacy release permits a release-note fallback. An advertised
+metadata asset that cannot be downloaded, is invalid, names another release, or
+has inconsistent counts stops generation, preserving the last deployed page.
+Unknown legacy counts are shown as unavailable, never as zero addresses.
+
+After a catalogue code fix or a reviewed metadata correction, regenerate the site
+without rebuilding or republishing the address data:
+
+```bash
+gh workflow run catalogue.yml --ref main
+```
+
+Confirm both Catalogue jobs succeed and inspect the live page. A green deployment
+alone does not prove that the displayed numbers are correct.
+
 ## Publish a correction
 
 Use a new patch release when correcting already published data. For example,

@@ -1,28 +1,50 @@
 # Next work — flat-white
 
-> Updated: 2026-09-29. **Schema 1.0.0 change:** the current migration targets
+> Updated: 2026-09-30. **Schema 1.0.0 change:** the current migration targets
 > ASGS 2026. Earlier April work records are retained below as history, not the
 > active release plan.
 
 ## Current focus
 
-The implementation and documentation are being reviewed in
-[PR #204](https://github.com/jbejenar/flat-white/pull/204). Check that PR for its
-current commit, CI and review state. Passing fixtures and metadata-only preflight
-do not establish a completed production release.
+The ASGS 2026 migration is merged through [PR #204](https://github.com/jbejenar/flat-white/pull/204)
+and [PR #205](https://github.com/jbejenar/flat-white/pull/205).
+[Production build 36571342428](https://github.com/jbejenar/flat-white/actions/runs/36571342428)
+published [v2026.08](https://github.com/jbejenar/flat-white/releases/tag/v2026.08):
+15,108,510 principal addresses, schema 1.0.0, ASGS 2026. All nine state builds,
+release verification and the S3 mirror passed. A read-only S3 check also verified
+the published manifest and all 11 data/mapping object sizes and SHA-256 checksums.
 
-- Complete review and checks for the ASGS 2026 migration. Keep the
-  [contract](docs/DOCUMENT-SCHEMA.md), [migration guide](docs/MIGRATING-TO-ASGS-2026.md)
-  and fixture baseline aligned.
+- Check the catalogue after its metadata-reading repair is deployed. Its first
+  successful deployment listed the release but incorrectly showed zero addresses
+  and an unknown schema because it parsed release notes instead of `metadata.json`.
 - Track [upstream loader PR #103](https://github.com/minus34/gnaf-loader/pull/103).
   Replace its temporary fix pin with an upstream version containing the repair
   once the authority integration and existing compatibility checks pass.
-- For the first production release after merge, verify all nine state outputs,
-  census coverage, source/schema metadata, release status and the separate S3 mirror.
-  Follow [releasing](docs/RELEASING.md); use the new cache namespace and record cold-load capacity.
+- Record national build memory/capacity evidence separately from the successful
+  publication and the small random-sample check. Neither proves every source
+  field is complete or every geographic assignment is correct.
 - Coordinate downstream geographic references, index rebuilds, comparisons and
   rollback using the migration guide. Do not assume every consumer of `latest`
   already supports the new contract.
+
+## Follow-up findings from the release sample check
+
+A reproducible random check of two records from each of the nine published state
+files found all 18 ASGS 2026 hierarchies consistent with the ABS service. All 17
+available geocodes intersected their recorded mesh block. This is a spot check,
+not certification of every field or of the complete dataset.
+
+- **Other Territories completeness:** `GAOT_717320346` (30 Jalan Kembang Molok,
+  Home Island) has no site geocode. `GAOT_718710324` (39D Taylors Road, Norfolk
+  Island) has no federal electorate. The [AEC identifies Norfolk Island as part
+  of Bean](https://www.aec.gov.au/profiles/act/bean.htm). Investigate source coverage,
+  geocode selection and cross-territory boundary loading with focused fixtures;
+  do not guess values or overwrite the immutable published release. Null is
+  permitted by the contract but is still incomplete information.
+- **Electoral currency:** the [ACT redistribution timetable](https://www.aec.gov.au/redistributions/2025/act/index.html)
+  schedules determination for 8 October 2026. The August release and 2025 ABS
+  electoral reference should not be described as containing that future boundary
+  change. Recheck the next quarter, including Symonston.
 
 ## Follow-up findings from the documentation audit
 
