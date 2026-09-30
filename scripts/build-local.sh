@@ -97,7 +97,7 @@ if [ "$SKIP_LOAD" = false ]; then
   echo ""
   echo "[build] Step 1: Running gnaf-loader for states: $STATES"
   LOAD_START=$(date +%s)
-  GNAF_VERSION="$VERSION" node dist/load.js --states $STATES --server-data-dir /data --pgport "$POSTGRES_PORT"
+  GNAF_VERSION="$VERSION" node dist/load.js --states $STATES --server-data-dir /data --pgport "$POSTGRES_PORT" --no-boundary-tag
   LOAD_END=$(date +%s)
   echo "[build] Load completed in $((LOAD_END - LOAD_START)) seconds"
 else
@@ -130,22 +130,9 @@ echo "[build] Output: $OUTPUT_FILE"
 echo "[build] Lines:  $LINE_COUNT"
 echo "[build] Size:   $FILE_SIZE"
 
-# Quick schema validation on first 100 lines
-echo "[build] Validating schema on sample..."
-head -100 "$OUTPUT_FILE" | node -e "
-const { AddressDocumentSchema } = require('./dist/schema.js');
-const readline = require('readline');
-const rl = readline.createInterface({ input: process.stdin });
-let valid = 0, invalid = 0;
-rl.on('line', (line) => {
-  const result = AddressDocumentSchema.safeParse(JSON.parse(line));
-  if (result.success) valid++; else { invalid++; console.error(result.error.message); }
-});
-rl.on('close', () => {
-  console.log('[build] Sample validation: ' + valid + ' valid, ' + invalid + ' invalid');
-  if (invalid > 0) process.exit(1);
-});
-"
+GNAF_VERSION="$VERSION" DATABASE_URL="$DB_URL" node dist/reconcile.js "$OUTPUT_FILE"
+GNAF_VERSION="$VERSION" STATES="$STATES" node dist/verify.js "$OUTPUT_FILE" \
+  --db-url "$DB_URL" --check-boundary-coverage
 
 # --- Step 4: Summary ---
 BUILD_END=$(date +%s)

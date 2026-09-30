@@ -92,12 +92,18 @@ anomaly leaves the release as a draft for investigation. A draft is not a
 consumer-ready release.
 
 The release verification report validates every document in each compressed state
-file. It checks state membership, coordinates and duplicates, and reports coverage
-through GCCSA. Each census field must reach 99% coverage in each state by default;
-the load/restore gate also requires 99% complete census hierarchies per state.
-Review the actual null rates and source compatibility as part of the migration
-checks. These floors detect incomplete enrichment; they do not certify each
-individual geographic assignment.
+file. Build and release verification use the same per-state coverage floors,
+including 99% federal coverage for OT. The release gate also checks the source
+quarter, schema version, state and exact metadata counts.
+
+**New integrity evidence:** each build compares every eligible raw principal PID
+with the loaded principals and exported PIDs. Equal counts alone cannot pass a
+missing or substituted address. The gate rejects duplicates and publishes a
+`reconciliation-STATE.json` report for each state. Release verification checks
+the compressed artifact's PID digest against that evidence. PID sorting spills
+to disk with a 32 MiB buffer; diagnostic samples are bounded while totals remain
+exact. Allow scratch disk space for these ledgers. The fixture-only smoke has an
+explicit exemption from production evidence and is restricted to February 2026.
 
 Publication also checks [GitHub's limit of less than 2 GiB per asset](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 The combined size of valid state files can exceed that limit. A comparison-tool

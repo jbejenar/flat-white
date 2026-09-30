@@ -211,14 +211,14 @@ fi
 # in `gnaf-loader/settings.py:208-217`.
 
 # Test 4 — STATES=OT (Other Territories: Christmas Island, Norfolk, etc.)
-# OT has only LGA. Drop everything else.
+# OT requires federal electorates and LGA.
 echo
-echo "[cache-validator-test] Test 4/30 — STATES=OT (lga only)"
+echo "[cache-validator-test] Test 4/30 — STATES=OT (ce and lga)"
 reseed
-drop_polygons commonwealth_electorates local_government_wards \
+drop_polygons local_government_wards \
   state_lower_house_electorates state_upper_house_electorates
 set +e; run_validator OT >/dev/null; actual=$?; set -e
-assert_pass "STATES=OT accepts lga-only schema" "$actual"
+assert_pass "STATES=OT accepts ce+ lga schema" "$actual"
 
 # Test 5 — STATES=ACT (Australian Capital Territory)
 # ACT has ce + se_lower (no lga, no ward, no se_upper).
@@ -320,11 +320,17 @@ assert_fail_with "STATES=VIC fails when ward is missing" \
 echo
 echo "[cache-validator-test] Test 15/30 — NEG: STATES=OT missing lga"
 reseed
-drop_polygons commonwealth_electorates local_government_wards \
+drop_polygons local_government_wards \
   state_lower_house_electorates state_upper_house_electorates local_government_areas
 set +e; stderr_capture="$(run_validator OT 2>&1 1>/dev/null)"; actual=$?; set -e
 assert_fail_with "STATES=OT fails when lga is missing" \
   "$actual" "$stderr_capture" "local_government_areas"
+
+reseed
+drop_polygons commonwealth_electorates
+set +e; stderr_capture="$(run_validator OT 2>&1 1>/dev/null)"; actual=$?; set -e
+assert_fail_with "STATES=OT fails when federal dependencies are missing" \
+  "$actual" "$stderr_capture" "commonwealth_electorates"
 
 # ─── Malformed STATES regression guards ─────────────────────────────────────
 # Catch the bug class where malformed STATES silently bypasses all polygon

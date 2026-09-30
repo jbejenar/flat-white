@@ -481,6 +481,9 @@ stage_end
 
 stage_start "verify"
 
+GNAF_VERSION="$GNAF_VERSION" DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
+  node /app/dist/reconcile.js "$FLATTEN_OUTPUT" || { log "ERROR: PID reconciliation failed"; exit 4; }
+
 # Streaming verification: Zod schema validation + data quality checks
 if [[ ! -s "$FLATTEN_OUTPUT" ]]; then
   log "ERROR: Output file is empty"
@@ -489,7 +492,7 @@ fi
 
 DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
 STATES="$STATES" \
-  node /app/dist/verify.js "$FLATTEN_OUTPUT" --expected-count "$LINE_COUNT" \
+  node /app/dist/verify.js "$FLATTEN_OUTPUT" \
     --db-url "postgres://$PGUSER:$PGPASSWORD@localhost:5432/$PGDB" \
     --check-boundary-coverage || {
   log "ERROR: Verification failed"
