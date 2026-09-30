@@ -19,7 +19,10 @@ const commit = "a".repeat(40);
 const prefix = "repos/owner/repo";
 const sha = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 
-describe("published-release mirror recovery", () => {
+// These are subprocess integration scenarios, including all 35 evidence assets.
+// Keep ordinary unit-test defaults unchanged; bound each child below the suite budget.
+const SUBPROCESS_TIMEOUT_MS = 45_000;
+describe("published-release mirror recovery", { timeout: 60_000 }, () => {
   let root: string;
   let responses: Record<string, unknown>;
   let metadata: Record<string, unknown>;
@@ -125,6 +128,7 @@ else:
     return spawnSync("python3", [resolve("scripts/prepare-mirror-recovery.py"), ...args], {
       cwd: root,
       encoding: "utf8",
+      timeout: SUBPROCESS_TIMEOUT_MS,
       env: {
         ...process.env,
         PATH: `${join(root, "bin")}:${process.env.PATH}`,
@@ -199,6 +203,7 @@ else:
         ],
         {
           encoding: "utf8",
+          timeout: SUBPROCESS_TIMEOUT_MS,
           env: {
             ...process.env,
             PATH: `${join(root, "bin")}:${process.env.PATH}`,
@@ -462,6 +467,7 @@ elif args[:2] != ['s3', 'ls']:
         const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], {
           cwd: root,
           encoding: "utf8",
+          timeout: SUBPROCESS_TIMEOUT_MS,
           env: {
             ...process.env,
             PATH: `${join(root, "bin")}:${process.env.PATH}`,
@@ -512,7 +518,6 @@ elif args[:2] != ['s3', 'ls']:
         if (mode === "denied") expect(status).toBe(1);
       }
     },
-    20_000,
   );
 
   it("resolves an annotated tag to the original mapping commit", () => {
@@ -642,6 +647,7 @@ print(json.dumps(value))
       ],
       {
         encoding: "utf8",
+        timeout: SUBPROCESS_TIMEOUT_MS,
         env: {
           ...process.env,
           PATH: `${join(root, "bin")}:${process.env.PATH}`,
