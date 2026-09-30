@@ -30,8 +30,7 @@ END $$;
 --
 -- Logic: if the table exists but is missing ANY of the 10 required boundary
 -- columns, drop it and let the CREATE TABLE IF NOT EXISTS below recreate the
--- full stub. If gnaf-loader completed Part 5 successfully, all 10 columns are
--- present and the table is preserved (with its data).
+-- full table. Derived assignments are rebuilt below regardless of old contents.
 DO $$
 DECLARE
   missing_cols int;
@@ -82,13 +81,11 @@ CREATE TABLE IF NOT EXISTS gnaf___SCHEMA_VERSION__.address_principal_admin_bound
   se_upper_name text
 );
 
--- 0b. FALLBACK: spatial join for admin boundaries (E1.21 bulk-join rewrite)
--- Runs ONLY if gnaf-loader's boundary tagging didn't populate the table
--- (e.g. when --no-boundary-tag was used or upstream tagging crashed).
---
--- Each boundary table is checked independently — missing tables (legitimately
--- absent for some states per gnaf-loader's per-state shapefile filter) are
--- silently skipped, leaving the corresponding columns NULL.
+-- 0b. Rebuild derived assignments on every export, including cache restores.
+-- TRUNCATE and all INSERT/UPDATE passes share this atomic DO statement. A failed
+-- pass rolls the rebuild back; a nonempty or partial old table is never trusted.
+-- Missing themes remain null; the cache and export coverage gates decide which
+-- themes are required for the selected states.
 --
 -- SHAPE: insert one shell row per address with NULL boundary fields, then run
 -- five INDEPENDENT UPDATE passes — one per boundary table — each picking the
@@ -135,12 +132,7 @@ DECLARE
   has_se boolean;
   has_se_upper boolean;
 BEGIN
-  SELECT COUNT(*) INTO bdy_count FROM gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries;
-
-  IF bdy_count > 0 THEN
-    RAISE NOTICE 'admin_boundaries already populated (% rows) — skipping spatial join fallback', bdy_count;
-    RETURN;
-  END IF;
+  TRUNCATE gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries;
 
   SELECT EXISTS (SELECT 1 FROM information_schema.tables
                  WHERE table_schema = 'admin_bdys___SCHEMA_VERSION__' AND table_name = 'commonwealth_electorates') INTO has_ce;
@@ -168,8 +160,7 @@ BEGIN
   SELECT ap.gnaf_pid, ap.locality_pid, ap.locality_name, ap.postcode, ap.state
   FROM gnaf___SCHEMA_VERSION__.address_principals ap;
 
-  -- Reuse bdy_count for the inserted-row count (the early-return value above
-  -- is no longer needed past this point).
+  -- Record the rebuilt population.
   GET DIAGNOSTICS bdy_count = ROW_COUNT;
   RAISE NOTICE 'Spatial join fallback inserted % shell rows', bdy_count;
 

@@ -46,7 +46,7 @@ resolve_db_url() {
 }
 
 psql_db() {
-  docker compose exec -T "$DB_SERVICE" psql -U "$DB_USER" -d "$DB_NAME" "$@"
+  docker compose exec -T "$DB_SERVICE" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" "$@"
 }
 
 echo "[boundary-prelude] Ensuring Postgres is ready..."
@@ -110,7 +110,28 @@ if [[ "$unique_index_count" != "1" ]]; then
   exit 1
 fi
 
-echo "[boundary-prelude] Running materialized flatten against repaired table..."
+echo "[boundary-prelude] A failed rebuild must preserve the previous assignments..."
+psql_db -q <<SQL
+UPDATE gnaf_${SCHEMA_VERSION_FLAT}.address_principal_admin_boundaries SET ce_name = 'previous snapshot';
+ALTER TABLE admin_bdys_${SCHEMA_VERSION_FLAT}.commonwealth_electorates RENAME COLUMN ce_pid TO unavailable_pid;
+SQL
+if node "$PROJECT_DIR/scripts/extract-boundary-prelude.mjs" "$PROJECT_DIR/sql/address_full_prep.sql" | \
+  sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" | psql_db -q; then
+  echo "[boundary-prelude] ERROR: invalid boundary schema unexpectedly succeeded"
+  exit 1
+fi
+psql_db -q <<SQL
+ALTER TABLE admin_bdys_${SCHEMA_VERSION_FLAT}.commonwealth_electorates RENAME COLUMN unavailable_pid TO ce_pid;
+SQL
+preserved="$(psql_db -tAc "SELECT COUNT(*) FROM gnaf_${SCHEMA_VERSION_FLAT}.address_principal_admin_boundaries WHERE ce_name = 'previous snapshot'")"
+[[ "$preserved" == "451" ]] || { echo "Failed rebuild lost existing assignments: $preserved"; exit 1; }
+
+echo "[boundary-prelude] Nonempty partial tables must be rebuilt, not reused..."
+psql_db -q <<SQL
+DELETE FROM gnaf_${SCHEMA_VERSION_FLAT}.address_principal_admin_boundaries
+WHERE gnaf_pid <> (SELECT MIN(gnaf_pid) FROM gnaf_${SCHEMA_VERSION_FLAT}.address_principal_admin_boundaries);
+SQL
+echo "[boundary-prelude] Running materialized flatten against partial stale table..."
 mkdir -p "$PROJECT_DIR/output"
 DATABASE_URL="$(resolve_db_url)" \
 GNAF_VERSION="$SCHEMA_VERSION" \
@@ -121,5 +142,6 @@ if [[ "$line_count" != "451" ]]; then
   echo "[boundary-prelude] ERROR: expected 451 output rows, got $line_count"
   exit 1
 fi
+cmp "$OUTPUT_FILE" "$PROJECT_DIR/fixtures/expected-output.ndjson"
 
 echo "[boundary-prelude] PASS"

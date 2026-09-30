@@ -104,12 +104,26 @@ The pinned loader's single-state builds prepare these polygon types:
 | ACT   | No  | No   | Yes         | Yes          | No          |
 | NSW   | Yes | No   | Yes         | Yes          | No          |
 | NT    | Yes | Yes  | Yes         | Yes          | No          |
-| OT    | Yes | No   | No          | No           | No          |
+| OT    | Yes | No   | No          | Yes          | No          |
 | QLD   | Yes | No   | Yes         | Yes          | No          |
 | SA    | Yes | Yes  | Yes         | Yes          | No          |
 | TAS   | Yes | No   | Yes         | Yes          | Yes         |
 | VIC   | Yes | Yes  | Yes         | Yes          | Yes         |
 | WA    | Yes | Yes  | Yes         | Yes          | Yes         |
+
+**OT repair:** Commonwealth boundaries for Other Territories are supplied by
+ACT and NT. The loader now imports their electoral attributes, polygons and
+state lookup rows without importing ACT/NT addresses. Both build verification
+and compressed release verification require at least 99% OT federal coverage.
+Every export rebuilds address assignments, including after a database restore.
+
+The audited August 2026 snapshot has 3,803 matches among 3,805 OT addresses:
+2,166 Bean, 182 Fenner and 1,455 Lingiari. Two Norfolk Island PIDs remain null:
+`GAOT_720637896` and `GAOT_720637906`. Their source points fall about 4.0 m and
+3.2 m outside the supplied Bean polygon. We retain those source disagreements;
+we do not move the points or guess an electorate. Release verification checks
+these exact exceptions when both source quarters are August 2026. Later source
+editions need a fresh audit, not a copied exception list.
 
 Upper-house tables are validated/prepared where applicable, but upper-house
 membership is not an output field. A prepared polygon type also does not imply

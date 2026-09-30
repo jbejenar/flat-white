@@ -169,25 +169,16 @@ fi
 # polygon tables it loads based on which states are being built. The rules
 # come from `gnaf-loader/settings.py:208-217` (the `admin_bdy_list` block):
 #
-#   - ce: NOT loaded if states_to_load == ["OT"]
+#   - ce: required for all states; OT imports ACT/NT dependency files
 #   - lga: NOT loaded if states_to_load == ["ACT"]
 #   - ward: ONLY loaded if any of NT/SA/VIC/WA in states_to_load
 #   - se_lower: NOT loaded if states_to_load == ["OT"]
 #   - se_upper: ONLY loaded if any of TAS/VIC/WA in states_to_load
 #
-# The shapefile loader at `gnaf-loader/load-gnaf.py:325-330` enforces this
-# physically: it only loads shapefiles whose filename starts with the
-# lowercase state prefix (`act_*.shp`, `ot_*.shp`, etc.), and the Geoscape
-# admin boundaries archive only ships shapefiles for boundary types each
-# state actually has. The prep SQL (`02-02a-prep-admin-bdys-tables.sql`)
-# then INNER JOINs against the raw tables — if the raw table doesn't
-# exist, the prep silently fails (`geoscape.multiprocess_list` logs but
-# continues), and the polygon table doesn't get created.
-#
-# Result: a single-state build of OT-only ends up with ONLY local_government_areas
-# in admin_bdys_*. ACT-only has ce + se_lower. NSW/QLD have ce + lga + se_lower.
-# NT has ce + lga + ward + se_lower. SA same as NT. TAS has ce + lga + se_lower
-# + se_upper. Only VIC and WA have all 5.
+# OT's federal polygons live in the ACT and NT packages. The loader imports
+# their electoral attributes, polygons and state lookup rows without adding
+# ACT/NT to the requested address states. OT therefore requires CE + LGA.
+# ACT requires CE + lower house. Other theme requirements remain state-aware.
 #
 # The validator must mirror this exactly. Take a STATES env var from the
 # entrypoint (whitespace-separated, matching gnaf-loader's --states format,
@@ -241,7 +232,7 @@ state_in_list() {
 is_only_ot()  { [[ "${#states_arr[@]}" -eq 1 && "${states_arr[0]}" == "OT"  ]]; }
 is_only_act() { [[ "${#states_arr[@]}" -eq 1 && "${states_arr[0]}" == "ACT" ]]; }
 
-need_ce=false
+need_ce=true
 need_lga=false
 need_ward=false
 need_se_lower=false
@@ -258,9 +249,8 @@ if [[ "${#states_arr[@]}" -eq 0 ]]; then
   need_se_lower=true
   need_se_upper=true
 else
-  # Per-state logic — line-by-line mirror of settings.py:208-217.
+  # Federal boundaries are required for every state, including OT.
   if ! is_only_ot; then
-    need_ce=true
     need_se_lower=true
   fi
   if ! is_only_act; then

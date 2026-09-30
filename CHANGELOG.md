@@ -64,6 +64,10 @@ Historical entries retain the contract and source versions published at the time
 
 ### Fixed
 
+- Catalogue counts and schema details now come from validated release metadata.
+  Failed metadata reads stop deployment instead of publishing zero counts;
+  schema 1.x releases display their ASGS year.
+
 - Validate independent administrative-boundary quarters at Docker, local and
   state-runner startup, before output/cache creation or infrastructure. Preserve
   manual URL builds by keeping their provenance marker out of the quarter selector.

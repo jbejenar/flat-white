@@ -92,12 +92,18 @@ anomaly leaves the release as a draft for investigation. A draft is not a
 consumer-ready release.
 
 The release verification report validates every document in each compressed state
-file. It checks state membership, coordinates and duplicates, and reports coverage
-through GCCSA. Each census field must reach 99% coverage in each state by default;
-the load/restore gate also requires 99% complete census hierarchies per state.
-Review the actual null rates and source compatibility as part of the migration
-checks. These floors detect incomplete enrichment; they do not certify each
-individual geographic assignment.
+file. Build and release verification use the same per-state coverage floors,
+including 99% federal coverage for OT. The release gate also checks the source
+quarter, schema version, state and exact metadata counts.
+
+**New integrity evidence:** each build compares every eligible raw principal PID
+with the loaded principals and exported PIDs. Equal counts alone cannot pass a
+missing or substituted address. The gate rejects duplicates and publishes a
+`reconciliation-STATE.json` report for each state. Release verification checks
+the compressed artifact's PID digest against that evidence. PID sorting spills
+to disk with a 32 MiB buffer; diagnostic samples are bounded while totals remain
+exact. Allow scratch disk space for these ledgers. The fixture-only smoke has an
+explicit exemption from production evidence and is restricted to February 2026.
 
 Publication also checks [GitHub's limit of less than 2 GiB per asset](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases).
 The combined size of valid state files can exceed that limit. A comparison-tool
@@ -131,6 +137,30 @@ Keeping the built-in token also preserves the existing event behaviour: release
 tags do not launch another tag-triggered Docker publication. The catalogue runs
 from completion of Quarterly Build, and downstream notifications require a public
 release. A held draft is not announced as ready.
+
+## Check the catalogue
+
+The [public catalogue](https://jbejenar.github.io/flat-white/) updates automatically
+when a successful Quarterly Build on `main` completes. Check its release version,
+address total, state counts, schema version and ASGS year against `metadata.json`.
+The generator reads and validates that published asset; it does not derive current
+release facts from the wording of the release notes. Older metadata can omit the
+ASGS year, which is then left unstated.
+
+A missing asset on a legacy release permits a release-note fallback. An advertised
+metadata asset that cannot be downloaded, is invalid, names another release, or
+has inconsistent counts stops generation, preserving the last deployed page.
+Unknown legacy counts are shown as unavailable, never as zero addresses.
+
+After a catalogue code fix or a reviewed metadata correction, regenerate the site
+without rebuilding or republishing the address data:
+
+```bash
+gh workflow run catalogue.yml --ref main
+```
+
+Confirm both Catalogue jobs succeed and inspect the live page. A green deployment
+alone does not prove that the displayed numbers are correct.
 
 ## Publish a correction
 
