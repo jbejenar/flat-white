@@ -15,10 +15,12 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 // --- Types ---
 
 interface ReleaseAsset {
+  id: number;
   name: string;
   browser_download_url: string;
   size: number;
@@ -46,9 +48,10 @@ interface ReleaseData {
   version: string;
   date: string;
   url: string;
-  totalCount: number;
+  totalCount: number | null;
   states: StateCount[];
   schemaVersion: string;
+  asgsYear?: number;
   assets: { name: string; url: string; sizeMB: string }[];
   /** Patch releases grouped under this quarterly release (e.g. v2026.04.1 under v2026.04) */
   patches?: ReleaseData[];
@@ -100,30 +103,88 @@ async function fetchReleases(repo: string): Promise<GitHubRelease[]> {
   return (await res.json()) as GitHubRelease[];
 }
 
-function parseMetadataFromAssets(
-  release: GitHubRelease,
-): { totalCount: number; states: StateCount[]; schemaVersion: string } | null {
-  // Try to find metadata.json in release assets — we can't download it via
-  // browser_download_url without auth, so we parse from release body instead.
+const stateCodes = ["VIC", "NSW", "QLD", "SA", "WA", "TAS", "NT", "ACT", "OT"] as const;
+
+const metadataSchema = z.object({
+  version: z.string(),
+  totalCount: z.number().int().nonnegative(),
+  states: z.record(z.enum(stateCodes), z.number().int().nonnegative()),
+  schemaVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+  asgsYear: z.number().int().positive().optional(),
+});
+
+type ReleaseMetadata = z.infer<typeof metadataSchema>;
+
+function publicDataReleases(releases: GitHubRelease[]): GitHubRelease[] {
+  return releases.filter((r) => !r.draft && !r.prerelease && r.tag_name.startsWith("v"));
+}
+
+/** Read the published contract, never infer current metadata from prose. */
+export async function fetchReleaseMetadata(
+  repo: string,
+  releases: GitHubRelease[],
+  token = process.env.GITHUB_TOKEN ?? "",
+): Promise<Map<string, ReleaseMetadata>> {
+  const result = new Map<string, ReleaseMetadata>();
+  for (const release of publicDataReleases(releases)) {
+    const assets = release.assets.filter((a) => a.name === "metadata.json");
+    // Older releases without an asset can still use their original release notes.
+    if (assets.length === 0) continue;
+    const [asset] = assets;
+    if (assets.length !== 1 || !Number.isSafeInteger(asset.id) || asset.id <= 0) {
+      throw new Error(`${release.tag_name}: invalid metadata asset`);
+    }
+    const headers: Record<string, string> = {
+      Accept: "application/octet-stream",
+      "User-Agent": "flat-white-catalogue",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    // GitHub can return the bytes or redirect to its asset host. Fetch follows
+    // that redirect and removes Authorization when the origin changes.
+    const response = await fetch(
+      `https://api.github.com/repos/${repo}/releases/assets/${asset.id}`,
+      { headers, signal: AbortSignal.timeout(30_000) },
+    );
+    if (!response.ok) {
+      throw new Error(`${release.tag_name}: metadata download failed (HTTP ${response.status})`);
+    }
+    const parsed = metadataSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new Error(`${release.tag_name}: invalid metadata.json: ${parsed.error.message}`);
+    }
+    const metadata = parsed.data;
+    if (metadata.version !== release.tag_name.slice(1)) {
+      throw new Error(`${release.tag_name}: metadata version does not match release tag`);
+    }
+    if (
+      Object.values(metadata.states).reduce((sum, count) => sum + count, 0) !== metadata.totalCount
+    ) {
+      throw new Error(`${release.tag_name}: state counts do not add up to totalCount`);
+    }
+    if (metadata.schemaVersion.startsWith("1.") && metadata.asgsYear !== 2026) {
+      throw new Error(`${release.tag_name}: schema 1.x metadata requires ASGS 2026`);
+    }
+    result.set(release.tag_name, metadata);
+  }
+  return result;
+}
+
+function parseLegacyReleaseNotes(release: GitHubRelease): {
+  totalCount: number | null;
+  states: StateCount[];
+  schemaVersion: string;
+} {
   const body = release.body ?? "";
-
-  // Extract total count from release notes (format: "**15,015,573** addresses")
   const totalMatch = body.match(/\*\*([0-9,]+)\*\*\s+addresses/);
-  const totalCount = totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : 0;
-
-  // Extract per-state counts from table (format: "| VIC | 3,456,789 |")
+  const totalCount = totalMatch ? Number(totalMatch[1].replace(/,/g, "")) : null;
   const states: StateCount[] = [];
   const statePattern = /\|\s*(VIC|NSW|QLD|SA|WA|TAS|NT|ACT|OT)\s*\|\s*([0-9,]+)\s*\|/g;
   let match;
   while ((match = statePattern.exec(body)) !== null) {
     states.push({ state: match[1], count: Number(match[2].replace(/,/g, "")) });
   }
-
-  // Extract schema version
   const schemaMatch = body.match(/Schema:\s*v?([0-9.]+)/i);
-  const schemaVersion = schemaMatch ? schemaMatch[1] : "unknown";
-
-  return { totalCount, states, schemaVersion };
+  return { totalCount, states, schemaVersion: schemaMatch ? schemaMatch[1] : "unknown" };
 }
 
 /**
@@ -137,39 +198,37 @@ export function parseVersion(tag: string): { base: string; patch: number | null 
   return { base: match[1], patch: match[2] ? parseInt(match[2], 10) : null };
 }
 
-export function processReleases(releases: GitHubRelease[]): ReleaseData[] {
-  const all = releases
-    // Exclude drafts and prereleases — the public catalogue must never
-    // expose releases that the workflow intentionally withheld for review
-    // (E1.28 defense in depth, response to bot review on PR #112).
-    //
-    // The catalogue.yml workflow ALSO has an early-exit check that skips
-    // generation entirely when the latest release is draft. This filter
-    // is the second layer for: (a) manual workflow_dispatch runs, (b) the
-    // "latest is published but earlier draft exists in the API response"
-    // case where the workflow check would still proceed.
-    .filter((r) => !r.draft && !r.prerelease)
-    .filter((r) => r.tag_name.startsWith("v"))
-    .map((r) => {
-      const metadata = parseMetadataFromAssets(r);
-      const dataAssets = r.assets
-        .filter((a) => a.name.endsWith(".ndjson.gz") || a.name === "metadata.json")
-        .map((a) => ({
-          name: a.name,
-          url: a.browser_download_url,
-          sizeMB: (a.size / 1_048_576).toFixed(1),
-        }));
+export function processReleases(
+  releases: GitHubRelease[],
+  metadataByTag: ReadonlyMap<string, ReleaseMetadata> = new Map(),
+): ReleaseData[] {
+  const all = publicDataReleases(releases).map((r) => {
+    const metadata = metadataByTag.get(r.tag_name);
+    const details = metadata
+      ? {
+          ...metadata,
+          states: stateCodes.map((state) => ({ state, count: metadata.states[state] })),
+        }
+      : parseLegacyReleaseNotes(r);
+    const dataAssets = r.assets
+      .filter((a) => a.name.endsWith(".ndjson.gz") || a.name === "metadata.json")
+      .map((a) => ({
+        name: a.name,
+        url: a.browser_download_url,
+        sizeMB: (a.size / 1_048_576).toFixed(1),
+      }));
 
-      return {
-        version: r.tag_name,
-        date: r.published_at.split("T")[0],
-        url: r.html_url,
-        totalCount: metadata?.totalCount ?? 0,
-        states: metadata?.states ?? [],
-        schemaVersion: metadata?.schemaVersion ?? "unknown",
-        assets: dataAssets,
-      };
-    });
+    return {
+      version: r.tag_name,
+      date: r.published_at.split("T")[0],
+      url: r.html_url,
+      totalCount: details.totalCount,
+      states: details.states,
+      schemaVersion: details.schemaVersion,
+      asgsYear: metadata?.asgsYear,
+      assets: dataAssets,
+    };
+  });
 
   // Group patch releases under their parent quarterly release
   const parentMap = new Map<string, ReleaseData>();
@@ -240,7 +299,7 @@ export function generateHTML(repo: string, releases: ReleaseData[]): string {
     return `
       <section class="${cls}">
         <${tag}><a href="${esc(r.url)}">${esc(r.version)}</a></${tag}>
-        <p class="meta">Released ${esc(r.date)} &middot; ${esc(formatNumber(r.totalCount))} addresses &middot; Schema ${esc(r.schemaVersion)}</p>
+        <p class="meta">Released ${esc(r.date)} &middot; ${r.totalCount === null ? "Address count unavailable" : `${esc(formatNumber(r.totalCount))} addresses`} &middot; Schema ${esc(r.schemaVersion)}${r.asgsYear === undefined ? "" : ` &middot; ASGS ${r.asgsYear}`}</p>
         ${
           r.states.length > 0
             ? `<table class="states">
@@ -384,7 +443,8 @@ async function main(): Promise<void> {
   const ghReleases = await fetchReleases(opts.repo);
   console.log(`Found ${ghReleases.length} releases`);
 
-  const releases = processReleases(ghReleases);
+  const metadata = await fetchReleaseMetadata(opts.repo, ghReleases);
+  const releases = processReleases(ghReleases, metadata);
 
   const html = generateHTML(opts.repo, releases);
 
