@@ -17,6 +17,26 @@ Historical entries retain the contract and source versions published at the time
 
 ## [Unreleased]
 
+## [v2026.08.1] - 2026-09-30
+
+### Release
+
+- **Release version:** 2026.08.1
+- **G-NAF data version:** 2026.08
+- **Schema version:** 1.0.0
+- **Total addresses:** 15108510
+- **Per-state counts:**
+  - ACT: 246121
+  - NSW: 4647916
+  - NT: 110328
+  - OT: 3805
+  - QLD: 3116786
+  - SA: 1131580
+  - TAS: 347598
+  - VIC: 3967997
+  - WA: 1536379
+
+
 ### Documentation
 
 - Audit current guides for schema 1.0.0 and ASGS 2026; highlight affected guidance
