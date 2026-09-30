@@ -19,16 +19,16 @@ import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { AddressDocumentSchema } from "./schema.js";
 import type { AddressDocument } from "./schema.js";
-import type { BuildMetadata } from "./metadata.js";
-import { CENSUS_BOUNDARY_THRESHOLDS, ENUM_FIELD_PATHS } from "./verify.js";
+import { PidLedger } from "./pid-ledger.js";
+import { z } from "zod";
+import { VERSION } from "./index.js";
+import { ASGS_YEAR } from "./schema.js";
+import { checkAugustOtFederal } from "./release-quality.js";
+import { PER_STATE_BOUNDARY_THRESHOLDS, ENUM_FIELD_PATHS } from "./verify.js";
 import type { EnumSets, EnumUnknownCounts } from "./verify.js";
 
 const DEFAULT_STATES = ["ACT", "NSW", "NT", "OT", "QLD", "SA", "TAS", "VIC", "WA"] as const;
-const VALID_STATES = new Set(DEFAULT_STATES);
-const CENSUS_COVERAGE_PERCENT = Object.fromEntries(
-  Object.entries(CENSUS_BOUNDARY_THRESHOLDS).map(([field, fraction]) => [field, fraction * 100]),
-);
-
+const VALID_STATES: ReadonlySet<string> = new Set(DEFAULT_STATES);
 /** Per-field minimum boundary coverage thresholds (percent, 0-100). */
 export type BoundaryCoverageThresholds = Partial<
   Record<keyof AddressDocument["boundaries"], number>
@@ -52,6 +52,7 @@ export interface StateVerification {
   duplicatePids: number;
   enumUnknownCounts: EnumUnknownCounts;
   passed: boolean;
+  qualityDiagnostics?: string[];
 }
 
 export interface VerificationReport {
@@ -60,19 +61,81 @@ export interface VerificationReport {
   states: StateVerification[];
   totalCount: number;
   overallPassed: boolean;
+  nationalDuplicatePids?: number;
+}
+
+const releaseMetadataSchema = z.object({
+  version: z.string().regex(/^\d{4}\.(?:02|05|08|11)(?:\.[1-9]\d*)?$/),
+  gnafVersion: z
+    .string()
+    .regex(/^\d{4}\.(?:02|05|08|11)$/)
+    .optional(),
+  adminBoundariesVersion: z.string().optional(),
+  schemaVersion: z.literal(VERSION),
+  asgsYear: z.literal(ASGS_YEAR),
+  states: z.record(z.string(), z.number().int().positive()),
+  totalCount: z.number().int().positive(),
+});
+
+export function parseReleaseMetadata(value: unknown) {
+  const metadata = releaseMetadataSchema.parse(value);
+  if (
+    Object.keys(metadata.states).some((state) => !VALID_STATES.has(state)) ||
+    Object.values(metadata.states).reduce((sum, count) => sum + count, 0) !== metadata.totalCount
+  ) {
+    throw new Error("Release metadata has invalid states or inconsistent totals");
+  }
+  if (metadata.gnafVersion && metadata.gnafVersion !== metadata.version.slice(0, 7)) {
+    throw new Error("Release version and G-NAF source quarter disagree");
+  }
+  return metadata;
+}
+
+/** Validate evidence produced by the database reconciliation, before trusting its digest. */
+export function reconciliationDigest(value: unknown, sourceVersion: string, count: number): string {
+  const summary = z.object({
+    count: z.literal(count),
+    duplicateCount: z.literal(0),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  });
+  const comparison = z.object({ missing: z.literal(0), unexpected: z.literal(0) });
+  const report = z
+    .object({
+      version: z.literal(sourceVersion),
+      passed: z.literal(true),
+      raw: summary,
+      loaded: summary,
+      output: summary,
+      sourceToLoaded: comparison,
+      loadedToOutput: comparison,
+    })
+    .parse(value);
+  if (report.raw.sha256 !== report.loaded.sha256 || report.loaded.sha256 !== report.output.sha256) {
+    throw new Error("Reconciliation evidence contains inconsistent PID digests");
+  }
+  return report.output.sha256;
 }
 
 /**
  * Stream a gzipped state artifact, validating every record before publication.
  * Decompression and input errors reject the promise and close the whole stream.
- * Census fields default to 99% coverage; explicit thresholds override defaults.
+ * Uses the same per-state coverage policy as the build verifier.
  */
 export async function verifyGzippedState(
   gzPath: string,
   state: string,
   enumSets?: EnumSets,
   thresholds?: BoundaryCoverageThresholds,
+  expected?: {
+    sourceVersion: string;
+    count: number;
+    pidSha256?: string;
+    onPid?: (pid: string) => Promise<void>;
+    adminBoundariesVersion?: string;
+  },
 ): Promise<StateVerification> {
+  const stateThresholds = PER_STATE_BOUNDARY_THRESHOLDS[state];
+  if (!VALID_STATES.has(state)) throw new Error(`Invalid verification state: ${state}`);
   let rowCount = 0;
   let schemaErrors = 0;
   const boundaryCounts: Record<keyof AddressDocument["boundaries"], number> = {
@@ -88,151 +151,181 @@ export async function verifyGzippedState(
     gccsa: 0,
   };
   let qualityErrors = 0;
+  const qualityDiagnostics: string[] = [];
+  const checkOtSnapshot =
+    state === "OT" &&
+    expected?.sourceVersion === "2026.08" &&
+    expected.adminBoundariesVersion === "2026.08";
+  const missingFederalPids: string[] = [];
+  const federalCounts: Record<string, number> = {};
   const qualityWarnings = 0;
-  // NOTE: For NSW (~4.5M addresses), this Set can consume ~250-360MB.
-  // The Set is scoped per-state (released between calls), and the workflow
-  // step uses --max-old-space-size=512 to provide headroom.
-  const pids = new Set<string>();
+  const ledger = await PidLedger.create();
   let duplicatePids = 0;
-  const enumUnknownCounts: EnumUnknownCounts = {};
-
-  const gunzip = createGunzip();
-  const fileStream = createReadStream(gzPath);
-  const rl = createInterface({
-    input: gunzip,
-    crlfDelay: Infinity,
-  });
-  // Register the reader before starting I/O and handle the pipeline rejection
-  // immediately. Neither a missing file nor a truncated gzip can leak an
-  // unhandled error or leave the reader waiting forever.
-  const lines = rl[Symbol.asyncIterator]();
-  let streamError: unknown;
-  const completion = pipeline(fileStream, gunzip).catch((error: unknown) => {
-    streamError = error;
-    rl.close();
-  });
-
   try {
-    for await (const line of lines) {
-      if (!line.trim()) continue;
-      rowCount++;
+    const enumUnknownCounts: EnumUnknownCounts = {};
 
-      let value: unknown;
-      try {
-        value = JSON.parse(line);
-      } catch {
-        schemaErrors++;
-        continue;
-      }
+    const gunzip = createGunzip();
+    const fileStream = createReadStream(gzPath);
+    const rl = createInterface({
+      input: gunzip,
+      crlfDelay: Infinity,
+    });
+    // Register the reader before starting I/O and handle the pipeline rejection
+    // immediately. Neither a missing file nor a truncated gzip can leak an
+    // unhandled error or leave the reader waiting forever.
+    const lines = rl[Symbol.asyncIterator]();
+    let streamError: unknown;
+    const completion = pipeline(fileStream, gunzip).catch((error: unknown) => {
+      streamError = error;
+      rl.close();
+    });
 
-      const parsed = AddressDocumentSchema.safeParse(value);
-      if (!parsed.success) {
-        schemaErrors++;
-        continue;
-      }
-      const doc = parsed.data;
+    try {
+      for await (const line of lines) {
+        if (!line.trim()) continue;
+        rowCount++;
 
-      // PID uniqueness
-      const pid = doc._id;
-      if (pid) {
-        if (pids.has(pid)) {
-          duplicatePids++;
+        let value: unknown;
+        try {
+          value = JSON.parse(line);
+        } catch {
+          schemaErrors++;
+          continue;
         }
-        pids.add(pid);
-      }
 
-      // Boundary coverage
-      for (const field of Object.keys(boundaryCounts) as (keyof typeof boundaryCounts)[]) {
-        if (doc.boundaries[field]) boundaryCounts[field]++;
-      }
-
-      // Coordinate quality check
-      const geocode = doc.geocode;
-      if (geocode) {
-        const { latitude, longitude } = geocode;
-        if (latitude < -44 || latitude > -9 || longitude < 96 || longitude > 168) {
-          qualityErrors++;
+        const parsed = AddressDocumentSchema.safeParse(value);
+        if (!parsed.success) {
+          schemaErrors++;
+          continue;
         }
-      }
-      for (const { lat, lng } of doc.allGeocodes) {
-        if (lat < -44 || lat > -9 || lng < 96 || lng > 168) qualityErrors++;
-      }
+        const doc = parsed.data;
 
-      // A per-state artifact must contain only that state, including records
-      // whose postcode is null (valid for some addresses).
-      if (doc.state !== state) qualityErrors++;
+        if (checkOtSnapshot) {
+          const name = doc.boundaries.commonwealthElectorate?.name.toUpperCase();
+          if (name) {
+            // Keep diagnostics bounded even when a corrupted artifact supplies
+            // a different electorate string for every row.
+            const key = ["BEAN", "FENNER", "LINGIARI"].includes(name) ? name : "OTHER";
+            federalCounts[key] = (federalCounts[key] ?? 0) + 1;
+          } else if (missingFederalPids.length < 3) missingFederalPids.push(doc._id);
+        }
 
-      // Enum-ish field validation
-      if (enumSets) {
-        for (const { field, path } of ENUM_FIELD_PATHS) {
-          const value = path(doc);
-          if (value === null || value === undefined) continue;
-          const validSet = enumSets[field];
-          if (!validSet) continue;
-          if (!validSet.has(value)) {
-            enumUnknownCounts[field] = (enumUnknownCounts[field] ?? 0) + 1;
+        if (expected && doc._version !== expected.sourceVersion) qualityErrors++;
+
+        await ledger.add(doc._id);
+        await expected?.onPid?.(doc._id);
+
+        // Boundary coverage
+        for (const field of Object.keys(boundaryCounts) as (keyof typeof boundaryCounts)[]) {
+          if (doc.boundaries[field]) boundaryCounts[field]++;
+        }
+
+        // Coordinate quality check
+        const geocode = doc.geocode;
+        if (geocode) {
+          const { latitude, longitude } = geocode;
+          if (latitude < -44 || latitude > -9 || longitude < 96 || longitude > 168) {
+            qualityErrors++;
+          }
+        }
+        for (const { lat, lng } of doc.allGeocodes) {
+          if (lat < -44 || lat > -9 || lng < 96 || lng > 168) qualityErrors++;
+        }
+
+        // A per-state artifact must contain only that state, including records
+        // whose postcode is null (valid for some addresses).
+        if (doc.state !== state) qualityErrors++;
+
+        // Enum-ish field validation
+        if (enumSets) {
+          for (const { field, path } of ENUM_FIELD_PATHS) {
+            const value = path(doc);
+            if (value === null || value === undefined) continue;
+            const validSet = enumSets[field];
+            if (!validSet) continue;
+            if (!validSet.has(value)) {
+              enumUnknownCounts[field] = (enumUnknownCounts[field] ?? 0) + 1;
+            }
           }
         }
       }
+    } finally {
+      rl.close();
+      gunzip.destroy();
+      await completion;
     }
+    if (streamError) throw streamError;
+    const identities = await ledger.finish();
+    duplicatePids = identities.duplicateCount;
+    if (expected && rowCount !== expected.count) qualityErrors++;
+    if (expected?.pidSha256 && identities.sha256 !== expected.pidSha256) qualityErrors++;
+    if (checkOtSnapshot && !checkAugustOtFederal(rowCount, missingFederalPids, federalCounts)) {
+      qualityErrors++;
+      qualityDiagnostics.push(
+        "August 2026 OT federal assignments differ from the audited 3,803 matches and two named source exceptions",
+      );
+    }
+
+    const boundaryCoverage: Record<string, number> = {};
+    if (rowCount > 0) {
+      for (const [key, count] of Object.entries(boundaryCounts)) {
+        boundaryCoverage[key] = Math.round((count / rowCount) * 1000) / 10;
+      }
+    }
+
+    const enumErrorCount = Object.values(enumUnknownCounts).reduce((s, n) => s + n, 0);
+
+    // Threshold evaluation runs regardless of rowCount. An empty state file
+    // (rowCount === 0) is effectively 0% coverage for every field — treating it
+    // as "no thresholds to check" would let a regression that produces an empty
+    // NSW silently ship, because there are also no schema/quality/enum/dupe
+    // errors to flag on zero rows. Coerce missing values to 0 so empty states
+    // explicitly fail every configured threshold.
+    const coverageBelowThreshold: CoverageBelowThreshold[] = [];
+    const effectiveThresholds = {
+      ...Object.fromEntries(
+        Object.entries(stateThresholds).map(([field, fraction]) => [field, fraction * 100]),
+      ),
+      ...thresholds,
+    };
+    for (const [field, threshold] of Object.entries(effectiveThresholds) as [
+      keyof BoundaryCoverageThresholds,
+      number,
+    ][]) {
+      if (threshold === undefined) continue;
+      const actual = rowCount > 0 ? (boundaryCounts[field] / rowCount) * 100 : 0;
+      if (actual < threshold) {
+        coverageBelowThreshold.push({ field, actual, threshold });
+      }
+    }
+
+    return {
+      state,
+      rowCount,
+      schemaValid: schemaErrors === 0,
+      schemaErrors,
+      boundaryCoverage,
+      coverageBelowThreshold,
+      qualityErrors,
+      qualityDiagnostics,
+      qualityWarnings,
+      duplicatePids,
+      enumUnknownCounts,
+      // Independent safety: a zero-row state file is always a failure, even if
+      // thresholds are explicitly overridden to zero. Every schema/quality/enum check is
+      // vacuously "passing" on an empty file, so without this gate the function
+      // would return passed=true for an empty artifact.
+      passed:
+        rowCount > 0 &&
+        schemaErrors === 0 &&
+        qualityErrors === 0 &&
+        duplicatePids === 0 &&
+        enumErrorCount === 0 &&
+        coverageBelowThreshold.length === 0,
+    };
   } finally {
-    rl.close();
-    gunzip.destroy();
-    await completion;
+    await ledger.close();
   }
-  if (streamError) throw streamError;
-
-  const boundaryCoverage: Record<string, number> = {};
-  if (rowCount > 0) {
-    for (const [key, count] of Object.entries(boundaryCounts)) {
-      boundaryCoverage[key] = Math.round((count / rowCount) * 1000) / 10;
-    }
-  }
-
-  const enumErrorCount = Object.values(enumUnknownCounts).reduce((s, n) => s + n, 0);
-
-  // Threshold evaluation runs regardless of rowCount. An empty state file
-  // (rowCount === 0) is effectively 0% coverage for every field — treating it
-  // as "no thresholds to check" would let a regression that produces an empty
-  // NSW silently ship, because there are also no schema/quality/enum/dupe
-  // errors to flag on zero rows. Coerce missing values to 0 so empty states
-  // explicitly fail every configured threshold.
-  const coverageBelowThreshold: CoverageBelowThreshold[] = [];
-  const effectiveThresholds = { ...CENSUS_COVERAGE_PERCENT, ...thresholds };
-  for (const [field, threshold] of Object.entries(effectiveThresholds) as [
-    keyof BoundaryCoverageThresholds,
-    number,
-  ][]) {
-    if (threshold === undefined) continue;
-    const actual = rowCount > 0 ? (boundaryCounts[field] / rowCount) * 100 : 0;
-    if (actual < threshold) {
-      coverageBelowThreshold.push({ field, actual, threshold });
-    }
-  }
-
-  return {
-    state,
-    rowCount,
-    schemaValid: schemaErrors === 0,
-    schemaErrors,
-    boundaryCoverage,
-    coverageBelowThreshold,
-    qualityErrors,
-    qualityWarnings,
-    duplicatePids,
-    enumUnknownCounts,
-    // Independent safety: a zero-row state file is always a failure, even if
-    // thresholds are explicitly overridden to zero. Every schema/quality/enum check is
-    // vacuously "passing" on an empty file, so without this gate the function
-    // would return passed=true for an empty artifact.
-    passed:
-      rowCount > 0 &&
-      schemaErrors === 0 &&
-      qualityErrors === 0 &&
-      duplicatePids === 0 &&
-      enumErrorCount === 0 &&
-      coverageBelowThreshold.length === 0,
-  };
 }
 
 /**
@@ -248,6 +341,13 @@ export function formatVerificationReport(report: VerificationReport): string {
   lines.push(`**Total addresses:** ${report.totalCount.toLocaleString()}`);
   lines.push(`**Overall:** ${report.overallPassed ? "PASS ✓" : "FAIL ✗"}`);
   lines.push("");
+
+  if (report.nationalDuplicatePids !== undefined) {
+    lines.push(
+      `National PID uniqueness: ${report.nationalDuplicatePids === 0 ? "PASS" : `FAIL (${report.nationalDuplicatePids} repeated PIDs)`}`,
+    );
+    lines.push("");
+  }
 
   // Per-state summary table
   lines.push("## Per-State Summary");
@@ -457,15 +557,14 @@ async function main(): Promise<void> {
       : undefined;
   const thresholds = parseBoundaryThresholdsArg(thresholdsArg);
 
-  // Read metadata.json for version
+  // Publication must never proceed with guessed versions or unchecked counts.
   const metadataPath = join(assetDir, "metadata.json");
-  let version = "unknown";
-  try {
-    const meta = JSON.parse(await readFile(metadataPath, "utf-8")) as BuildMetadata;
-    version = meta.version;
-  } catch {
-    console.warn("Warning: Could not read metadata.json — version will be 'unknown'");
-  }
+  const metadata = parseReleaseMetadata(JSON.parse(await readFile(metadataPath, "utf-8")));
+  const version = metadata.version;
+  const sourceVersion = metadata.gnafVersion ?? version.slice(0, 7);
+  const fixtureOnly = process.argv.includes("--fixture-only");
+  if (fixtureOnly && sourceVersion !== "2026.02")
+    throw new Error("Fixture verification requires the frozen 2026.02 snapshot");
 
   const stateFiles = findStateFiles(assetDir, version, states);
 
@@ -475,76 +574,102 @@ async function main(): Promise<void> {
   let totalCount = 0;
   let overallPassed = true;
 
-  for (const { state, path } of stateFiles) {
-    process.stdout.write(`  ${state}... `);
+  const nationalLedger = await PidLedger.create();
+  try {
+    for (const { state, path } of stateFiles) {
+      process.stdout.write(`  ${state}... `);
 
-    // Check file existence before attempting verification
-    try {
-      await access(path);
-    } catch {
-      console.log(`SKIPPED — file not found: ${path}`);
-      stateResults.push({
-        state,
-        rowCount: 0,
-        schemaValid: false,
-        schemaErrors: 0,
-        boundaryCoverage: {},
-        coverageBelowThreshold: [],
-        qualityErrors: 0,
-        qualityWarnings: 0,
-        duplicatePids: 0,
-        enumUnknownCounts: {},
-        passed: false,
-      });
-      overallPassed = false;
-      continue;
+      // Check file existence before attempting verification
+      try {
+        await access(path);
+      } catch {
+        console.log(`SKIPPED — file not found: ${path}`);
+        stateResults.push({
+          state,
+          rowCount: 0,
+          schemaValid: false,
+          schemaErrors: 0,
+          boundaryCoverage: {},
+          coverageBelowThreshold: [],
+          qualityErrors: 0,
+          qualityWarnings: 0,
+          duplicatePids: 0,
+          enumUnknownCounts: {},
+          passed: false,
+        });
+        overallPassed = false;
+        continue;
+      }
+
+      try {
+        const count = metadata.states[state];
+        if (!count) throw new Error(`No expected count in metadata for ${state}`);
+        const pidSha256 = fixtureOnly
+          ? undefined
+          : reconciliationDigest(
+              JSON.parse(await readFile(join(assetDir, `reconciliation-${state}.json`), "utf8")),
+              sourceVersion,
+              count,
+            );
+        const result = await verifyGzippedState(path, state, undefined, thresholds, {
+          sourceVersion,
+          count,
+          pidSha256,
+          adminBoundariesVersion: metadata.adminBoundariesVersion,
+          onPid: (pid) => nationalLedger.add(pid),
+        });
+        stateResults.push(result);
+        totalCount += result.rowCount;
+        if (!result.passed) overallPassed = false;
+        console.log(`${result.rowCount.toLocaleString()} docs, ${result.passed ? "PASS" : "FAIL"}`);
+        for (const message of result.qualityDiagnostics ?? [])
+          console.error(`  ${state}: ${message}`);
+      } catch (err) {
+        console.log(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+        stateResults.push({
+          state,
+          rowCount: 0,
+          schemaValid: false,
+          schemaErrors: 1,
+          boundaryCoverage: {},
+          coverageBelowThreshold: [],
+          qualityErrors: 1,
+          qualityWarnings: 0,
+          duplicatePids: 0,
+          enumUnknownCounts: {},
+          passed: false,
+        });
+        overallPassed = false;
+      }
     }
 
-    try {
-      const result = await verifyGzippedState(path, state, undefined, thresholds);
-      stateResults.push(result);
-      totalCount += result.rowCount;
-      if (!result.passed) overallPassed = false;
-      console.log(`${result.rowCount.toLocaleString()} docs, ${result.passed ? "PASS" : "FAIL"}`);
-    } catch (err) {
-      console.log(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
-      stateResults.push({
-        state,
-        rowCount: 0,
-        schemaValid: false,
-        schemaErrors: 1,
-        boundaryCoverage: {},
-        coverageBelowThreshold: [],
-        qualityErrors: 1,
-        qualityWarnings: 0,
-        duplicatePids: 0,
-        enumUnknownCounts: {},
-        passed: false,
-      });
-      overallPassed = false;
+    const nationalDuplicatePids = (await nationalLedger.finish()).duplicateCount;
+    if (nationalDuplicatePids > 0) overallPassed = false;
+
+    const report: VerificationReport = {
+      version,
+      timestamp: new Date().toISOString(),
+      nationalDuplicatePids,
+      states: stateResults,
+      totalCount,
+      overallPassed,
+    };
+
+    const markdown = formatVerificationReport(report);
+    await writeFile(outputPath, markdown, "utf-8");
+    console.log(`\nReport written to ${outputPath}`);
+    console.log(`Overall: ${overallPassed ? "PASS" : "FAIL"}`);
+
+    // Also write JSON for machine consumption
+    const jsonPath = outputPath.replace(/\.md$/, ".json");
+    await writeFile(jsonPath, JSON.stringify(report, null, 2), "utf-8");
+    console.log(`JSON written to ${jsonPath}`);
+
+    if (!overallPassed) {
+      process.exitCode = 4;
     }
-  }
-
-  const report: VerificationReport = {
-    version,
-    timestamp: new Date().toISOString(),
-    states: stateResults,
-    totalCount,
-    overallPassed,
-  };
-
-  const markdown = formatVerificationReport(report);
-  await writeFile(outputPath, markdown, "utf-8");
-  console.log(`\nReport written to ${outputPath}`);
-  console.log(`Overall: ${overallPassed ? "PASS" : "FAIL"}`);
-
-  // Also write JSON for machine consumption
-  const jsonPath = outputPath.replace(/\.md$/, ".json");
-  await writeFile(jsonPath, JSON.stringify(report, null, 2), "utf-8");
-  console.log(`JSON written to ${jsonPath}`);
-
-  if (!overallPassed) {
-    process.exit(4);
+  } finally {
+    await nationalLedger.close();
   }
 }
 

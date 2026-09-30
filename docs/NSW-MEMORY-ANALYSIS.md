@@ -8,6 +8,21 @@
 
 > Established: 2026-04-06. Based on v2026.04 production build (workflow run 24005068570).
 
+## Current verification change
+
+The OT integrity repair replaces the in-memory PID sets in both verifiers with
+disk-backed sorting (32 MiB sort buffer). The table below records the old
+implementation. It is not the memory estimate for the new verifier. Measure the
+complete national pipeline separately; bounded PID storage does not establish
+Postgres or loader memory use.
+
+On 30 September 2026, a local Node 22.22.1 check sorted and checked five million
+synthetic NSW-shaped PIDs in reverse order. It found the expected five million
+unique IDs in 4.30 seconds, with maximum resident memory of 98,205,696 bytes
+(about 94 MiB). This measures the PID ledger on this Mac, not the full production
+verifier, PostgreSQL or a GitHub runner. The complete release still needs its own
+capacity evidence.
+
 ## Context
 
 In the measured release, NSW had about 4.6 million addresses (30% of the total). This analysis assumed a 7 GB runner and records the estimates and tuning considered at that time. Confirm current runner resources before reusing the calculation.

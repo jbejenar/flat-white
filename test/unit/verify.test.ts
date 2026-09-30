@@ -590,12 +590,12 @@ describe("thresholdsForStates", () => {
     expect(thresholdsForStates("VIC")).toEqual(PER_STATE_BOUNDARY_THRESHOLDS.VIC);
   });
 
-  it("returns per-state thresholds for STATES=OT (lga 0.30, others 0)", () => {
+  it("returns per-state thresholds for STATES=OT (lga 0.30, federal 0.99)", () => {
     const t = thresholdsForStates("OT");
     expect(t.lga).toBeCloseTo(0.3);
     expect(t.ward).toBe(0);
     expect(t.stateElectorate).toBe(0);
-    expect(t.commonwealthElectorate).toBe(0);
+    expect(t.commonwealthElectorate).toBe(0.99);
   });
 
   it("returns per-state thresholds for STATES=ACT (lga 0, ward 0)", () => {
@@ -775,15 +775,7 @@ describe("verify per-record state bucketing (multi-state correctness)", () => {
     expect(qldLga?.threshold).toBe(0.99);
   });
 
-  it("OT WA mix: OT's 0 thresholds for ce/se don't disable WA's checks", async () => {
-    // OT: legitimately has only LGA (no ce, no se_lower, no se_upper).
-    // WA: has all 5. Stripping WA's commonwealthElectorate to simulate
-    // a regression. Per-record bucketing should flag WA.commonwealthElectorate
-    // even though OT's commonwealthElectorate threshold is 0.
-    //
-    // The MIN approach would have collapsed commonwealthElectorate to
-    // MIN(0, 0.99) = 0 and let this through. Per-record bucketing
-    // catches it.
+  it("OT WA mix: federal coverage is required independently in both states", async () => {
     const docs = [
       makeStateDoc("OT1", "OT", {
         lga: { name: "X", code: "L" },
@@ -843,10 +835,11 @@ describe("verify per-record state bucketing (multi-state correctness)", () => {
     expect(waCe).toBeDefined();
     expect(waCe?.actual).toBe(0);
     expect(waCe?.threshold).toBe(0.99);
-    // OT.commonwealthElectorate must NOT be flagged (its threshold is 0)
-    expect(result.boundaryCoverageErrors.some((e) => e.field === "OT.commonwealthElectorate")).toBe(
-      false,
-    );
+    expect(result.boundaryCoverageErrors).toContainEqual({
+      field: "OT.commonwealthElectorate",
+      actual: 0,
+      threshold: 0.99,
+    });
   });
 
   // ─── Unknown / falsy state safety (bot bug 2) ────────────────────────────

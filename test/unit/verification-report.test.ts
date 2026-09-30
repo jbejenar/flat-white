@@ -13,9 +13,13 @@ import {
   parseBoundaryThresholdsArg,
   parseStatesArg,
   verifyGzippedState,
+  parseReleaseMetadata,
+  reconciliationDigest,
   type StateVerification,
   type VerificationReport,
 } from "../../src/verification-report.js";
+import { VERSION } from "../../src/index.js";
+import { AUGUST_2026_OT, checkAugustOtFederal } from "../../src/release-quality.js";
 
 function makeStateResult(overrides: Partial<StateVerification> = {}): StateVerification {
   return {
@@ -243,7 +247,18 @@ describe("verifyGzippedState empty-file safety", () => {
 
     expect(result.passed).toBe(false);
     const failedFields = result.coverageBelowThreshold.map((c) => c.field).sort();
-    expect(failedFields).toEqual(["gccsa", "lga", "meshBlock", "sa1", "sa2", "sa3", "sa4", "ward"]);
+    expect(failedFields).toEqual([
+      "commonwealthElectorate",
+      "gccsa",
+      "lga",
+      "meshBlock",
+      "sa1",
+      "sa2",
+      "sa3",
+      "sa4",
+      "stateElectorate",
+      "ward",
+    ]);
     for (const c of result.coverageBelowThreshold) {
       expect(c.actual).toBe(0);
     }
@@ -269,6 +284,95 @@ describe("verifyGzippedState empty-file safety", () => {
     expect(result.boundaryCoverage.lga).toBe(100);
     expect(result.coverageBelowThreshold).toEqual([]);
     expect(result.passed).toBe(true);
+  });
+
+  it("rejects an OT artifact with missing federal electorates by default", async () => {
+    const example = AddressDocumentSchema.parse(
+      JSON.parse(readFileSync("fixtures/expected-output-sample.json", "utf8")),
+    );
+    const doc = {
+      ...example,
+      state: "OT",
+      boundaries: { ...example.boundaries, commonwealthElectorate: null },
+    };
+    const path = writeGzipFixture("ot.ndjson.gz", JSON.stringify(doc) + "\n");
+    const result = await verifyGzippedState(path, "OT");
+    expect(result.passed).toBe(false);
+    expect(result.coverageBelowThreshold).toContainEqual({
+      field: "commonwealthElectorate",
+      actual: 0,
+      threshold: 99,
+    });
+  });
+
+  it("checks source quarter, expected count and reconciled PID digest", async () => {
+    const doc = JSON.parse(readFileSync("fixtures/expected-output-sample.json", "utf8"));
+    const path = writeGzipFixture("identity.ndjson.gz", JSON.stringify(doc) + "\n");
+    const result = await verifyGzippedState(path, doc.state, undefined, undefined, {
+      sourceVersion: "2099.02",
+      count: 2,
+      pidSha256: "0".repeat(64),
+    });
+    expect(result.qualityErrors).toBe(3);
+    expect(result.passed).toBe(false);
+  });
+});
+
+describe("release identity evidence", () => {
+  it("rejects wrong schemas, unknown states and inconsistent metadata totals", () => {
+    const metadata = {
+      version: "2026.08.1",
+      gnafVersion: "2026.08",
+      schemaVersion: VERSION,
+      asgsYear: 2026,
+      states: { OT: 3805 },
+      totalCount: 3805,
+    };
+    expect(parseReleaseMetadata(metadata)).toEqual(metadata);
+    for (const change of [
+      { totalCount: 3804 },
+      { schemaVersion: "0.3.0" },
+      { asgsYear: 2021 },
+      { states: { UNKNOWN: 3805 } },
+    ]) {
+      expect(() => parseReleaseMetadata({ ...metadata, ...change })).toThrow();
+    }
+  });
+
+  it("requires successful exact reconciliation at every stage", () => {
+    const summary = { count: 3, duplicateCount: 0, sha256: "a".repeat(64) };
+    const comparison = { missing: 0, unexpected: 0 };
+    const report = {
+      version: "2026.08",
+      passed: true,
+      raw: summary,
+      loaded: summary,
+      output: summary,
+      sourceToLoaded: comparison,
+      loadedToOutput: comparison,
+    };
+    expect(reconciliationDigest(report, "2026.08", 3)).toBe(summary.sha256);
+    for (const change of [
+      { passed: false },
+      { version: "2026.05" },
+      { raw: { ...summary, count: 4 } },
+      { loaded: { ...summary, duplicateCount: 1 } },
+      { output: { ...summary, sha256: "b".repeat(64) } },
+      { sourceToLoaded: { missing: 1, unexpected: 1 } },
+    ]) {
+      expect(() => reconciliationDigest({ ...report, ...change }, "2026.08", 3)).toThrow();
+    }
+  });
+
+  it("requires the audited OT exceptions even when a generic 99% floor would pass", () => {
+    const pids = [...AUGUST_2026_OT.missingFederalPids];
+    expect(checkAugustOtFederal(3805, pids, AUGUST_2026_OT.federalCounts)).toBe(true);
+    expect(checkAugustOtFederal(3805, [pids[0], "unexpected"], AUGUST_2026_OT.federalCounts)).toBe(
+      false,
+    );
+    expect(checkAugustOtFederal(3805, pids, { BEAN: 2165, FENNER: 183, LINGIARI: 1455 })).toBe(
+      false,
+    );
   });
 });
 

@@ -140,6 +140,8 @@ END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 echo "[fixture-build] Done in ${ELAPSED}s ($LINE_COUNT documents)"
 
+DATABASE_URL="$DB_URL" node "$PROJECT_DIR/dist/reconcile.js" "$OUTPUT_FILE"
+
 # 8. Run verify with enum-ish field validation against authority tables
 echo "[fixture-build] Running verify with enum checks..."
 node "$PROJECT_DIR/dist/verify.js" "$OUTPUT_FILE" --expected-count "$LINE_COUNT" --db-url "$DB_URL" --check-boundary-coverage

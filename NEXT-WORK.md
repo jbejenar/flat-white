@@ -14,9 +14,21 @@ published [v2026.08](https://github.com/jbejenar/flat-white/releases/tag/v2026.0
 release verification and the S3 mirror passed. A read-only S3 check also verified
 the published manifest and all 11 data/mapping object sizes and SHA-256 checksums.
 
-- Check the catalogue after its metadata-reading repair is deployed. Its first
-  successful deployment listed the release but incorrectly showed zero addresses
-  and an unknown schema because it parsed release notes instead of `metadata.json`.
+- Catalogue repair is merged in PR #207; the September 30 deployment now reads
+  validated release metadata and shows the correct counts and schema.
+- Implement the audited enrichment plan in reviewable stages:
+  1. OT federal dependencies, exact PID reconciliation, shared coverage gates
+     and atomic assignment rebuilding. Upstream fix: [PR #104](https://github.com/minus34/gnaf-loader/pull/104).
+     Fixture, source-dependency and rollback tests are passing locally; publication is pending.
+  2. Locked source bytes, deterministic cache identity and dated boundary preparation.
+  3. Schema 1.1.0 `fallbackGeocode`, deterministic valid site-point selection,
+     converter/CRS and compatibility checks. Preserve null primary geometry when
+     only street/locality coordinates exist.
+  4. Qualify official NSW council ward snapshots, starting with the sampled
+     councils where licensing and currency permit. Assign only qualifying site
+     points; publish coverage reasons and dated source evidence.
+  5. Publish immutable patch releases, verify S3 and catalogue evidence, and
+     compare all PIDs and changed fields with the prior release.
 - Track [upstream loader PR #103](https://github.com/minus34/gnaf-loader/pull/103).
   Replace its temporary fix pin with an upstream version containing the repair
   once the authority integration and existing compatibility checks pass.

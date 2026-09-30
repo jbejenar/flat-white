@@ -295,6 +295,7 @@ jobs:
           name: flat-white-${{ matrix.state }}
           path: |
             output/flat-white-*.ndjson.gz
+            output/flat-white-*.ndjson.reconciliation.json
             output/${{ matrix.state }}.count
           retention-days: 7
 
@@ -444,6 +445,7 @@ jobs:
             GZ_FILE="${STATE_GZ_FILES[0]}"
 
             cp "$GZ_FILE" "$ASSET_DIR/flat-white-${RELEASE_VERSION}-${STATE_LOWER}.ndjson.gz"
+            cp "artifacts/flat-white-${state}/flat-white-${STATE_LOWER}.ndjson.reconciliation.json" "$ASSET_DIR/reconciliation-${state}.json"
 
             COUNT=$(cat "$COUNT_FILE")
             TOTAL=$((TOTAL + COUNT))
@@ -525,8 +527,8 @@ jobs:
         id: verify_report
         run: |
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
-          # NSW PID uniqueness Set can reach ~250-360MB; raise V8 heap limit to avoid OOM
-          node --max-old-space-size=512 dist/verification-report.js "$ASSET_DIR" --output "$ASSET_DIR/verification-report.md"
+          # PID checks spill to disk with a 32 MiB sort buffer.
+          node --max-old-space-size=384 dist/verification-report.js "$ASSET_DIR" --output "$ASSET_DIR/verification-report.md"
           echo "✓ Verification report generated"
           cat "$ASSET_DIR/verification-report.md"
 

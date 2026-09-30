@@ -189,6 +189,7 @@ async function main() {
     [
       "dist/verification-report.js",
       assetDir,
+      "--fixture-only",
       "--output",
       join(assetDir, "verification-report.md"),
       "--states",
