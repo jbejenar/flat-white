@@ -73,6 +73,7 @@ docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-postgres
 echo "[fixture-build] Seeding raw admin boundary fixtures..."
 docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-admin-bdys.sql
 docker compose exec -T db psql -U postgres -d gnaf -q -f /fixtures/seed-census-2026.sql
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres -d gnaf -q -f /fixtures/seed-geocode-cases.sql
 
 # 3c. Run boundary prep SQL (raw → admin_bdys boundary tables)
 SCHEMA_VERSION="${GNAF_VERSION:-2026.02}"

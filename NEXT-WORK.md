@@ -22,9 +22,8 @@ the published manifest and all 11 data/mapping object sizes and SHA-256 checksum
      Merged in [PR #208](https://github.com/jbejenar/flat-white/pull/208); CI and main checks passed. A corrected data release remains pending.
   2. Locked source bytes, deterministic cache identity and dated boundary preparation.
      Implementation includes publication/recovery evidence and real dump/restore checks.
-     Merged in PR #209. All states built successfully in run 36666112842, but
-     draft v2026.08.1 is held for three SA geocode ties. Stabilize selection before
-     publishing a new immutable correction; do not override that hold.
+     Merged in [PR #209](https://github.com/jbejenar/flat-white/pull/209); correction build
+     [36666112842](https://github.com/jbejenar/flat-white/actions/runs/36666112842) is running.
      Upstream date policy: [PR #105](https://github.com/minus34/gnaf-loader/pull/105).
   3. Schema 1.1.0 `fallbackGeocode`, deterministic valid site-point selection,
      converter/CRS and compatibility checks. Preserve null primary geometry when
@@ -65,13 +64,12 @@ not certification of every field or of the complete dataset.
 
 ## Follow-up findings from the documentation audit
 
-- **GeoParquet CRS:** `src/geoparquet.ts` declares WGS 84 while copying GDA2020
-  source coordinates without transformation. Review and correct the converter's
-  CRS contract separately, with appropriate geometry/metadata tests. Do not
-  describe the current output as reprojected.
-- **Fixture gaps:** the committed output has no three-geocode addresses or
-  non-gazetted localities, and only one parent with exported children. Add focused
-  small cases when changing those paths. See [measured coverage](fixtures/edge-cases.md).
+- **Schema 1.1 implementation:** fallback coordinates, deterministic valid-site
+  selection, generated shared SQL, publication diagnostics, converter CRS and
+  compatibility checks are implemented on the enrichment branch. Release remains pending.
+- **Fixture coverage:** the new geocode overlay covers three points, stable ties,
+  invalid/retired points, duplicate defaults and a conflict failure test. Non-gazetted
+  localities and broader parent/child coverage remain separate gaps.
 - **First mirror recovery:** the explicit `mirror_release_tag` mode now covers
   approved drafts and missing mirrors using checksum-verified public assets.
   Record the first production recovery outcome separately from the fixture and

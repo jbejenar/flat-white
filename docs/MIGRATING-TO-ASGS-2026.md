@@ -1,5 +1,8 @@
 # Migrate to ASGS 2026
 
+> This guide explains the breaking 0.x → 1.0 migration. For the later additive
+> update, also read [upgrading to schema 1.1](MIGRATING-TO-SCHEMA-1.1.md).
+
 **Schema 1.0.0 change:** six census boundary fields now describe ASGS 2026 areas.
 Their JSON names and types have not changed. An importer can still parse the
 files and silently join them to the wrong geography. Check the metadata before

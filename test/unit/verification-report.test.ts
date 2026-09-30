@@ -18,6 +18,7 @@ import {
   type StateVerification,
   type VerificationReport,
 } from "../../src/verification-report.js";
+import { GeocodeDiagnostics } from "../../src/geocode-diagnostics.js";
 import { VERSION } from "../../src/index.js";
 import { AUGUST_2026_OT, checkAugustOtFederal } from "../../src/release-quality.js";
 
@@ -305,6 +306,43 @@ describe("verifyGzippedState empty-file safety", () => {
     });
   });
 
+  it("requires the 1.1 writer contract and reconciles source geocode counts", async () => {
+    const doc = AddressDocumentSchema.parse(
+      JSON.parse(readFileSync("fixtures/expected-output-sample.json", "utf8")),
+    );
+    const diagnostics = new GeocodeDiagnostics(doc._version);
+    diagnostics.observe(
+      {
+        invalid_site_count: 0,
+        invalid_default_count: 0,
+        active_default_count: 1,
+        distinct_default_count: 1,
+      },
+      doc,
+    );
+    const expected = {
+      sourceVersion: doc._version,
+      count: 1,
+      requireWriter: true,
+      geocodeDiagnostics: diagnostics.report(),
+    };
+    const path = writeGzipFixture("geocodes.ndjson.gz", JSON.stringify(doc) + "\n");
+    expect((await verifyGzippedState(path, doc.state, undefined, undefined, expected)).passed).toBe(
+      true,
+    );
+    const changed = {
+      ...expected,
+      geocodeDiagnostics: { ...expected.geocodeDiagnostics, site: 0 },
+    };
+    expect(
+      (await verifyGzippedState(path, doc.state, undefined, undefined, changed)).qualityDiagnostics,
+    ).toContain("Geocode source diagnostics disagree with the compressed artifact");
+    delete doc.fallbackGeocode;
+    const old = writeGzipFixture("old.ndjson.gz", JSON.stringify(doc) + "\n");
+    expect(
+      (await verifyGzippedState(old, doc.state, undefined, undefined, expected)).schemaErrors,
+    ).toBe(1);
+  });
   it("checks source quarter, expected count and reconciled PID digest", async () => {
     const doc = JSON.parse(readFileSync("fixtures/expected-output-sample.json", "utf8"));
     const path = writeGzipFixture("identity.ndjson.gz", JSON.stringify(doc) + "\n");

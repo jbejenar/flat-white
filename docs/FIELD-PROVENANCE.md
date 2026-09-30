@@ -40,11 +40,12 @@ All tables joined by `sql/address_full.sql` (the canonical flatten query) and it
 
 **Street-type warning:** this authority table reverses the usual convention: `code` is the long form and `name` is the abbreviation. `ap.street_type` already contains the long form. Reintroducing an expansion join caused the v2026.04 regression (PR #67).
 
-**Related but not referenced by `address_full.sql`:**
-
-| Schema            | Table                     | Fixture Rows | Note                                                                                                                                |
-| ----------------- | ------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `raw_gnaf_202602` | `address_default_geocode` | 451          | Contains default geocodes, but the flatten SQL sources geocodes from `address_site_geocode` via the `address_geocodes` CTE instead. |
+**New in 1.1.0:** `address_default_geocode` now supplies the separate
+`fallbackGeocode`. Site points still come exclusively from `address_site_geocode`.
+The canonical selection, validity checks and default-conflict checks live in
+`sql/address_full.sql`; `address_geocodes_prep.sql` is generated from that policy.
+Fixture counts above describe the frozen base; the small `seed-geocode-cases.sql`
+overlay adds synthetic ties, retired/invalid points and duplicate defaults.
 
 ---
 
@@ -63,7 +64,8 @@ address_principals (ap)  ←— DRIVING TABLE
   │
   ├── LEFT JOIN address_geocodes (CTE) ON address_detail_pid = ap.gnaf_pid
   │     └── Uses: address_detail → address_site_geocode (via address_site_pid)
-  │              + geocode_type_aut (for best_geocode type name expansion)
+  │              + address_default_geocode (separate fallback only)
+  │              + geocode_type_aut (type name expansion)
   │
   ├── JOIN localities (loc) ON loc.locality_pid = ap.locality_pid
   │     ├── LEFT JOIN locality_class_aut (lc_aut) ON lc_aut.name = loc.locality_class
@@ -133,7 +135,10 @@ Best geocode selected per address. Determined inside the `address_geocodes` CTE.
 | `geocode.type`        | `best_geocode.type`        | `gt.name`              | Authority name, falling back to the source type code when unmatched.    |
 | `geocode.reliability` | `best_geocode.reliability` | `asg.reliability_code` | `Number()` cast; validation requires an integer from 1 to 6.            |
 
-**Selection logic (SQL):** `ORDER BY reliability_code ASC, CASE geocode_type_code WHEN 'FCS' THEN 1 WHEN 'PC' THEN 2 WHEN 'PAP' THEN 3 ELSE 4 END ASC, address_site_geocode_pid COLLATE "C" ASC LIMIT 1`. Only non-retired geocodes (`date_retired IS NULL`).
+**Selection logic (SQL), updated in 1.1.0:** exclude retired or invalid points first;
+rank by reliability, then FCS/PC/PAP/other, then source geocode PID in byte order.
+Valid coordinates lie within latitude −44 to −9 and longitude 96 to 168; reliability
+is 1–6 and the type code must be nonblank. The same generated policy serves both query paths.
 
 **Join path:** `address_principals.gnaf_pid` → `address_detail.address_detail_pid` → `address_detail.address_site_pid` → `address_site_geocode.address_site_pid`
 
@@ -165,7 +170,8 @@ All geocode types for an address, aggregated in the `address_geocodes` CTE.
 
 **Note:** Both `allGeocodes[].type` and `geocode.type` use the authority name when matched, otherwise the source code. Matched values use the expanded long form (e.g. `"FRONTAGE CENTRE SETBACK"`), joined from `geocode_type_aut.name`. This was made consistent in E1.16 — prior to v0.2.0, `allGeocodes[].type` used the raw abbreviation (e.g. `"FCS"`).
 
-**Ordering:** `ORDER BY reliability_code, geocode_type_code COLLATE "C", address_site_geocode_pid COLLATE "C"` (within `json_agg`).
+**Ordering, updated in 1.1.0:** reliability, source type code, then source geocode PID,
+with byte ordering for text keys. Invalid and retired candidates are excluded.
 
 ---
 

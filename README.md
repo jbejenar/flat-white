@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a>&ensp;&bull;&ensp;
-  <a href="docs/MIGRATING-TO-ASGS-2026.md">Migrate to schema 1.0.0</a>&ensp;&bull;&ensp;
+  <a href="docs/MIGRATING-TO-SCHEMA-1.1.md">Schema 1.1 upgrade</a>&ensp;&bull;&ensp;
   <a href="docs/DOCUMENT-SCHEMA.md">Document schema</a>&ensp;&bull;&ensp;
   <a href="#build-it-yourself">Build</a>&ensp;&bull;&ensp;
   <a href="docs/README.md">Documentation</a>
@@ -38,6 +38,10 @@ converters for local use.
 > Check each release's metadata: this README describes the current code, while
 > previously published schema 0.x downloads retain ASGS 2021.
 
+> **New in 1.1.0:** separate fallback coordinates, stable site-point selection and
+> corrected GeoParquet CRS metadata. The [upgrade guide](docs/MIGRATING-TO-SCHEMA-1.1.md)
+> explains what consumers should change. Published releases retain their own schema version.
+
 ## Quick start
 
 You need the [GitHub CLI](https://cli.github.com/), `jq` and `gzip`. Choose a release
@@ -52,11 +56,11 @@ gh release download "$TAG" --repo jbejenar/flat-white --pattern metadata.json
 
 ```bash
 # Stop here if this fails: that release is not the contract used by this guide.
-jq -e '.schemaVersion == "1.0.0" and .asgsYear == 2026' metadata.json
+jq -e '(.schemaVersion == "1.0.0" or .schemaVersion == "1.1.0") and .asgsYear == 2026' metadata.json
 ```
 
 The check will fail if the latest published release is still schema 0.x. Select a
-published 1.0.0 release when available, or keep using the older release with its
+published 1.x release supported by this guide, or keep using the older release with its
 matching schema and ASGS 2021 references. Do not change the metadata to bypass
 this check.
 
@@ -200,7 +204,8 @@ docker run --rm -e GNAF_VERSION=2026.08 \
 Omit `--states` for all states and territories. Both source quarters must be August
 2026 or newer. The [release guide](docs/RELEASING.md#locked-sources-and-boundary-dates)
 explains source discovery, exact-source rebuilds, boundary dates and cache validation.
-The document contract remains schema 1.0.0; this change makes build inputs traceable.
+Source locking makes build inputs traceable. The current writer is schema 1.1.0;
+source provenance and the document contract are versioned separately.
 
 ## Distribution
 
@@ -238,6 +243,7 @@ and geography edition before comparing outputs from different pipelines.
 
 Start at the [documentation index](docs/README.md), or go directly to:
 
+- [Schema 1.1 upgrade](docs/MIGRATING-TO-SCHEMA-1.1.md) — fallback precision, reader compatibility and corrected CRS.
 - [Migration to schema 1.0.0 / ASGS 2026](docs/MIGRATING-TO-ASGS-2026.md) — impact, upgrade checks and rollback.
 - [Document schema](docs/DOCUMENT-SCHEMA.md) — fields, types, nulls and version metadata.
 - [Field provenance](docs/FIELD-PROVENANCE.md) and [boundary processing](docs/BOUNDARIES.md).

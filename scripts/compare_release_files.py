@@ -97,19 +97,15 @@ def same_points(before, after):
     return not remaining
 
 
-def geocode_tie_repair(before, after):
-    # Schema 1.0 may only select another equally ranked existing point or reorder
-    # the unchanged multiset. Invalid-point removal belongs to schema 1.1.
-    old_points = before.get("allGeocodes", [])
+def geocode_repair(before, after):
+    old_points = [point for point in before.get("allGeocodes", []) if valid_site(point)]
     points = after.get("allGeocodes", [])
-    if (
-        not isinstance(old_points, list)
-        or not isinstance(points, list)
-        or not points
-        or not all(valid_site(point) for point in old_points + points)
-        or not same_points(old_points, points)
+    if not all(valid_site(point) for point in points) or not same_points(
+        old_points, points
     ):
         return False
+    if not points:
+        return after.get("geocode") is None and after.get("location") is None
     preference = {
         "FCS": 1,
         "FRONTAGE CENTRE SETBACK": 1,
@@ -123,41 +119,30 @@ def geocode_tie_repair(before, after):
         return point["reliability"], preference.get(point["type"], 4)
 
     best_rank = min(map(rank, points))
-
-    def selected_best(document):
-        geocode = document.get("geocode")
-        return any(
-            rank(point) == best_rank
-            and json_equal(
-                geocode,
-                {
-                    "latitude": point["lat"],
-                    "longitude": point["lng"],
-                    "type": point["type"],
-                    "reliability": point["reliability"],
-                },
-            )
-            for point in points
-        ) and json_equal(
-            document.get("location"),
-            {"lat": geocode["latitude"], "lon": geocode["longitude"]},
+    geocode = after.get("geocode")
+    return any(
+        rank(point) == best_rank
+        and json_equal(
+            geocode,
+            {
+                "latitude": point["lat"],
+                "longitude": point["lng"],
+                "type": point["type"],
+                "reliability": point["reliability"],
+            },
         )
+        for point in points
+    ) and json_equal(
+        after.get("location"), {"lat": geocode["latitude"], "lon": geocode["longitude"]}
+    )
 
-    return selected_best(before) and selected_best(after)
 
-
-def allowed_change(change, state, quarter, prior_schema, schema, before=None, after=None):
-    # August corrections allow existing tied site points and independently
-    # checked OT federal repairs. Every other same-quarter change is held.
+def allowed_change(
+    change, state, quarter, prior_schema, schema, before=None, after=None
+):
+    # Only reviewed repairs may pass a same-quarter comparison. The producer's
+    # independent source, writer, reconciliation and OT snapshot gates still apply.
     if (
-        quarter == "2026.08"
-        and prior_schema == schema == "1.0.0"
-        and before is not None
-        and after is not None
-        and change["path"].split(".")[0] in ("geocode", "location", "allGeocodes")
-    ):
-        return geocode_tie_repair(before, after)
-    return (
         quarter == "2026.08"
         and prior_schema == schema == "1.0.0"
         and state == "OT"
@@ -166,7 +151,24 @@ def allowed_change(change, state, quarter, prior_schema, schema, before=None, af
         and change.get("before") is None
         and change.get("after")
         in ({"name": "BEAN"}, {"name": "FENNER"}, {"name": "LINGIARI"})
-    )
+    ):
+        return True
+    if (
+        prior_schema == "1.0.0"
+        and schema == "1.1.0"
+        and before is not None
+        and after is not None
+    ):
+        if (
+            change["path"] == "fallbackGeocode"
+            and not change["beforePresent"]
+            and change["afterPresent"]
+        ):
+            # The current writer validates coordinates, precision, source and primary separation.
+            return True
+        if change["path"].split(".")[0] in ("geocode", "location", "allGeocodes"):
+            return geocode_repair(before, after)
+    return False
 
 
 def compare_state(

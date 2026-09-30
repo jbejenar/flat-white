@@ -1,7 +1,7 @@
 # Documentation
 
 Start with the guide for the job you need to do. Current guides describe
-**schema 1.0.0 and ASGS 2026**. Release-specific metadata remains the authority
+**schema 1.1.0 and ASGS 2026**. Release-specific metadata remains the authority
 for a downloaded file; older published releases keep their original contract.
 
 > **Schema 1.0.0 change:** six census fields have new geographic meanings even
@@ -46,3 +46,6 @@ Changed current guidance is marked **Schema 1.0.0 change**. Historical sections
 keep their original versions and dates so that old decisions and incidents remain
 traceable. The [community announcement](COMMUNITY-ANNOUNCEMENT.md) is a draft and
 must be checked against an actual published release before use.
+
+**New in 1.1.0:** read the [upgrade guide](MIGRATING-TO-SCHEMA-1.1.md) for fallback
+coordinates, stable point selection, validation evidence and the GeoParquet CRS fix.

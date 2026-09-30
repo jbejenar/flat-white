@@ -219,8 +219,10 @@ export function processReleases(
             "source-lock.json",
             "evidence-index.json",
             "verification-report.md",
+            "comparison.md",
             "DOCUMENT-SCHEMA.md",
             "MIGRATING-TO-ASGS-2026.md",
+            "MIGRATING-TO-SCHEMA-1.1.md",
           ].includes(a.name),
       )
       .map((a) => ({

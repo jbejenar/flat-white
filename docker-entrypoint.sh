@@ -295,6 +295,9 @@ if [[ "$MODE" == "fixture" ]]; then
     log "ERROR: ASGS 2026 fixture seeding failed"
     exit 2
   }
+  su postgres -c "psql -v ON_ERROR_STOP=1 -d $PGDB -q -f /app/fixtures/seed-geocode-cases.sql" || {
+    log "ERROR: geocode fixture seed failed"; exit 1;
+  }
   node /app/scripts/extract-census-prep.mjs "$SCHEMA_VERSION_FLAT" | \
     su postgres -c "psql -v ON_ERROR_STOP=1 -d $PGDB -q" || {
       log "ERROR: ASGS 2026 fixture preparation failed"

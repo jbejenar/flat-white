@@ -62,6 +62,7 @@ COPY --from=builder /app/sql/ ./sql/
 COPY fixtures/seed-postgres.sql ./fixtures/seed-postgres.sql
 COPY fixtures/seed-admin-bdys.sql ./fixtures/seed-admin-bdys.sql
 COPY fixtures/seed-census-2026.sql ./fixtures/seed-census-2026.sql
+COPY fixtures/seed-geocode-cases.sql ./fixtures/seed-geocode-cases.sql
 COPY fixtures/prep-admin-bdys.sql ./fixtures/prep-admin-bdys.sql
 COPY fixtures/expected-output.ndjson ./fixtures/expected-output.ndjson
 

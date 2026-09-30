@@ -1,11 +1,15 @@
 # Document schema
 
-**Contract version: 1.0.0 · Census geography: ASGS 2026**
+**Contract version: 1.1.0 · Census geography: ASGS 2026**
 
 > **Schema 1.0.0 change:** `boundaries.meshBlock`, `sa1`, `sa2`, `sa3`, `sa4`
 > and `gccsa` now refer to ASGS 2026. Their names, types and nullability are
 > unchanged. This is a breaking change in meaning. Follow the
 > [migration guide](MIGRATING-TO-ASGS-2026.md) before replacing schema 0.x data.
+
+> **New in 1.1.0:** `fallbackGeocode` preserves a source default separately from
+> the site point. Geocode selection is deterministic and GeoParquet correctly
+> declares GDA2020. See the [1.1 migration guide](MIGRATING-TO-SCHEMA-1.1.md).
 
 Each NDJSON line contains one principal address. The runtime contract is
 [`src/schema.ts`](../src/schema.ts); [field provenance](FIELD-PROVENANCE.md)
@@ -15,7 +19,8 @@ from the frozen address fixture with **synthetic** 2026 census assignments.
 
 ## Reading this contract
 
-All properties listed below are required. **Nullable** means that the property
+All properties listed below are emitted by the 1.1 writer. Readers also accept
+schema 1.0 documents, where `fallbackGeocode` is absent. **Nullable** means that the property
 is present with the value `null` when unavailable; it does not mean the property
 can be omitted. Arrays can be empty and are never `null`. A nullable boundary
 object is either a complete object with the stated string fields, or `null`.
@@ -28,47 +33,51 @@ need the correct geography edition.
 
 ## Top-level fields
 
-| Field                | Type    | Nullable | Meaning                                                                                         |
-| -------------------- | ------- | -------- | ----------------------------------------------------------------------------------------------- |
-| `_id`                | string  | No       | G-NAF persistent address identifier.                                                            |
-| `_version`           | string  | No       | G-NAF data quarter, conventionally `YYYY.MM`; never the schema version or release patch number. |
-| `addressLabel`       | string  | No       | Composed address label from the loader.                                                         |
-| `addressLabelSearch` | string  | No       | Search label composed from expanded address components.                                         |
-| `addressSiteName`    | string  | Yes      | Name of the address site.                                                                       |
-| `buildingName`       | string  | Yes      | Building name.                                                                                  |
-| `flatType`           | string  | Yes      | Expanded flat or unit type.                                                                     |
-| `flatNumber`         | string  | Yes      | Flat number, including prefix or suffix where supplied.                                         |
-| `levelType`          | string  | Yes      | Expanded level type.                                                                            |
-| `levelNumber`        | string  | Yes      | Level number, including prefix or suffix where supplied.                                        |
-| `numberFirst`        | string  | Yes      | Street number, or start of a number range.                                                      |
-| `numberLast`         | string  | Yes      | End of a street-number range.                                                                   |
-| `lotNumber`          | string  | Yes      | Lot number.                                                                                     |
-| `streetName`         | string  | No       | Street name.                                                                                    |
-| `streetType`         | string  | Yes      | Expanded street type, such as `AVENUE`.                                                         |
-| `streetSuffix`       | string  | Yes      | Street suffix from the processed address.                                                       |
-| `localityName`       | string  | No       | Locality or suburb name.                                                                        |
-| `state`              | string  | No       | State or territory abbreviation.                                                                |
-| `postcode`           | string  | Yes      | Postcode.                                                                                       |
-| `legalParcelId`      | string  | Yes      | Legal parcel identifier.                                                                        |
-| `confidence`         | integer | No       | Source confidence value, from 0 to 2.                                                           |
-| `aliasPrincipal`     | enum    | No       | `PRINCIPAL` or `ALIAS`; the current address export emits `PRINCIPAL`.                           |
-| `primarySecondary`   | enum    | Yes      | `PRIMARY` for a parent address, `SECONDARY` for a child, or `null` if unclassified.             |
-| `geocode`            | object  | Yes      | Selected geocode; see below.                                                                    |
-| `location`           | object  | Yes      | Selected geocode as `{ lat, lon }`.                                                             |
-| `allGeocodes`        | array   | No       | Available non-retired site geocodes; can be empty.                                              |
-| `locality`           | object  | No       | Locality identity, class, neighbours and aliases.                                               |
-| `street`             | object  | No       | Street identity, class and aliases.                                                             |
-| `boundaries`         | object  | No       | Ten nullable administrative and census fields.                                                  |
-| `aliases`            | array   | No       | Alternative address records.                                                                    |
-| `secondaries`        | array   | No       | Child addresses linked to this principal address.                                               |
+| Field                | Type    | Nullable | Meaning                                                                                          |
+| -------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------ |
+| `_id`                | string  | No       | G-NAF persistent address identifier.                                                             |
+| `_version`           | string  | No       | G-NAF data quarter, conventionally `YYYY.MM`; never the schema version or release patch number.  |
+| `addressLabel`       | string  | No       | Composed address label from the loader.                                                          |
+| `addressLabelSearch` | string  | No       | Search label composed from expanded address components.                                          |
+| `addressSiteName`    | string  | Yes      | Name of the address site.                                                                        |
+| `buildingName`       | string  | Yes      | Building name.                                                                                   |
+| `flatType`           | string  | Yes      | Expanded flat or unit type.                                                                      |
+| `flatNumber`         | string  | Yes      | Flat number, including prefix or suffix where supplied.                                          |
+| `levelType`          | string  | Yes      | Expanded level type.                                                                             |
+| `levelNumber`        | string  | Yes      | Level number, including prefix or suffix where supplied.                                         |
+| `numberFirst`        | string  | Yes      | Street number, or start of a number range.                                                       |
+| `numberLast`         | string  | Yes      | End of a street-number range.                                                                    |
+| `lotNumber`          | string  | Yes      | Lot number.                                                                                      |
+| `streetName`         | string  | No       | Street name.                                                                                     |
+| `streetType`         | string  | Yes      | Expanded street type, such as `AVENUE`.                                                          |
+| `streetSuffix`       | string  | Yes      | Street suffix from the processed address.                                                        |
+| `localityName`       | string  | No       | Locality or suburb name.                                                                         |
+| `state`              | string  | No       | State or territory abbreviation.                                                                 |
+| `postcode`           | string  | Yes      | Postcode.                                                                                        |
+| `legalParcelId`      | string  | Yes      | Legal parcel identifier.                                                                         |
+| `confidence`         | integer | No       | Source confidence value, from 0 to 2.                                                            |
+| `aliasPrincipal`     | enum    | No       | `PRINCIPAL` or `ALIAS`; the current address export emits `PRINCIPAL`.                            |
+| `primarySecondary`   | enum    | Yes      | `PRIMARY` for a parent address, `SECONDARY` for a child, or `null` if unclassified.              |
+| `geocode`            | object  | Yes      | Selected geocode; see below.                                                                     |
+| `fallbackGeocode`    | object  | Yes      | **New in 1.1.0:** default coordinates when no valid site point exists; never a primary geometry. |
+| `location`           | object  | Yes      | Selected geocode as `{ lat, lon }`.                                                              |
+| `allGeocodes`        | array   | No       | Available non-retired site geocodes; can be empty.                                               |
+| `locality`           | object  | No       | Locality identity, class, neighbours and aliases.                                                |
+| `street`             | object  | No       | Street identity, class and aliases.                                                              |
+| `boundaries`         | object  | No       | Ten nullable administrative and census fields.                                                   |
+| `aliases`            | array   | No       | Alternative address records.                                                                     |
+| `secondaries`        | array   | No       | Child addresses linked to this principal address.                                                |
 
 ## Geocode and location
 
-`geocode` contains the best available non-retired site geocode. Selection prefers
-the lowest reliability number, then `FCS`, `PC`, `PAP`, then other types.
-**Correction:** the source geocode PID breaks remaining ties in byte order. If the
-selected geocode is missing or its coordinates cannot be read as finite numbers,
-`geocode` and `location` are both `null`. No zero-coordinate placeholder is added.
+`geocode` contains the best valid, non-retired site point. A candidate must have
+finite coordinates within latitude −44 to −9 and longitude 96 to 168, reliability
+1–6 and a nonblank type code. These bounds include the supported territories.
+Selection prefers the lowest reliability number, then `FCS`, `PC`, `PAP`, then
+other types. **Changed in 1.1.0:** the source geocode PID breaks remaining ties in
+byte order, so repeated builds select the same point. Invalid candidates are
+reported and excluded before selection. If none remain, `geocode` and `location`
+are both `null`, and `allGeocodes` is empty.
 
 | Field within `geocode` | Type    | Meaning                                                                          |
 | ---------------------- | ------- | -------------------------------------------------------------------------------- |
@@ -84,7 +93,7 @@ Each `allGeocodes` item has `lat` and `lng` (numbers), `type` (string), and
 `reliability` (integer, 1–6). Notice the different longitude key: **`lng`** here,
 **`lon`** in `location`, and **`longitude`** in `geocode`. Items are ordered by
 reliability, then source type code, then source geocode PID (byte order).
-This array can be empty.
+Only valid, non-retired site points appear here. This array can be empty.
 
 The source accuracy categories are:
 
@@ -99,8 +108,30 @@ The source accuracy categories are:
 
 **Coordinate reference:** builds use GDA2020 source data. Flattening copies the
 source coordinate numbers; it does not reproject them. The ASGS migration changes
-census area assignments, not the coordinate datum. See the GeoParquet limitation
-under [output formats](#output-formats) if your use case needs precise CRS handling.
+census area assignments, not the coordinate datum. GeoParquet now declares
+GDA2020 / EPSG:7844 explicitly; see [output formats](#output-formats).
+
+## Fallback geocode — new in 1.1.0
+
+A default can locate a street or locality without identifying the property.
+`fallbackGeocode` exposes that information honestly when no valid site point exists.
+It is never copied to `geocode`, `location`, `allGeocodes` or the GeoParquet geometry.
+
+| Field                   | Type    | Meaning                                                        |
+| ----------------------- | ------- | -------------------------------------------------------------- |
+| `latitude`, `longitude` | number  | Valid GDA2020 source coordinates in the same supported bounds. |
+| `typeCode`              | string  | Original nonblank default geocode code.                        |
+| `type`                  | string  | Authority name, or the source code when no name exists.        |
+| `source`                | literal | Always `GNAF_DEFAULT`.                                         |
+| `precision`             | enum    | `street` for `STL`, `locality` for `LOC`, otherwise `unknown`. |
+
+The default must be active and valid. Identical active defaults collapse by
+coordinates and type code. Conflicting defaults produce no fallback and block
+publication, including when a site point exists. Invalid source rows and missing
+points appear in `geocodes-STATE.json`; its counts describe affected addresses,
+not distinct source rows shared by several addresses. A missing or invalid default
+leaves this field `null`. Consumers reading schema 1.0 should treat an absent
+field as unavailable.
 
 ## Locality
 
@@ -213,11 +244,12 @@ objects use Parquet nulls. These representations retain the same ASGS 2026 meani
 
 **GeoParquet** conversion is available through
 [`convertToGeoparquet`](../src/geoparquet.ts), with the same columns plus a WKB Point
-geometry when a geocode exists. **Existing limitation:** the converter declares
-WGS 84 metadata but copies the source coordinate numbers without a datum
-transformation. Do not treat that declaration as proof that GDA2020 coordinates
-were reprojected. This is separate from the ASGS migration and is tracked in
-[current work](../NEXT-WORK.md).
+geometry when a site geocode exists. **Fixed in 1.1.0:** CRS metadata is
+GDA2020 / EPSG:7844, matching the coordinates. No datum transformation is claimed.
+WKB stores longitude first, as required by the [GeoParquet specification](https://geoparquet.org/releases/v1.1.0/).
+`fallbackGeocode` is a nullable JSON column in both converters; a fallback alone
+leaves the primary geometry null. Existing files with incorrect WGS 84 metadata
+should be regenerated from their NDJSON source before precise spatial use.
 
 The Docker entrypoint and quarterly workflow publish NDJSON; a `--format` option
 in the TypeScript argument parser does not make it a supported Docker flag.

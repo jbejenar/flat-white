@@ -51,6 +51,8 @@ def validate_index(record, version=None, commit=None):
         for kind in ("reconciliation", "build-provenance")
         for state in STATES
     )
+    if record.get("schemaVersion", "1.0.0") != "1.0.0":
+        required.update(f"geocodes-{state}.json" for state in STATES)
     if record["releaseVersion"].count(".") == 2:
         required.update(f"comparison-{state}.jsonl.gz" for state in STATES)
     if not required <= names:
@@ -112,6 +114,7 @@ def index(directory, version, commit):
         "formatVersion": 1,
         "releaseVersion": version,
         "sourceCommit": commit,
+        "schemaVersion": metadata["schemaVersion"],
         "files": [file_entry(path) for path in paths],
     }
     validate_index(result, version, commit)

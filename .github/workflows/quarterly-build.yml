@@ -400,6 +400,7 @@ jobs:
           path: |
             output/flat-white-*.ndjson.gz
             output/flat-white-*.ndjson.reconciliation.json
+            output/flat-white-*.ndjson.geocodes.json
             output/build-provenance-*.json
             output/${{ matrix.state }}.count
           retention-days: 7
@@ -411,6 +412,7 @@ jobs:
           name: quarterly-telemetry-${{ matrix.state }}
           path: |
             output/quarterly-telemetry-${{ matrix.state }}.json
+            output/flat-white-*.ndjson.geocodes.json
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -558,6 +560,7 @@ jobs:
 
             cp "$GZ_FILE" "$ASSET_DIR/flat-white-${RELEASE_VERSION}-${STATE_LOWER}.ndjson.gz"
             cp "artifacts/flat-white-${state}/flat-white-${STATE_LOWER}.ndjson.reconciliation.json" "$ASSET_DIR/reconciliation-${state}.json"
+            cp "artifacts/flat-white-${state}/flat-white-${STATE_LOWER}.ndjson.geocodes.json" "$ASSET_DIR/geocodes-${state}.json"
             cp "artifacts/flat-white-${state}/build-provenance-${state}.json" "$ASSET_DIR/build-provenance-${state}.json"
 
             COUNT=$(cat "$COUNT_FILE")
@@ -601,6 +604,7 @@ jobs:
           # Copy DOCUMENT-SCHEMA.md
           cp docs/DOCUMENT-SCHEMA.md "$ASSET_DIR/DOCUMENT-SCHEMA.md"
           cp docs/MIGRATING-TO-ASGS-2026.md "$ASSET_DIR/MIGRATING-TO-ASGS-2026.md"
+          cp docs/MIGRATING-TO-SCHEMA-1.1.md "$ASSET_DIR/MIGRATING-TO-SCHEMA-1.1.md"
 
           # Export for later steps
           {
@@ -817,7 +821,7 @@ jobs:
 
           ## Schema
 
-          The document schema reference is included as a release asset (`DOCUMENT-SCHEMA.md`).
+          The document schema reference and schema 1.1 upgrade guide are included as release assets. Schema 1.1 keeps fallback coordinates separate from the primary site geometry. Review the geocode diagnostics and complete field comparison before switching consumers.
           Each line in the NDJSON files is one JSON document conforming to this schema.
           DLEOF
 

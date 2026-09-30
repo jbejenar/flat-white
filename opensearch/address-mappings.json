@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "schemaVersion": "1.0.0",
+    "schemaVersion": "1.1.0",
     "asgsYear": 2026
   },
   "dynamic": false,
@@ -21,6 +21,16 @@
         "longitude": { "type": "float" },
         "type": { "type": "keyword" },
         "reliability": { "type": "byte" }
+      }
+    },
+    "fallbackGeocode": {
+      "properties": {
+        "latitude": { "type": "double" },
+        "longitude": { "type": "double" },
+        "typeCode": { "type": "keyword" },
+        "type": { "type": "keyword" },
+        "source": { "type": "keyword" },
+        "precision": { "type": "keyword" }
       }
     },
     "boundaries": {

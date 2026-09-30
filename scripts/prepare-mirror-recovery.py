@@ -136,7 +136,10 @@ def resolve(repository, tag):
             len(content) == item["size"] and digest(content) == item["digest"],
             "Evidence index digest mismatch",
         )
-        entries = validate_index(json.loads(content), release_version, commit)
+        index = json.loads(content)
+        if index.get("schemaVersion", "1.0.0") != schema:
+            raise ValueError("Evidence index and release schema version disagree")
+        entries = validate_index(index, release_version, commit)
         evidence["evidence-index.json"] = {
             "bytes": item["size"],
             "sha256": item["digest"][7:],

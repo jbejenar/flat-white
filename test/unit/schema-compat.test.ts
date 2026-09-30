@@ -263,3 +263,83 @@ describe("compareSnapshots", () => {
     expect(result.nonBreaking).toHaveLength(1); // added
   });
 });
+
+describe("reader compatibility across schema 1.x", () => {
+  it("treats required additions and optional-to-required changes as breaking", () => {
+    const before = { type: "object", properties: { name: { type: "string" } } };
+    expect(compareSchemas(before, { ...before, required: ["name"] }).breaking[0]).toMatchObject({
+      path: "name",
+      description: "field became required",
+    });
+    expect(
+      compareSchemas(before, {
+        ...before,
+        properties: { ...before.properties, extra: { type: "string" } },
+        required: ["extra"],
+      }).breaking[0],
+    ).toMatchObject({ path: "extra", description: "required field added" });
+  });
+  it("finds required, nullable and enum changes inside nullable objects and arrays", () => {
+    const before = {
+      type: "object",
+      properties: {
+        point: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                precision: { type: "string", enum: ["street", "locality", "unknown"] },
+                latitude: { anyOf: [{ type: "number" }, { type: "null" }] },
+              },
+            },
+            { type: "null" },
+          ],
+        },
+      },
+    };
+    const after = structuredClone(before);
+    const branch = after.properties.point.anyOf[0];
+    branch.properties!.precision.enum = ["street"];
+    branch.properties!.latitude.anyOf = [{ type: "number" }];
+    const changes = compareSchemas(before, after).breaking;
+    expect(changes.map((c) => c.path)).toEqual(["point.precision", "point.latitude"]);
+    const arrayBefore = {
+      type: "object",
+      properties: { points: { type: "array", items: before } },
+    };
+    const arrayAfter = { type: "object", properties: { points: { type: "array", items: after } } };
+    expect(compareSchemas(arrayBefore, arrayAfter).breaking.map((c) => c.path)).toEqual([
+      "points[].point.precision",
+      "points[].point.latitude",
+    ]);
+  });
+  it("allows the optional fallback field and enum widening, but rejects numeric narrowing", () => {
+    const before = {
+      type: "object",
+      properties: {
+        latitude: { type: "number", minimum: -90 },
+        precision: { type: "string", enum: ["street"] },
+      },
+    };
+    const after = {
+      type: "object",
+      properties: {
+        ...before.properties,
+        precision: { type: "string", enum: ["street", "locality"] },
+        fallback: {
+          anyOf: [
+            { type: "object", properties: { source: { type: "string", const: "GNAF_DEFAULT" } } },
+            { type: "null" },
+          ],
+        },
+      },
+    };
+    expect(compareSchemas(before, after).breaking).toHaveLength(0);
+    expect(
+      compareSchemas(before, {
+        ...before,
+        properties: { ...before.properties, latitude: { type: "number", minimum: -44 } },
+      }).breaking[0].path,
+    ).toBe("latitude");
+  });
+});

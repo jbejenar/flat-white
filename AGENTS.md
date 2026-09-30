@@ -9,6 +9,9 @@ flat-white transforms Australian Government G-NAF address data into pre-joined, 
 > 2026 with a synthetic census overlay. See the
 > [migration guide](docs/MIGRATING-TO-ASGS-2026.md) and [document contract](docs/DOCUMENT-SCHEMA.md).
 
+> **New in 1.1.0:** separate `fallbackGeocode`, stable site selection and GDA2020
+> GeoParquet metadata. See [the upgrade guide](docs/MIGRATING-TO-SCHEMA-1.1.md).
+
 ## Architecture
 
 ```
@@ -38,7 +41,8 @@ sql/
                                   DO NOT EDIT DIRECTLY. Production SELECT using pre-materialized
                                   temp tables (from address_full_prep.sql). build-fixture-only.sh
                                   enforces byte-equality between both paths.
-  address_full_prep.sql         — pre-materializes aggregations as temp tables for the production path
+  address_full_prep.sql         — pre-materializes boundary and non-geocode aggregations
+  address_geocodes_prep.sql     — AUTO-GENERATED shared geocode policy from address_full.sql
 
   # WARNING: street_type_aut is the only G-NAF authority table with REVERSED column
   # convention (code = long form, name = abbreviation). DO NOT join it like the others.
@@ -49,7 +53,7 @@ fixtures/
   seed-postgres.sql             — schema DDL + ~451 edge-case addresses (loads via psql <30s)
   edge-cases.md                 — catalogue of edge cases with PIDs
   seed-census-2026.sql          — synthetic ASGS 2026 overlay; keeps 2021 decoys
-  expected-output.ndjson        — committed schema 1.0.0 regression baseline
+  expected-output.ndjson        — committed schema 1.1.0 regression baseline
 ```
 
 ## Key Commands

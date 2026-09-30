@@ -1,0 +1,1794 @@
+{
+  "release": "https://github.com/jbejenar/flat-white/releases/tag/v2026.08",
+  "sampledAt": "2026-09-30",
+  "samples": [
+    {
+      "state": "VIC",
+      "row": 3007103,
+      "document": {
+        "_id": "GAVIC425422806",
+        "_version": "2026.08",
+        "addressLabel": "UNIT 1214, 52 PARK STREET",
+        "addressLabelSearch": "UNIT 1214 52 PARK STREET SOUTH MELBOURNE VIC 3205",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": "UNIT",
+        "flatNumber": "1214",
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "52",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "PARK",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "SOUTH MELBOURNE",
+        "state": "VIC",
+        "postcode": "3205",
+        "legalParcelId": "1214\\PS647024",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "SECONDARY",
+        "geocode": {
+          "latitude": -37.83280371,
+          "longitude": 144.969168,
+          "type": "FRONTAGE CENTRE SETBACK",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -37.83280371,
+          "lon": 144.969168
+        },
+        "allGeocodes": [
+          {
+            "lat": -37.83280371,
+            "lng": 144.969168,
+            "type": "FRONTAGE CENTRE SETBACK",
+            "reliability": 2
+          },
+          {
+            "lat": -37.83265759,
+            "lng": 144.96909172,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "locf51f6cd689bb",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": ["ALBERT PARK", "DOCKLANDS", "PORT MELBOURNE", "SOUTHBANK"],
+          "aliases": ["ALBERT PARK"]
+        },
+        "street": {
+          "pid": "VIC2003982",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Port Phillip City",
+            "code": "lgad68479123642"
+          },
+          "ward": {
+            "name": "South Melbourne Ward"
+          },
+          "stateElectorate": {
+            "name": "PRAHRAN"
+          },
+          "commonwealthElectorate": {
+            "name": "MACNAMARA"
+          },
+          "meshBlock": {
+            "code": "20533204000",
+            "category": "Residential"
+          },
+          "sa1": "20605151206",
+          "sa2": {
+            "name": "South Melbourne",
+            "code": "206051512"
+          },
+          "sa3": {
+            "name": "Port Phillip",
+            "code": "20605"
+          },
+          "sa4": {
+            "name": "Melbourne - Inner",
+            "code": "206"
+          },
+          "gccsa": {
+            "name": "Greater Melbourne",
+            "code": "2GMEL"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "VIC",
+      "row": 3613687,
+      "document": {
+        "_id": "GAVIC720754134",
+        "_version": "2026.08",
+        "addressLabel": "UNIT 5, 124 ESSEX STREET",
+        "addressLabelSearch": "UNIT 5 124 ESSEX STREET PASCOE VALE VIC 3044",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": "UNIT",
+        "flatNumber": "5",
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "124",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "ESSEX",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "PASCOE VALE",
+        "state": "VIC",
+        "postcode": "3044",
+        "legalParcelId": "5\\PS838607",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "SECONDARY",
+        "geocode": {
+          "latitude": -37.72531513,
+          "longitude": 144.93541335,
+          "type": "FRONTAGE CENTRE SETBACK",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -37.72531513,
+          "lon": 144.93541335
+        },
+        "allGeocodes": [
+          {
+            "lat": -37.72531513,
+            "lng": 144.93541335,
+            "type": "FRONTAGE CENTRE SETBACK",
+            "reliability": 2
+          },
+          {
+            "lat": -37.72535962,
+            "lng": 144.93540695,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loc12c0177d3d38",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "COBURG",
+            "COBURG NORTH",
+            "GLENROY",
+            "HADFIELD",
+            "OAK PARK",
+            "PASCOE VALE SOUTH",
+            "STRATHMORE"
+          ],
+          "aliases": ["COBURG NORTH", "PASCOE VALE SOUTH"]
+        },
+        "street": {
+          "pid": "VIC1967912",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Merri-Bek City",
+            "code": "lgaJ2LPN2y4pll0"
+          },
+          "ward": {
+            "name": "Westbreen Ward"
+          },
+          "stateElectorate": {
+            "name": "PASCOE VALE"
+          },
+          "commonwealthElectorate": {
+            "name": "WILLS"
+          },
+          "meshBlock": {
+            "code": "20631993000",
+            "category": "Residential"
+          },
+          "sa1": "21003153804",
+          "sa2": {
+            "name": "Pascoe Vale",
+            "code": "210031538"
+          },
+          "sa3": {
+            "name": "Moreland - North",
+            "code": "21003"
+          },
+          "sa4": {
+            "name": "Melbourne - North West",
+            "code": "210"
+          },
+          "gccsa": {
+            "name": "Greater Melbourne",
+            "code": "2GMEL"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "NSW",
+      "row": 2225534,
+      "document": {
+        "_id": "GANSW710515485",
+        "_version": "2026.08",
+        "addressLabel": "UNIT 29, 62 BOOTH STREET",
+        "addressLabelSearch": "UNIT 29 62 BOOTH STREET ANNANDALE NSW 2038",
+        "addressSiteName": "DAKOTA",
+        "buildingName": null,
+        "flatType": "UNIT",
+        "flatNumber": "29",
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "62",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "BOOTH",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "ANNANDALE",
+        "state": "NSW",
+        "postcode": "2038",
+        "legalParcelId": "29/SP56009",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "SECONDARY",
+        "geocode": {
+          "latitude": -33.88208219,
+          "longitude": 151.17140772,
+          "type": "BUILDING CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -33.88208219,
+          "lon": 151.17140772
+        },
+        "allGeocodes": [
+          {
+            "lat": -33.88208219,
+            "lng": 151.17140772,
+            "type": "BUILDING CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loce1fb19252fb0",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "CAMPERDOWN",
+            "FOREST LODGE",
+            "GLEBE",
+            "LEICHHARDT",
+            "LILYFIELD",
+            "ROZELLE",
+            "STANMORE"
+          ],
+          "aliases": ["CAMPERDOWN"]
+        },
+        "street": {
+          "pid": "NSW2575272",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Inner West Council",
+            "code": "lgaa5101cb3dc0e"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "BALMAIN"
+          },
+          "commonwealthElectorate": {
+            "name": "GRAYNDLER"
+          },
+          "meshBlock": {
+            "code": "10463750000",
+            "category": "Residential"
+          },
+          "sa1": "12002167411",
+          "sa2": {
+            "name": "Annandale (NSW)",
+            "code": "120021674"
+          },
+          "sa3": {
+            "name": "Leichhardt",
+            "code": "12002"
+          },
+          "sa4": {
+            "name": "Sydney - Inner West",
+            "code": "120"
+          },
+          "gccsa": {
+            "name": "Greater Sydney",
+            "code": "1GSYD"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "NSW",
+      "row": 2423691,
+      "document": {
+        "_id": "GANSW711851214",
+        "_version": "2026.08",
+        "addressLabel": "UNIT 10, 9 HADDON CRESCENT",
+        "addressLabelSearch": "UNIT 10 9 HADDON CRESCENT MARKS POINT NSW 2280",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": "UNIT",
+        "flatNumber": "10",
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "9",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "HADDON",
+        "streetType": "CRESCENT",
+        "streetSuffix": null,
+        "localityName": "MARKS POINT",
+        "state": "NSW",
+        "postcode": "2280",
+        "legalParcelId": "1/620143",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "SECONDARY",
+        "geocode": {
+          "latitude": -33.05919668,
+          "longitude": 151.64829236,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -33.05919668,
+          "lon": 151.64829236
+        },
+        "allGeocodes": [
+          {
+            "lat": -33.05919668,
+            "lng": 151.64829236,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "locfcf444871d3b",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": ["BELMONT SOUTH", "BLACKSMITHS", "LAKE MACQUARIE", "PELICAN"],
+          "aliases": ["LAKE MACQUARIE"]
+        },
+        "street": {
+          "pid": "NSW2864374",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Lake Macquarie City Council",
+            "code": "lgac07fca595aa9"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "SWANSEA"
+          },
+          "commonwealthElectorate": {
+            "name": "SHORTLAND"
+          },
+          "meshBlock": {
+            "code": "10433430000",
+            "category": "Residential"
+          },
+          "sa1": "11101120715",
+          "sa2": {
+            "name": "Belmont South - Blacksmiths",
+            "code": "111011207"
+          },
+          "sa3": {
+            "name": "Lake Macquarie - East",
+            "code": "11101"
+          },
+          "sa4": {
+            "name": "Newcastle and Lake Macquarie",
+            "code": "111"
+          },
+          "gccsa": {
+            "name": "Rest of NSW",
+            "code": "1RNSW"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "QLD",
+      "row": 448005,
+      "document": {
+        "_id": "GAQLD155876902",
+        "_version": "2026.08",
+        "addressLabel": "78 ROUND HILL ROAD",
+        "addressLabelSearch": "78 ROUND HILL ROAD TAUNTON QLD 4674",
+        "addressSiteName": null,
+        "buildingName": "TANDARRA",
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "78",
+        "numberLast": null,
+        "lotNumber": "112",
+        "streetName": "ROUND HILL",
+        "streetType": "ROAD",
+        "streetSuffix": null,
+        "localityName": "TAUNTON",
+        "state": "QLD",
+        "postcode": "4674",
+        "legalParcelId": "112/RP889926",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -24.37837123,
+          "longitude": 151.79819467,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -24.37837123,
+          "lon": 151.79819467
+        },
+        "allGeocodes": [
+          {
+            "lat": -24.37837123,
+            "lng": 151.79819467,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loceefc7d9bfe05",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "CAPTAIN CREEK",
+            "COLOSSEUM",
+            "EULEILAH",
+            "LOWMEAD",
+            "MOUNT MARIA",
+            "MOUNT TOM",
+            "OYSTER CREEK",
+            "ROUND HILL"
+          ],
+          "aliases": ["MOUNT TOM"]
+        },
+        "street": {
+          "pid": "QLD148356",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Gladstone Regional",
+            "code": "lgaf45ca84fe363"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "BURNETT"
+          },
+          "commonwealthElectorate": {
+            "name": "FLYNN"
+          },
+          "meshBlock": {
+            "code": "30563430800",
+            "category": "Primary Production"
+          },
+          "sa1": "30805153009",
+          "sa2": {
+            "name": "Agnes Water - Miriam Vale",
+            "code": "308051530"
+          },
+          "sa3": {
+            "name": "Gladstone",
+            "code": "30805"
+          },
+          "sa4": {
+            "name": "Central Queensland",
+            "code": "308"
+          },
+          "gccsa": {
+            "name": "Rest of Qld",
+            "code": "3RQLD"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "QLD",
+      "row": 834582,
+      "document": {
+        "_id": "GAQLD156756200",
+        "_version": "2026.08",
+        "addressLabel": "9 WINSTON STREET",
+        "addressLabelSearch": "9 WINSTON STREET LAIDLEY QLD 4341",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "9",
+        "numberLast": null,
+        "lotNumber": "28",
+        "streetName": "WINSTON",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "LAIDLEY",
+        "state": "QLD",
+        "postcode": "4341",
+        "legalParcelId": "28/RP25666",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -27.62804577,
+          "longitude": 152.39784889,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -27.62804577,
+          "lon": 152.39784889
+        },
+        "allGeocodes": [
+          {
+            "lat": -27.62804577,
+            "lng": 152.39784889,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loca81c02419a6a",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "GRANDCHESTER",
+            "LAIDLEY HEIGHTS",
+            "LAIDLEY NORTH",
+            "LAIDLEY SOUTH",
+            "SUMMERHOLM"
+          ],
+          "aliases": ["SUMMERHOLM"]
+        },
+        "street": {
+          "pid": "QLD105404",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Lockyer Valley Regional",
+            "code": "lgad7dd78a474c5"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "LOCKYER"
+          },
+          "commonwealthElectorate": {
+            "name": "WRIGHT"
+          },
+          "meshBlock": {
+            "code": "30368930000",
+            "category": "Residential"
+          },
+          "sa1": "31002128035",
+          "sa2": {
+            "name": "Lockyer Valley - East",
+            "code": "310021280"
+          },
+          "sa3": {
+            "name": "Ipswich Hinterland",
+            "code": "31002"
+          },
+          "sa4": {
+            "name": "Ipswich",
+            "code": "310"
+          },
+          "gccsa": {
+            "name": "Greater Brisbane",
+            "code": "3GBRI"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "SA",
+      "row": 632490,
+      "document": {
+        "_id": "GASA_422269520",
+        "_version": "2026.08",
+        "addressLabel": "UNIT 3, 32 SELBOURNE AVENUE",
+        "addressLabelSearch": "UNIT 3 32 SELBOURNE AVENUE ROSTREVOR SA 5073",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": "UNIT",
+        "flatNumber": "3",
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "32",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "SELBOURNE",
+        "streetType": "AVENUE",
+        "streetSuffix": null,
+        "localityName": "ROSTREVOR",
+        "state": "SA",
+        "postcode": "5073",
+        "legalParcelId": "C/22145/F/33",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "SECONDARY",
+        "geocode": {
+          "latitude": -34.89806598,
+          "longitude": 138.68282792,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -34.89806598,
+          "lon": 138.68282792
+        },
+        "allGeocodes": [
+          {
+            "lat": -34.89806598,
+            "lng": 138.68282792,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "locb042ebacfacc",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "ATHELSTONE",
+            "CAMPBELLTOWN",
+            "HECTORVILLE",
+            "MAGILL",
+            "MONTACUTE",
+            "NEWTON",
+            "WOODFORDE"
+          ],
+          "aliases": ["MAGILL"]
+        },
+        "street": {
+          "pid": "SA536914",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Campbelltown City Council",
+            "code": "lgae01a99dc2d13"
+          },
+          "ward": {
+            "name": "Woodforde Ward"
+          },
+          "stateElectorate": {
+            "name": "MORIALTA"
+          },
+          "commonwealthElectorate": {
+            "name": "STURT"
+          },
+          "meshBlock": {
+            "code": "40025810000",
+            "category": "Residential"
+          },
+          "sa1": "40104118316",
+          "sa2": {
+            "name": "Rostrevor - Hectorville",
+            "code": "401041183"
+          },
+          "sa3": {
+            "name": "Campbelltown (SA)",
+            "code": "40104"
+          },
+          "sa4": {
+            "name": "Adelaide - Central and Hills",
+            "code": "401"
+          },
+          "gccsa": {
+            "name": "Greater Adelaide",
+            "code": "4GADE"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "SA",
+      "row": 775278,
+      "document": {
+        "_id": "GASA_424574678",
+        "_version": "2026.08",
+        "addressLabel": "49 THE BOULEVARD",
+        "addressLabelSearch": "49 THE BOULEVARD PARAFIELD GARDENS SA 5107",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "49",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "THE BOULEVARD",
+        "streetType": null,
+        "streetSuffix": null,
+        "localityName": "PARAFIELD GARDENS",
+        "state": "SA",
+        "postcode": "5107",
+        "legalParcelId": "D/87787/A/99",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -34.78123269,
+          "longitude": 138.59909065,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -34.78123269,
+          "lon": 138.59909065
+        },
+        "allGeocodes": [
+          {
+            "lat": -34.78123269,
+            "lng": 138.59909065,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loc48ca0c201a38",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "GLOBE DERBY PARK",
+            "GREEN FIELDS",
+            "MAWSON LAKES",
+            "PARAFIELD",
+            "PARALOWIE",
+            "SALISBURY DOWNS",
+            "SALISBURY SOUTH"
+          ],
+          "aliases": ["GREEN FIELDS"]
+        },
+        "street": {
+          "pid": "SA540159",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "City of Salisbury",
+            "code": "lga19ee0d725d8c"
+          },
+          "ward": {
+            "name": "Para Ward"
+          },
+          "stateElectorate": {
+            "name": "PLAYFORD"
+          },
+          "commonwealthElectorate": {
+            "name": "MAKIN"
+          },
+          "meshBlock": {
+            "code": "40165569000",
+            "category": "Residential"
+          },
+          "sa1": "40204104337",
+          "sa2": {
+            "name": "Parafield Gardens",
+            "code": "402041043"
+          },
+          "sa3": {
+            "name": "Salisbury",
+            "code": "40204"
+          },
+          "sa4": {
+            "name": "Adelaide - North",
+            "code": "402"
+          },
+          "gccsa": {
+            "name": "Greater Adelaide",
+            "code": "4GADE"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "WA",
+      "row": 980435,
+      "document": {
+        "_id": "GAWA_162405141",
+        "_version": "2026.08",
+        "addressLabel": "5 GALE STREET",
+        "addressLabelSearch": "5 GALE STREET WEST BUSSELTON WA 6280",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "5",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "GALE",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "WEST BUSSELTON",
+        "state": "WA",
+        "postcode": "6280",
+        "legalParcelId": null,
+        "confidence": 0,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "PRIMARY",
+        "geocode": {
+          "latitude": -33.64754664,
+          "longitude": 115.33930092,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -33.64754664,
+          "lon": 115.33930092
+        },
+        "allGeocodes": [
+          {
+            "lat": -33.64754664,
+            "lng": 115.33930092,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loc00d819116c02",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": ["BOVELL", "BROADWATER", "BUSSELTON", "VASSE"],
+          "aliases": ["BUSSELTON", "DUNSBOROUGH", "OLD BROADWATER FARM ESTATE"]
+        },
+        "street": {
+          "pid": "WA1875709",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "City of Busselton",
+            "code": "lgaef496d06ef50"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "VASSE"
+          },
+          "commonwealthElectorate": {
+            "name": "FORREST"
+          },
+          "meshBlock": {
+            "code": "50391440300",
+            "category": "Residential"
+          },
+          "sa1": "50101129443",
+          "sa2": {
+            "name": "Busselton - West",
+            "code": "501011294"
+          },
+          "sa3": {
+            "name": "Augusta - Margaret River - Busselton",
+            "code": "50101"
+          },
+          "sa4": {
+            "name": "Bunbury",
+            "code": "501"
+          },
+          "gccsa": {
+            "name": "Rest of WA",
+            "code": "5RWAU"
+          }
+        },
+        "aliases": [],
+        "secondaries": [
+          {
+            "pid": "GAWA_148195137",
+            "label": "UNIT 5, 5 GALE STREET"
+          },
+          {
+            "pid": "GAWA_148211570",
+            "label": "UNIT 1, 5 GALE STREET"
+          },
+          {
+            "pid": "GAWA_148213487",
+            "label": "UNIT 3, 5 GALE STREET"
+          },
+          {
+            "pid": "GAWA_148219816",
+            "label": "UNIT 2, 5 GALE STREET"
+          },
+          {
+            "pid": "GAWA_148223602",
+            "label": "UNIT 4, 5 GALE STREET"
+          }
+        ]
+      }
+    },
+    {
+      "state": "WA",
+      "row": 1127021,
+      "document": {
+        "_id": "GAWA_163089576",
+        "_version": "2026.08",
+        "addressLabel": "97 WOTTON STREET",
+        "addressLabelSearch": "97 WOTTON STREET WILUNA WA 6646",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "97",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "WOTTON",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "WILUNA",
+        "state": "WA",
+        "postcode": "6646",
+        "legalParcelId": "P191501/1491",
+        "confidence": 0,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -26.58772517,
+          "longitude": 120.22370527,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -26.58772517,
+          "lon": 120.22370527
+        },
+        "allGeocodes": [
+          {
+            "lat": -26.58772517,
+            "lng": 120.22370527,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "locd785f9ba7293",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "KUMARINA",
+            "LAKE CARNEGIE",
+            "LAKE DARLOT",
+            "LAKE WELLS",
+            "LITTLE SANDY DESERT",
+            "MEEKATHARRA",
+            "SANDSTONE",
+            "SIR SAMUEL"
+          ],
+          "aliases": ["WILUNA SHIRE"]
+        },
+        "street": {
+          "pid": "WA1922638",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Shire of Wiluna",
+            "code": "lgaeaf55424353d"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "KALGOORLIE"
+          },
+          "commonwealthElectorate": {
+            "name": "O'CONNOR"
+          },
+          "meshBlock": {
+            "code": "50395330000",
+            "category": "Parkland"
+          },
+          "sa1": "51104129005",
+          "sa2": {
+            "name": "Meekatharra",
+            "code": "511041290"
+          },
+          "sa3": {
+            "name": "Mid West",
+            "code": "51104"
+          },
+          "sa4": {
+            "name": "Western Australia - Outback (South)",
+            "code": "511"
+          },
+          "gccsa": {
+            "name": "Rest of WA",
+            "code": "5RWAU"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "TAS",
+      "row": 71585,
+      "document": {
+        "_id": "GATAS702256803",
+        "_version": "2026.08",
+        "addressLabel": "2 HILL STREET",
+        "addressLabelSearch": "2 HILL STREET SMITHTON TAS 7330",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "2",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "HILL",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "SMITHTON",
+        "state": "TAS",
+        "postcode": "7330",
+        "legalParcelId": "202105/1",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -40.83880589,
+          "longitude": 145.12747292,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -40.83880589,
+          "lon": 145.12747292
+        },
+        "allGeocodes": [
+          {
+            "lat": -40.83880589,
+            "lng": 145.12747292,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loc6e99df82a211",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "BROADMEADOWS",
+            "CHRISTMAS HILLS",
+            "FOREST",
+            "IRISHTOWN",
+            "MELLA",
+            "SCOPUS",
+            "SCOTCHTOWN",
+            "SOUTH FOREST",
+            "STANLEY"
+          ],
+          "aliases": ["IRISHTOWN", "LEESVILLE", "PULBEENA", "SCOPUS", "SCOTCHTOWN", "SEDGY CREEK"]
+        },
+        "street": {
+          "pid": "TAS2092297",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Circular Head Council",
+            "code": "lga501d6d4da5d2"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "BRADDON"
+          },
+          "commonwealthElectorate": {
+            "name": "BRADDON"
+          },
+          "meshBlock": {
+            "code": "60014430000",
+            "category": "Residential"
+          },
+          "sa1": "60403109504",
+          "sa2": {
+            "name": "Smithton",
+            "code": "604031095"
+          },
+          "sa3": {
+            "name": "West Coast",
+            "code": "60403"
+          },
+          "sa4": {
+            "name": "West and North West",
+            "code": "604"
+          },
+          "gccsa": {
+            "name": "Rest of Tas",
+            "code": "6RTAS"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "TAS",
+      "row": 308047,
+      "document": {
+        "_id": "GATAS719496671",
+        "_version": "2026.08",
+        "addressLabel": "32 HERIOTS RISE",
+        "addressLabelSearch": "32 HERIOTS RISE FRANKLIN TAS 7113",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "32",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "HERIOTS",
+        "streetType": "RISE",
+        "streetSuffix": null,
+        "localityName": "FRANKLIN",
+        "state": "TAS",
+        "postcode": "7113",
+        "legalParcelId": "53343/4",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -43.12192999,
+          "longitude": 146.98600407,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -43.12192999,
+          "lon": 146.98600407
+        },
+        "allGeocodes": [
+          {
+            "lat": -43.12192999,
+            "lng": 146.98600407,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loc86335d02e71b",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": ["CASTLE FORBES BAY", "GLEN HUON", "HUONVILLE"],
+          "aliases": ["CASTLE FORBES BAY", "FRANKLIN NORTH", "FRANKLIN SOUTH", "HUONVILLE"]
+        },
+        "street": {
+          "pid": "TASL3618520",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Huon Valley Council",
+            "code": "lgab1d61c9cb781"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "FRANKLIN"
+          },
+          "commonwealthElectorate": {
+            "name": "FRANKLIN"
+          },
+          "meshBlock": {
+            "code": "60065840000",
+            "category": "Other"
+          },
+          "sa1": "60302107214",
+          "sa2": {
+            "name": "Huonville - Franklin",
+            "code": "603021072"
+          },
+          "sa3": {
+            "name": "Huon - Bruny Island",
+            "code": "60302"
+          },
+          "sa4": {
+            "name": "South East",
+            "code": "603"
+          },
+          "gccsa": {
+            "name": "Rest of Tas",
+            "code": "6RTAS"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "NT",
+      "row": 19775,
+      "document": {
+        "_id": "GANT_703830045",
+        "_version": "2026.08",
+        "addressLabel": "11 BITTERN STREET",
+        "addressLabelSearch": "11 BITTERN STREET WULAGI NT 0812",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "11",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "BITTERN",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "WULAGI",
+        "state": "NT",
+        "postcode": "0812",
+        "legalParcelId": "685//1383/",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -12.38543312,
+          "longitude": 130.90032471,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -12.38543312,
+          "lon": 130.90032471
+        },
+        "allGeocodes": [
+          {
+            "lat": -12.38543312,
+            "lng": 130.90032471,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "locd1b34632469a",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": ["ANULA", "LEANYER", "MALAK", "WAGAMAN", "WANGURI"],
+          "aliases": []
+        },
+        "street": {
+          "pid": "NT1857966",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Darwin Municipality",
+            "code": "lga744170e79f38"
+          },
+          "ward": {
+            "name": "Waters Ward"
+          },
+          "stateElectorate": {
+            "name": "SANDERSON"
+          },
+          "commonwealthElectorate": {
+            "name": "SOLOMON"
+          },
+          "meshBlock": {
+            "code": "70013800000",
+            "category": "Residential"
+          },
+          "sa1": "70102103003",
+          "sa2": {
+            "name": "Wulagi",
+            "code": "701021030"
+          },
+          "sa3": {
+            "name": "Darwin Suburbs",
+            "code": "70102"
+          },
+          "sa4": {
+            "name": "Darwin",
+            "code": "701"
+          },
+          "gccsa": {
+            "name": "Greater Darwin",
+            "code": "7GDAR"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "NT",
+      "row": 85040,
+      "document": {
+        "_id": "GANT_718236109",
+        "_version": "2026.08",
+        "addressLabel": "APARTMENT 4, 121 FLYNN CIRCUIT",
+        "addressLabelSearch": "APARTMENT 4 121 FLYNN CIRCUIT BELLAMACK NT 0832",
+        "addressSiteName": null,
+        "buildingName": "BELLAMACK GARDENS",
+        "flatType": "APARTMENT",
+        "flatNumber": "4",
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "121",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "FLYNN",
+        "streetType": "CIRCUIT",
+        "streetSuffix": null,
+        "localityName": "BELLAMACK",
+        "state": "NT",
+        "postcode": "0832",
+        "legalParcelId": "590//11044/4",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "SECONDARY",
+        "geocode": {
+          "latitude": -12.51458909,
+          "longitude": 130.97854804,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -12.51458909,
+          "lon": 130.97854804
+        },
+        "allGeocodes": [
+          {
+            "lat": -12.51458909,
+            "lng": 130.97854804,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loc4cf1b67f4314",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": ["ARCHER", "MITCHELL", "MOULDEN", "ROSEBERY", "WOODROFFE"],
+          "aliases": []
+        },
+        "street": {
+          "pid": "NT3551935",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Palmerston Municipality",
+            "code": "lgaaf6116dc31d4"
+          },
+          "ward": null,
+          "stateElectorate": {
+            "name": "BLAIN"
+          },
+          "commonwealthElectorate": {
+            "name": "SOLOMON"
+          },
+          "meshBlock": {
+            "code": "70016424800",
+            "category": "Residential"
+          },
+          "sa1": "70104104312",
+          "sa2": {
+            "name": "Rosebery - Bellamack",
+            "code": "701041043"
+          },
+          "sa3": {
+            "name": "Palmerston",
+            "code": "70104"
+          },
+          "sa4": {
+            "name": "Darwin",
+            "code": "701"
+          },
+          "gccsa": {
+            "name": "Greater Darwin",
+            "code": "7GDAR"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "ACT",
+      "row": 44526,
+      "document": {
+        "_id": "GAACT714897405",
+        "_version": "2026.08",
+        "addressLabel": "34 LOWANNA STREET",
+        "addressLabelSearch": "34 LOWANNA STREET BRADDON ACT 2612",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "34",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "LOWANNA",
+        "streetType": "STREET",
+        "streetSuffix": null,
+        "localityName": "BRADDON",
+        "state": "ACT",
+        "postcode": "2612",
+        "legalParcelId": "CANB/BRAD/5/30",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -35.26249703,
+          "longitude": 149.13518636,
+          "type": "FRONTAGE CENTRE SETBACK",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -35.26249703,
+          "lon": 149.13518636
+        },
+        "allGeocodes": [
+          {
+            "lat": -35.26249703,
+            "lng": 149.13518636,
+            "type": "FRONTAGE CENTRE SETBACK",
+            "reliability": 2
+          },
+          {
+            "lat": -35.2625143,
+            "lng": 149.13531474,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "locb69fa0a9f0f8",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": ["AINSLIE", "CAMPBELL", "CITY", "DICKSON", "LYNEHAM", "REID", "TURNER"],
+          "aliases": ["CANBERRA CENTRAL", "CITY"]
+        },
+        "street": {
+          "pid": "ACT343",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": null,
+          "ward": null,
+          "stateElectorate": {
+            "name": "KURRAJONG"
+          },
+          "commonwealthElectorate": {
+            "name": "CANBERRA"
+          },
+          "meshBlock": {
+            "code": "85897000000",
+            "category": "Residential"
+          },
+          "sa1": "80105105109",
+          "sa2": {
+            "name": "Braddon",
+            "code": "801051051"
+          },
+          "sa3": {
+            "name": "North Canberra",
+            "code": "80105"
+          },
+          "sa4": {
+            "name": "Australian Capital Territory",
+            "code": "801"
+          },
+          "gccsa": {
+            "name": "Australian Capital Territory",
+            "code": "8ACTE"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "ACT",
+      "row": 201120,
+      "document": {
+        "_id": "GAACT719451058",
+        "_version": "2026.08",
+        "addressLabel": "UNIT 116, 189 NARRABUNDAH LANE",
+        "addressLabelSearch": "UNIT 116 189 NARRABUNDAH LANE SYMONSTON ACT 2609",
+        "addressSiteName": null,
+        "buildingName": "NARRABUNDAH LONGSTAY PARK",
+        "flatType": "UNIT",
+        "flatNumber": "116",
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "189",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "NARRABUNDAH",
+        "streetType": "LANE",
+        "streetSuffix": null,
+        "localityName": "SYMONSTON",
+        "state": "ACT",
+        "postcode": "2609",
+        "legalParcelId": "JERR/SYMO/97/8",
+        "confidence": 1,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": "SECONDARY",
+        "geocode": {
+          "latitude": -35.34920664,
+          "longitude": 149.15474607,
+          "type": "FRONTAGE CENTRE SETBACK",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -35.34920664,
+          "lon": 149.15474607
+        },
+        "allGeocodes": [
+          {
+            "lat": -35.34920664,
+            "lng": 149.15474607,
+            "type": "FRONTAGE CENTRE SETBACK",
+            "reliability": 2
+          },
+          {
+            "lat": -35.34837505,
+            "lng": 149.15267109,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "loc889de2a5f611",
+          "class": "GAZETTED LOCALITY",
+          "neighbours": [
+            "FYSHWICK",
+            "GARRAN",
+            "JERRABOMBERRA",
+            "NARRABUNDAH",
+            "O'MALLEY",
+            "RED HILL"
+          ],
+          "aliases": ["JERRABOMBERRA"]
+        },
+        "street": {
+          "pid": "ACT6599",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": null,
+          "ward": null,
+          "stateElectorate": {
+            "name": "KURRAJONG"
+          },
+          "commonwealthElectorate": {
+            "name": "BEAN"
+          },
+          "meshBlock": {
+            "code": "80039810000",
+            "category": "Residential"
+          },
+          "sa1": "80103111302",
+          "sa2": {
+            "name": "Canberra East",
+            "code": "801031113"
+          },
+          "sa3": {
+            "name": "Canberra East",
+            "code": "80103"
+          },
+          "sa4": {
+            "name": "Australian Capital Territory",
+            "code": "801"
+          },
+          "gccsa": {
+            "name": "Australian Capital Territory",
+            "code": "8ACTE"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "OT",
+      "row": 377,
+      "document": {
+        "_id": "GAOT_717320346",
+        "_version": "2026.08",
+        "addressLabel": "30 JALAN KEMBANG MOLOK",
+        "addressLabelSearch": "30 JALAN KEMBANG MOLOK HOME ISLAND OT 6799",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "30",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "JALAN KEMBANG MOLOK",
+        "streetType": null,
+        "streetSuffix": null,
+        "localityName": "HOME ISLAND",
+        "state": "OT",
+        "postcode": "6799",
+        "legalParcelId": null,
+        "confidence": 0,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": null,
+        "location": null,
+        "allGeocodes": [],
+        "locality": {
+          "pid": "loc2750e00db227",
+          "class": "UNOFFICIAL SUBURB",
+          "neighbours": ["WEST ISLAND"],
+          "aliases": ["HOME ISLAND COCOS (KEELING) IS"]
+        },
+        "street": {
+          "pid": "OT677764",
+          "class": "CONFIRMED",
+          "aliases": []
+        },
+        "boundaries": {
+          "lga": {
+            "name": "Shire of Cocos (Keeling) Islands",
+            "code": "lgaVgu0GvW1EC5u"
+          },
+          "ward": null,
+          "stateElectorate": null,
+          "commonwealthElectorate": null,
+          "meshBlock": {
+            "code": "90000180000",
+            "category": "Residential"
+          },
+          "sa1": "90102100201",
+          "sa2": {
+            "name": "Cocos (Keeling) Islands",
+            "code": "901021002"
+          },
+          "sa3": {
+            "name": "Cocos (Keeling) Islands",
+            "code": "90102"
+          },
+          "sa4": {
+            "name": "Other Territories",
+            "code": "901"
+          },
+          "gccsa": {
+            "name": "Other Territories",
+            "code": "9OTER"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    },
+    {
+      "state": "OT",
+      "row": 2389,
+      "document": {
+        "_id": "GAOT_718710324",
+        "_version": "2026.08",
+        "addressLabel": "39D TAYLORS ROAD",
+        "addressLabelSearch": "39D TAYLORS ROAD NORFOLK ISLAND OT 2899",
+        "addressSiteName": null,
+        "buildingName": null,
+        "flatType": null,
+        "flatNumber": null,
+        "levelType": null,
+        "levelNumber": null,
+        "numberFirst": "39D",
+        "numberLast": null,
+        "lotNumber": null,
+        "streetName": "TAYLORS",
+        "streetType": "ROAD",
+        "streetSuffix": null,
+        "localityName": "NORFOLK ISLAND",
+        "state": "OT",
+        "postcode": "2899",
+        "legalParcelId": "31/25M/23",
+        "confidence": 2,
+        "aliasPrincipal": "PRINCIPAL",
+        "primarySecondary": null,
+        "geocode": {
+          "latitude": -29.03142213,
+          "longitude": 167.95204247,
+          "type": "PROPERTY CENTROID",
+          "reliability": 2
+        },
+        "location": {
+          "lat": -29.03142213,
+          "lon": 167.95204247
+        },
+        "allGeocodes": [
+          {
+            "lat": -29.03142213,
+            "lng": 167.95204247,
+            "type": "PROPERTY CENTROID",
+            "reliability": 2
+          }
+        ],
+        "locality": {
+          "pid": "locc15e0d2d6f2a",
+          "class": "UNOFFICIAL SUBURB",
+          "neighbours": [],
+          "aliases": ["BURNT PINE", "CASCADE", "KINGSTON"]
+        },
+        "street": {
+          "pid": "OT3563804",
+          "class": "UNCONFIRMED",
+          "aliases": ["TAYLORS ROADS"]
+        },
+        "boundaries": {
+          "lga": null,
+          "ward": null,
+          "stateElectorate": null,
+          "commonwealthElectorate": null,
+          "meshBlock": {
+            "code": "90000707100",
+            "category": "Residential"
+          },
+          "sa1": "90104100404",
+          "sa2": {
+            "name": "Norfolk Island",
+            "code": "901041004"
+          },
+          "sa3": {
+            "name": "Norfolk Island",
+            "code": "90104"
+          },
+          "sa4": {
+            "name": "Other Territories",
+            "code": "901"
+          },
+          "gccsa": {
+            "name": "Other Territories",
+            "code": "9OTER"
+          }
+        },
+        "aliases": [],
+        "secondaries": []
+      }
+    }
+  ]
+}

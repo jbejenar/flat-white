@@ -57,7 +57,7 @@ concepts; changing one does not change the other.
 
 ## Census validation is deliberately strict about the edition
 
-Schema 1.0.0 follows this path:
+Schema 1.x follows this path:
 
 ```text
 address_principals.mb_2026_code
@@ -175,3 +175,7 @@ For failures, follow the [runbook](RUNBOOK.md). For the earlier two-path design,
 missing-boundary incidents and the reasons it was removed, read the
 [historical boundary guide](history/BOUNDARIES-PRE-1.0.md). Those incidents explain
 the safeguards; their old recovery steps are not current instructions.
+
+**New in 1.1.0:** default coordinates are exposed separately as `fallbackGeocode`.
+They do not turn into site points or establish eligibility for NSW council ward
+assignment. See the [upgrade guide](MIGRATING-TO-SCHEMA-1.1.md).

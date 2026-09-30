@@ -3,7 +3,7 @@
 --   npm run generate:sql
 --
 -- Main flatten SELECT using pre-materialized temp tables.
--- Run address_full_prep.sql first to create the temp tables.
+-- Run address_geocodes_prep.sql and address_full_prep.sql first to create the temp tables.
 -- This query is a simple multi-join — efficient for cursor-based streaming at scale.
 --
 -- Usage: Called from src/flatten.ts via cursor-based streaming.
@@ -48,6 +48,11 @@ SELECT
   -- Geocodes
   ag.best_geocode,
   ag.all_geocodes,
+  ag.fallback_geocode,
+  ag.invalid_site_count,
+  ag.invalid_default_count,
+  ag.active_default_count,
+  ag.distinct_default_count,
 
   -- Locality
   loc.locality_pid,

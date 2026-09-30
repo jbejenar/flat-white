@@ -17,8 +17,9 @@ import { createGunzip } from "node:zlib";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
-import { AddressDocumentSchema } from "./schema.js";
+import { AddressDocumentSchema, AddressDocumentWriterSchema } from "./schema.js";
 import type { AddressDocument } from "./schema.js";
+import { GeocodeDiagnosticsSchema } from "./geocode-diagnostics.js";
 import { PidLedger } from "./pid-ledger.js";
 import { z } from "zod";
 import { VERSION } from "./index.js";
@@ -175,6 +176,8 @@ export async function verifyGzippedState(
     pidSha256?: string;
     onPid?: (pid: string) => Promise<void>;
     adminBoundariesVersion?: string;
+    requireWriter?: boolean;
+    geocodeDiagnostics?: z.infer<typeof GeocodeDiagnosticsSchema>;
   },
 ): Promise<StateVerification> {
   const stateThresholds = PER_STATE_BOUNDARY_THRESHOLDS[state];
@@ -193,6 +196,8 @@ export async function verifyGzippedState(
     sa4: 0,
     gccsa: 0,
   };
+  let siteCount = 0;
+  const fallbackCounts = { street: 0, locality: 0, unknown: 0 };
   let qualityErrors = 0;
   const qualityDiagnostics: string[] = [];
   const checkOtSnapshot =
@@ -236,12 +241,16 @@ export async function verifyGzippedState(
           continue;
         }
 
-        const parsed = AddressDocumentSchema.safeParse(value);
+        const parsed = (
+          expected?.requireWriter ? AddressDocumentWriterSchema : AddressDocumentSchema
+        ).safeParse(value);
         if (!parsed.success) {
           schemaErrors++;
           continue;
         }
         const doc = parsed.data;
+        if (doc.geocode) siteCount++;
+        if (doc.fallbackGeocode) fallbackCounts[doc.fallbackGeocode.precision]++;
 
         if (checkOtSnapshot) {
           const name = doc.boundaries.commonwealthElectorate?.name.toUpperCase();
@@ -301,6 +310,35 @@ export async function verifyGzippedState(
     const identities = await ledger.finish();
     duplicatePids = identities.duplicateCount;
     if (expected && rowCount !== expected.count) qualityErrors++;
+    if (expected?.geocodeDiagnostics) {
+      const report = expected.geocodeDiagnostics;
+      if (
+        !report.passed ||
+        report.version !== expected.sourceVersion ||
+        report.totalAddresses !== rowCount ||
+        report.site !== siteCount ||
+        Object.entries(fallbackCounts).some(
+          ([key, value]) => report.fallback[key as keyof typeof fallbackCounts] !== value,
+        )
+      ) {
+        qualityErrors++;
+        qualityDiagnostics.push("Geocode source diagnostics disagree with the compressed artifact");
+      }
+    }
+    if (
+      expected?.requireWriter &&
+      state === "OT" &&
+      expected.sourceVersion === "2026.08" &&
+      (siteCount !== 3394 ||
+        fallbackCounts.street !== 332 ||
+        fallbackCounts.locality !== 79 ||
+        fallbackCounts.unknown !== 0)
+    ) {
+      qualityErrors++;
+      qualityDiagnostics.push(
+        "August 2026 OT requires 3,394 site points and 411 separate defaults (332 street, 79 locality)",
+      );
+    }
     if (expected?.pidSha256 && identities.sha256 !== expected.pidSha256) qualityErrors++;
     if (checkOtSnapshot && !checkAugustOtFederal(rowCount, missingFederalPids, federalCounts)) {
       qualityErrors++;
@@ -658,6 +696,12 @@ async function main(): Promise<void> {
         const result = await verifyGzippedState(path, state, undefined, thresholds, {
           sourceVersion,
           count,
+          requireWriter: true,
+          geocodeDiagnostics: fixtureOnly
+            ? undefined
+            : GeocodeDiagnosticsSchema.parse(
+                JSON.parse(await readFile(join(assetDir, `geocodes-${state}.json`), "utf8")),
+              ),
           pidSha256,
           adminBoundariesVersion: metadata.adminBoundariesVersion,
           onPid: (pid) => nationalLedger.add(pid),
