@@ -98,9 +98,13 @@ the downloaded baseline checksums and rejects duplicates or unordered PIDs.
 added, removed or changed document without keeping them all in memory.
 
 For a same-quarter patch, every added/removed PID and every field change must be
-accounted for. The current reviewed exception is August OT's missing federal
-assignment becoming Bean, Fenner or Lingiari; the independent OT snapshot gate
-checks the exact counts and remaining gaps. Other changes hold the release as a
+accounted for. The reviewed August corrections are OT's missing federal
+assignment becoming Bean, Fenner or Lingiari, and stable selection between equally
+ranked existing site points. The independent OT snapshot gate checks the exact
+counts and remaining gaps. The geocode check requires the same complete set of
+valid site points, equally preferred old and new primary points, and matching
+`location` coordinates. Only ordering and the selected tied point may change;
+source geocode PIDs decide the tie in SQL. Other changes hold the release as a
 draft for investigation. Different quarters naturally change records; the report
 still captures every difference and the 1% count anomaly gate remains in place.
 A failed baseline download or comparison stops publication. An older release with

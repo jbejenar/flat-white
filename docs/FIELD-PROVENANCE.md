@@ -133,7 +133,7 @@ Best geocode selected per address. Determined inside the `address_geocodes` CTE.
 | `geocode.type`        | `best_geocode.type`        | `gt.name`              | Authority name, falling back to the source type code when unmatched.    |
 | `geocode.reliability` | `best_geocode.reliability` | `asg.reliability_code` | `Number()` cast; validation requires an integer from 1 to 6.            |
 
-**Selection logic (SQL):** `ORDER BY reliability_code ASC, CASE geocode_type_code WHEN 'FCS' THEN 1 WHEN 'PC' THEN 2 WHEN 'PAP' THEN 3 ELSE 4 END ASC LIMIT 1`. Only non-retired geocodes (`date_retired IS NULL`).
+**Selection logic (SQL):** `ORDER BY reliability_code ASC, CASE geocode_type_code WHEN 'FCS' THEN 1 WHEN 'PC' THEN 2 WHEN 'PAP' THEN 3 ELSE 4 END ASC, address_site_geocode_pid COLLATE "C" ASC LIMIT 1`. Only non-retired geocodes (`date_retired IS NULL`).
 
 **Join path:** `address_principals.gnaf_pid` → `address_detail.address_detail_pid` → `address_detail.address_site_pid` → `address_site_geocode.address_site_pid`
 
@@ -165,7 +165,7 @@ All geocode types for an address, aggregated in the `address_geocodes` CTE.
 
 **Note:** Both `allGeocodes[].type` and `geocode.type` use the authority name when matched, otherwise the source code. Matched values use the expanded long form (e.g. `"FRONTAGE CENTRE SETBACK"`), joined from `geocode_type_aut.name`. This was made consistent in E1.16 — prior to v0.2.0, `allGeocodes[].type` used the raw abbreviation (e.g. `"FCS"`).
 
-**Ordering:** `ORDER BY reliability_code, geocode_type_code` (within `json_agg`).
+**Ordering:** `ORDER BY reliability_code, geocode_type_code COLLATE "C", address_site_geocode_pid COLLATE "C"` (within `json_agg`).
 
 ---
 

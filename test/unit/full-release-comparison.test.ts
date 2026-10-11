@@ -126,6 +126,61 @@ describe("full release comparison", () => {
         .split("\n"),
     ).toHaveLength(100);
   });
+  it("accepts only equal-rank existing site points, not invented, lost or poorer points", () => {
+    const a = { lat: -37, lng: 145, type: "FCS", reliability: 2 };
+    const b = { lat: -38, lng: 146, type: "FCS", reliability: 2 };
+    const geocode = (p: typeof a) => ({
+      latitude: p.lat,
+      longitude: p.lng,
+      type: p.type,
+      reliability: p.reliability,
+    });
+    const before = {
+      ...doc("GAOT_1"),
+      geocode: geocode(b),
+      location: { lat: b.lat, lon: b.lng },
+      allGeocodes: [b, a],
+    };
+    const after = {
+      ...before,
+      geocode: geocode(a),
+      location: { lat: a.lat, lon: a.lng },
+      allGeocodes: [a, b],
+    };
+    expect(JSON.parse(compare([before], [after]).stdout).unexpectedChanges).toBe(0);
+    for (const change of [
+      { allGeocodes: [a] },
+      { geocode: { ...geocode(a), latitude: -39 } },
+      { location: { lat: -39, lon: 145 } },
+      { postcode: "9999" },
+    ])
+      expect(
+        JSON.parse(compare([before], [{ ...after, ...change }]).stdout).unexpectedChanges,
+      ).toBe(1);
+  });
+  it("does not allow invalid-point removal or a primary change between unequal ranks in schema 1.0", () => {
+    const a = { lat: -37, lng: 145, type: "FCS", reliability: 2 };
+    const primary = { latitude: a.lat, longitude: a.lng, type: a.type, reliability: a.reliability };
+    const base = { ...doc("GAOT_1"), geocode: primary, location: { lat: a.lat, lon: a.lng } };
+    const invalid = { ...a, lng: 0 };
+    expect(
+      JSON.parse(
+        compare([{ ...base, allGeocodes: [a, invalid] }], [{ ...base, allGeocodes: [a] }]).stdout,
+      ).unexpectedChanges,
+    ).toBe(1);
+    for (const poorer of [
+      { ...a, type: "PC" },
+      { ...a, reliability: 3 },
+    ]) {
+      const better = { ...base, allGeocodes: [a, poorer] };
+      const worse = {
+        ...better,
+        geocode: { ...primary, type: poorer.type, reliability: poorer.reliability },
+      };
+      expect(JSON.parse(compare([better], [worse]).stdout).unexpectedChanges).toBe(1);
+      expect(JSON.parse(compare([worse], [better]).stdout).unexpectedChanges).toBe(1);
+    }
+  });
   it("selects the nearest earlier release from the same quarter and refuses a patch without a baseline", () => {
     const result = spawnSync(
       "python3",
