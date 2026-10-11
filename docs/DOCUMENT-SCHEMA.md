@@ -70,6 +70,10 @@ need the correct geography edition.
 
 ## Geocode and location
 
+The source-PID tie-break rule was backported to the schema 1.0 correction in
+[PR #222](https://github.com/jbejenar/flat-white/pull/222). Schema 1.1 also excludes
+invalid site points and adds the separate fallback described below.
+
 `geocode` contains the best valid, non-retired site point. A candidate must have
 finite coordinates within latitude −44 to −9 and longitude 96 to 168, reliability
 1–6 and a nonblank type code. These bounds include the supported territories.

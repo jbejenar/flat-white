@@ -137,9 +137,66 @@ def geocode_repair(before, after):
     )
 
 
+def geocode_tie_repair(before, after):
+    # Schema 1.0 may only select another equally ranked existing point or reorder
+    # the unchanged multiset. Invalid-point removal belongs to schema 1.1.
+    old_points = before.get("allGeocodes", [])
+    points = after.get("allGeocodes", [])
+    if (
+        not isinstance(old_points, list)
+        or not isinstance(points, list)
+        or not points
+        or not all(valid_site(point) for point in old_points + points)
+        or not same_points(old_points, points)
+    ):
+        return False
+    preference = {
+        "FCS": 1,
+        "FRONTAGE CENTRE SETBACK": 1,
+        "PC": 2,
+        "PROPERTY CENTROID": 2,
+        "PAP": 3,
+        "PROPERTY ACCESS POINT": 3,
+    }
+
+    def rank(point):
+        return point["reliability"], preference.get(point["type"], 4)
+
+    best_rank = min(map(rank, points))
+
+    def selected_best(document):
+        geocode = document.get("geocode")
+        return any(
+            rank(point) == best_rank
+            and json_equal(
+                geocode,
+                {
+                    "latitude": point["lat"],
+                    "longitude": point["lng"],
+                    "type": point["type"],
+                    "reliability": point["reliability"],
+                },
+            )
+            for point in points
+        ) and json_equal(
+            document.get("location"),
+            {"lat": geocode["latitude"], "lon": geocode["longitude"]},
+        )
+
+    return selected_best(before) and selected_best(after)
+
+
 def allowed_change(
     change, state, quarter, prior_schema, schema, before=None, after=None
 ):
+    if (
+        quarter == "2026.08"
+        and prior_schema == schema == "1.0.0"
+        and before is not None
+        and after is not None
+        and change["path"].split(".")[0] in ("geocode", "location", "allGeocodes")
+    ):
+        return geocode_tie_repair(before, after)
     # Only reviewed repairs may pass a same-quarter comparison. The producer's
     # independent source, writer, reconciliation and OT snapshot gates still apply.
     if (

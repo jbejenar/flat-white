@@ -1,6 +1,6 @@
 # Next work — flat-white
 
-> Updated: 2026-09-30. **Schema 1.0.0 change:** the current migration targets
+> Updated: 2026-10-12. **Schema 1.0.0 change:** the current migration targets
 > ASGS 2026. Earlier April work records are retained below as history, not the
 > active release plan.
 
@@ -22,8 +22,10 @@ the published manifest and all 11 data/mapping object sizes and SHA-256 checksum
      Merged in [PR #208](https://github.com/jbejenar/flat-white/pull/208); CI and main checks passed. A corrected data release remains pending.
   2. Locked source bytes, deterministic cache identity and dated boundary preparation.
      Implementation includes publication/recovery evidence and real dump/restore checks.
-     Merged in [PR #209](https://github.com/jbejenar/flat-white/pull/209); correction build
-     [36666112842](https://github.com/jbejenar/flat-white/actions/runs/36666112842) is running.
+     Merged in PR #209. Draft v2026.08.1 was held for three SA site-point ties.
+     PR #222 fixes their ordering; all CI and review checks passed. New correction
+     [38185895740](https://github.com/jbejenar/flat-white/actions/runs/38185895740)
+     targets v2026.08.2. Do not publish the held draft or claim S3 success before verification.
      Upstream date policy: [PR #105](https://github.com/minus34/gnaf-loader/pull/105).
   3. Schema 1.1.0 `fallbackGeocode`, deterministic valid site-point selection,
      converter/CRS and compatibility checks. Preserve null primary geometry when

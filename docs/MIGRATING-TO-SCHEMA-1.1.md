@@ -76,3 +76,8 @@ numbers. Geometry uses longitude, latitude order, as required by the
 [GeoParquet 1.1 specification](https://geoparquet.org/releases/v1.1.0/).
 Regeneration is safer than relabelling files whose source or transformation
 history is unknown. NDJSON coordinates continue to use GDA2020.
+
+The source-PID tie-break rule also ships in the preceding schema 1.0 correction
+([PR #222](https://github.com/jbejenar/flat-white/pull/222)). Consumers already using
+that correction have deterministic selection; schema 1.1 adds valid-point filtering
+and the explicit default-coordinate fallback.
