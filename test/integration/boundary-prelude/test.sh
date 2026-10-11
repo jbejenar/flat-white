@@ -57,6 +57,7 @@ echo "[boundary-prelude] Seeding fixture data..."
 psql_db -q -f /fixtures/seed-postgres.sql
 psql_db -q -f /fixtures/seed-admin-bdys.sql
 psql_db -q -f /fixtures/seed-census-2026.sql
+psql_db -q -f /fixtures/seed-geocode-cases.sql
 sed "s/__SCHEMA_VERSION__/${SCHEMA_VERSION_FLAT}/g" "$PROJECT_DIR/fixtures/prep-admin-bdys.sql" | \
   psql_db -q
 
