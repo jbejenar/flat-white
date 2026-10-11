@@ -17,7 +17,7 @@ address_geocodes AS (
         'type', COALESCE(gt_all.name, asg.geocode_type_code),
         'reliability', asg.reliability_code
       )
-      ORDER BY asg.reliability_code, asg.geocode_type_code
+      ORDER BY asg.reliability_code, asg.geocode_type_code COLLATE "C", asg.address_site_geocode_pid COLLATE "C"
     ) AS all_geocodes,
     -- Best geocode: lowest reliability_code (= best), prefer FCS > PC > PAP
     (
@@ -38,7 +38,8 @@ address_geocodes AS (
           WHEN 'PC'  THEN 2
           WHEN 'PAP' THEN 3
           ELSE 4
-        END ASC
+        END ASC,
+        g.address_site_geocode_pid COLLATE "C" ASC
       LIMIT 1
     ) AS best_geocode
   FROM raw_gnaf___SCHEMA_VERSION__.address_detail ad

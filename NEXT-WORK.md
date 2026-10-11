@@ -22,6 +22,9 @@ the published manifest and all 11 data/mapping object sizes and SHA-256 checksum
      Merged in [PR #208](https://github.com/jbejenar/flat-white/pull/208); CI and main checks passed. A corrected data release remains pending.
   2. Locked source bytes, deterministic cache identity and dated boundary preparation.
      Implementation includes publication/recovery evidence and real dump/restore checks.
+     Merged in PR #209. All states built successfully in run 36666112842, but
+     draft v2026.08.1 is held for three SA geocode ties. Stabilize selection before
+     publishing a new immutable correction; do not override that hold.
      Upstream date policy: [PR #105](https://github.com/minus34/gnaf-loader/pull/105).
   3. Schema 1.1.0 `fallbackGeocode`, deterministic valid site-point selection,
      converter/CRS and compatibility checks. Preserve null primary geometry when

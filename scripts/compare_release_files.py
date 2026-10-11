@@ -70,9 +70,93 @@ def differences(before, after, path=""):
         }
 
 
-def allowed_change(change, state, quarter, prior_schema, schema):
-    # This narrowly scoped correction is independently checked by the OT
-    # release coverage/snapshot gate. Every other same-quarter change is held.
+def valid_site(point):
+    return (
+        isinstance(point, dict)
+        and type(point.get("lat")) in (int, float)
+        and -44 <= point["lat"] <= -9
+        and type(point.get("lng")) in (int, float)
+        and 96 <= point["lng"] <= 168
+        and type(point.get("reliability")) is int
+        and 1 <= point["reliability"] <= 6
+        and isinstance(point.get("type"), str)
+        and bool(point["type"].strip())
+    )
+
+
+def same_points(before, after):
+    # A multiset comparison retains duplicate points, while accepting JSON 1 == 1.0.
+    remaining = list(after)
+    for point in before:
+        index = next(
+            (i for i, other in enumerate(remaining) if json_equal(point, other)), None
+        )
+        if index is None:
+            return False
+        remaining.pop(index)
+    return not remaining
+
+
+def geocode_tie_repair(before, after):
+    # Schema 1.0 may only select another equally ranked existing point or reorder
+    # the unchanged multiset. Invalid-point removal belongs to schema 1.1.
+    old_points = before.get("allGeocodes", [])
+    points = after.get("allGeocodes", [])
+    if (
+        not isinstance(old_points, list)
+        or not isinstance(points, list)
+        or not points
+        or not all(valid_site(point) for point in old_points + points)
+        or not same_points(old_points, points)
+    ):
+        return False
+    preference = {
+        "FCS": 1,
+        "FRONTAGE CENTRE SETBACK": 1,
+        "PC": 2,
+        "PROPERTY CENTROID": 2,
+        "PAP": 3,
+        "PROPERTY ACCESS POINT": 3,
+    }
+
+    def rank(point):
+        return point["reliability"], preference.get(point["type"], 4)
+
+    best_rank = min(map(rank, points))
+
+    def selected_best(document):
+        geocode = document.get("geocode")
+        return any(
+            rank(point) == best_rank
+            and json_equal(
+                geocode,
+                {
+                    "latitude": point["lat"],
+                    "longitude": point["lng"],
+                    "type": point["type"],
+                    "reliability": point["reliability"],
+                },
+            )
+            for point in points
+        ) and json_equal(
+            document.get("location"),
+            {"lat": geocode["latitude"], "lon": geocode["longitude"]},
+        )
+
+    return selected_best(before) and selected_best(after)
+
+
+def allowed_change(change, state, quarter, prior_schema, schema, before=None, after=None):
+    # August corrections allow existing tied site points and independently
+    # checked OT federal repairs. Every other same-quarter change is held.
+    if (
+        quarter == "2026.08"
+        and prior_schema == schema == "1.0.0"
+        and before is not None
+        and after is not None
+        and change["path"].split(".")[0] in ("geocode", "location", "allGeocodes")
+    ):
+        return geocode_tie_repair(before, after)
     return (
         quarter == "2026.08"
         and prior_schema == schema == "1.0.0"
@@ -156,7 +240,7 @@ def compare_state(
                         unexpected = False
                         for change in changes:
                             approved = not same_quarter or allowed_change(
-                                change, state, quarter, prior_schema, schema
+                                change, state, quarter, prior_schema, schema, a, b
                             )
                             change["expected"] = approved
                             unexpected |= not approved

@@ -271,7 +271,8 @@ FROM (
           WHEN 'PC'  THEN 2
           WHEN 'PAP' THEN 3
           ELSE 4
-        END ASC
+        END ASC,
+        g.address_site_geocode_pid COLLATE "C" ASC
     ) AS rn
   FROM raw_gnaf___SCHEMA_VERSION__.address_detail ad
   JOIN raw_gnaf___SCHEMA_VERSION__.address_site_geocode g
@@ -296,7 +297,7 @@ SELECT
       'type', COALESCE(gt_all.name, asg.geocode_type_code),
       'reliability', asg.reliability_code
     )
-    ORDER BY asg.reliability_code, asg.geocode_type_code
+    ORDER BY asg.reliability_code, asg.geocode_type_code COLLATE "C", asg.address_site_geocode_pid COLLATE "C"
   ) AS all_geocodes
 FROM raw_gnaf___SCHEMA_VERSION__.address_detail ad
 JOIN raw_gnaf___SCHEMA_VERSION__.address_site_geocode asg

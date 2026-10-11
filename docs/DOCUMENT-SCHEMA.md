@@ -65,7 +65,8 @@ need the correct geography edition.
 ## Geocode and location
 
 `geocode` contains the best available non-retired site geocode. Selection prefers
-the lowest reliability number, then `FCS`, `PC`, `PAP`, then other types. If the
+the lowest reliability number, then `FCS`, `PC`, `PAP`, then other types.
+**Correction:** the source geocode PID breaks remaining ties in byte order. If the
 selected geocode is missing or its coordinates cannot be read as finite numbers,
 `geocode` and `location` are both `null`. No zero-coordinate placeholder is added.
 
@@ -82,7 +83,8 @@ selected geocode is missing or its coordinates cannot be read as finite numbers,
 Each `allGeocodes` item has `lat` and `lng` (numbers), `type` (string), and
 `reliability` (integer, 1–6). Notice the different longitude key: **`lng`** here,
 **`lon`** in `location`, and **`longitude`** in `geocode`. Items are ordered by
-reliability, then source geocode type code. This array can be empty.
+reliability, then source type code, then source geocode PID (byte order).
+This array can be empty.
 
 The source accuracy categories are:
 
