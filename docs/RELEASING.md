@@ -253,15 +253,17 @@ exclusive. Missing endpoints are unbounded. For August 2026, the reference is
 on the machine's current date. Manual packages require an explicit reference date.
 The frozen address fixture uses `2026-02-28`.
 
-For an exact-source rebuild, choose a new patch number and reuse a published lock:
+For an exact-source rebuild, choose a new patch number and reuse a published lock.
+This is the command used for `v2026.08.3`:
 
 ```bash
 gh workflow run quarterly-build.yml --ref main \
   -f source_lock_release_tag=v2026.08.2 -f patch_version=3
 ```
 
-These tags are examples, not a claim that those releases exist. The selected lock
-supplies the source quarters and URLs; do not combine it with URL overrides. The
+That release is already published; choose another unused patch number for a new
+build. The selected lock supplies the source quarters and URLs; do not combine
+it with URL overrides. The
 acquisition job downloads those URLs again and rejects changed bytes. A historical
 release without a lock cannot prove byte-identical upstream inputs. Its document
 files can still be compared, but do not invent missing archive checksums.

@@ -8,14 +8,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Versioning rules for flat-white:**
 
 - **Major (1.0.0):** Breaking changes to the NDJSON output schema (field removal, type change, rename, semantic geography change)
-- **Minor (0.2.0):** New fields, new output formats, new states, additive changes
-- **Patch (0.1.1):** Bug fixes, performance improvements, internal refactors, documentation
+- **Minor (1.1.0):** New fields, new output formats, new states, additive changes
+- **Patch (1.0.1):** Bug fixes, performance improvements, internal refactors, documentation
 
 The NDJSON schema is the contract. See [the document schema](docs/DOCUMENT-SCHEMA.md).
 Data-release tags such as `v2026.08.1` are separate from semantic schema versions.
 Historical entries retain the contract and source versions published at the time.
 
 ## [Unreleased]
+
+## [v2026.08.3] - 2026-10-12
+
+[Published enrichment release](https://github.com/jbejenar/flat-white/releases/tag/v2026.08.3):
+**15,108,510 addresses, schema 1.1.0, ASGS 2026**. Read the
+[schema 1.1 upgrade guide](docs/MIGRATING-TO-SCHEMA-1.1.md) before switching consumers.
+
+- Add `fallbackGeocode` to every document. The 14,822,288 addresses with site
+  coordinates have a null fallback. Another 286,222 have a separate fallback:
+  276,837 street and 9,385 locality. Their primary geometry remains null.
+- Fill Camden wards for all 57,844 eligible addresses. Exclude 947 addresses
+  without a sufficiently precise site point. There are no unmatched or ambiguous
+  eligible points. Other NSW councils still require qualification, except the
+  City of Sydney, which is explicitly recorded as undivided.
+- Verify every document and independently recompute each eligible ward assignment
+  from the locked polygons. All nine state builds passed on their first attempt;
+  national schema, quality, coverage and duplicate checks passed.
+- Compare every PID and field with `v2026.08.2`, using identical source-archive
+  bytes. No IDs were added or removed. Only `fallbackGeocode` and the qualified
+  Camden ward fills changed; all existing coordinates and other fields are
+  unchanged. There are zero unexpected changes.
+- Ship valid-site selection, default-coordinate diagnostics, reader compatibility
+  checks and corrected GDA2020 / EPSG:7844 GeoParquet metadata through
+  [PR #221](https://github.com/jbejenar/flat-white/pull/221). Qualified ward sources,
+  precision gates and independent spatial verification are in
+  [PR #224](https://github.com/jbejenar/flat-white/pull/224).
+
+The [verification report](https://github.com/jbejenar/flat-white/releases/download/v2026.08.3/verification-report.md),
+[full comparison](https://github.com/jbejenar/flat-white/releases/download/v2026.08.3/comparison.md)
+and [evidence index](https://github.com/jbejenar/flat-white/releases/download/v2026.08.3/evidence-index.json)
+record the release checks. All 58 evidence files match their published GitHub
+checksums. Read-only checks verified all 69 S3 data, mapping and evidence objects;
+the live catalogue shows the correct count, schema and ASGS year.
+
+## [v2026.08.2] - 2026-10-12
+
+[Published correction](https://github.com/jbejenar/flat-white/releases/tag/v2026.08.2):
+**15,108,510 addresses, schema 1.0.0, ASGS 2026**, using the August source quarter.
+
+- Restore 3,803 Other Territories federal electorate assignments. The two remaining
+  nulls are documented source-boundary exceptions.
+- Make site-point ties deterministic. Three SA addresses select a different,
+  equally ranked point already present in their published alternatives. All seven
+  other state files retain identical document content.
+- Compare every address ID and field with `v2026.08`: no additions, removals,
+  duplicate IDs or unexpected changes. National schema and quality checks pass.
+- Publish the source lock, reconciliation, full changed-field evidence and checksums.
+  Read-only checks verified all 47 S3 data, mapping and evidence objects; the
+  catalogue was refreshed successfully. A recovery rehearsal reconstructed the
+  public assets and preserved the existing manifest without S3 writes.
+
+The earlier `v2026.08.1` draft remains unpublished. This correction supersedes it.
+The original August release did not record source-archive checksums; its document
+outputs were compared in full. New builds can reuse this correction's source lock.
+
+## [v2026.08] - 2026-09-29
+
+[Original August release](https://github.com/jbejenar/flat-white/releases/tag/v2026.08):
+**15,108,510 addresses, schema 1.0.0, ASGS 2026**. This introduced the breaking
+census-geography change from ASGS 2021. See the
+[ASGS migration guide](docs/MIGRATING-TO-ASGS-2026.md) before upgrading a 0.x consumer.
+
+## ASGS 2026 implementation notes — September 2026
+
+These notes span several PRs. The dated release entries above identify the
+published datasets and their contracts.
 
 ### Documentation
 
