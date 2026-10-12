@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { AddressDocumentSchema } from "../../src/schema.js";
+import { AddressDocumentSchema, AddressDocumentWriterSchema } from "../../src/schema.js";
 
 /** Minimal valid document — all required fields, nullable fields set to null, arrays empty. */
 function validDocument() {
@@ -180,5 +181,52 @@ describe("AddressDocumentSchema", () => {
     (doc as Record<string, unknown>).primarySecondary = "SECONDARY";
     const result = AddressDocumentSchema.safeParse(doc);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("schema 1.1 reader and writer compatibility", () => {
+  it("reads actual historical 1.0 documents without requiring a fallback field", () => {
+    const archive: { samples: { document: unknown }[] } = JSON.parse(
+      readFileSync("fixtures/schema-1.0-samples.json", "utf8"),
+    );
+    expect(archive.samples).toHaveLength(18);
+    for (const { document: sample } of archive.samples) {
+      expect(AddressDocumentSchema.safeParse(sample).success).toBe(true);
+      expect(AddressDocumentWriterSchema.safeParse(sample).success).toBe(false);
+    }
+  });
+  it("requires the writer field, correct precision and separation from primary geometry", () => {
+    const base = validDocument();
+    expect(AddressDocumentWriterSchema.safeParse({ ...base, fallbackGeocode: null }).success).toBe(
+      true,
+    );
+    const fallback = {
+      latitude: -37,
+      longitude: 145,
+      typeCode: "STL",
+      type: "STREET LOCALITY",
+      source: "GNAF_DEFAULT",
+      precision: "street",
+    };
+    expect(
+      AddressDocumentWriterSchema.safeParse({ ...base, fallbackGeocode: fallback }).success,
+    ).toBe(false);
+    const coarse = {
+      ...base,
+      geocode: null,
+      location: null,
+      allGeocodes: [],
+      fallbackGeocode: fallback,
+    };
+    expect(AddressDocumentWriterSchema.safeParse(coarse).success).toBe(true);
+    expect(
+      AddressDocumentWriterSchema.safeParse({
+        ...coarse,
+        fallbackGeocode: { ...fallback, precision: "locality" },
+      }).success,
+    ).toBe(false);
+    expect(
+      AddressDocumentWriterSchema.safeParse({ ...coarse, location: base.location }).success,
+    ).toBe(false);
   });
 });

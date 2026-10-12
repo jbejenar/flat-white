@@ -3,7 +3,7 @@
  *
  * Single source of truth: address_full.sql is the canonical flatten query.
  * This script extracts the SELECT body and rewrites CTE references to use
- * the pre-materialized temp tables created by address_full_prep.sql.
+ * temp tables created by address_geocodes_prep.sql and address_full_prep.sql.
  *
  * Prevents drift between the legacy (CTE) and production (materialize) paths
  * that caused the v2026.04 streetType regression.
@@ -36,7 +36,7 @@ const GENERATED_HEADER = `-- address_full_main.sql — AUTO-GENERATED from addre
 --   npm run generate:sql
 --
 -- Main flatten SELECT using pre-materialized temp tables.
--- Run address_full_prep.sql first to create the temp tables.
+-- Run address_geocodes_prep.sql and address_full_prep.sql first to create the temp tables.
 -- This query is a simple multi-join — efficient for cursor-based streaming at scale.
 --
 -- Usage: Called from src/flatten.ts via cursor-based streaming.
@@ -90,30 +90,35 @@ function generate(): string {
 
 function main() {
   const checkMode = process.argv.includes("--check");
-  const generated = generate();
-
-  if (checkMode) {
-    let existing: string;
-    try {
-      existing = readFileSync(OUTPUT_PATH, "utf-8");
-    } catch {
-      console.error(
-        "ERROR: sql/address_full_main.sql does not exist. Run: npx tsx scripts/generate-main-sql.ts",
-      );
-      process.exit(1);
+  const source = readFileSync(SOURCE_PATH, "utf-8");
+  const geocodes = source.split("-- GEOCODE_CTES_START\n")[1]?.split("-- GEOCODE_CTES_END")[0];
+  if (!geocodes || !geocodes.trimEnd().endsWith(","))
+    throw new Error("Missing geocode CTE markers or trailing comma in master SQL");
+  const outputs = new Map([
+    [OUTPUT_PATH, generate()],
+    [
+      resolve(SQL_DIR, "address_geocodes_prep.sql"),
+      `-- AUTO-GENERATED from address_full.sql. Run npm run generate:sql; do not edit.
+DROP TABLE IF EXISTS tmp_address_geocodes;
+CREATE TEMPORARY TABLE tmp_address_geocodes AS
+WITH
+${geocodes.trimEnd().slice(0, -1)}
+SELECT * FROM address_geocodes;
+CREATE UNIQUE INDEX ON tmp_address_geocodes (address_detail_pid);
+ANALYZE tmp_address_geocodes;
+`,
+    ],
+  ]);
+  for (const [path, generated] of outputs) {
+    if (checkMode) {
+      if (readFileSync(path, "utf-8") !== generated)
+        throw new Error(`${path} is out of date. Run npm run generate:sql`);
+      console.log(`OK: ${path} is up to date`);
+    } else {
+      writeFileSync(path, generated, "utf-8");
+      console.log(`Generated ${path} from address_full.sql`);
     }
-    if (existing !== generated) {
-      console.error(
-        "ERROR: sql/address_full_main.sql is out of date. Run: npx tsx scripts/generate-main-sql.ts",
-      );
-      process.exit(1);
-    }
-    console.log("OK: sql/address_full_main.sql is up to date");
-    return;
   }
-
-  writeFileSync(OUTPUT_PATH, generated, "utf-8");
-  console.log("Generated sql/address_full_main.sql from sql/address_full.sql");
 }
 
 main();

@@ -6,7 +6,7 @@
 > synthetic geographic assignments.
 
 The table below counts the **committed output**, not extraction goals. It was
-checked against all 451 documents in `expected-output.ndjson` for schema 1.0.0.
+checked against all 451 documents in `expected-output.ndjson` for schema 1.1.0.
 Categories overlap, so counts must not be added together. Each PID is a concrete
 example that can be found in the baseline.
 
@@ -22,7 +22,7 @@ example that can be found in the baseline.
 | Address aliases                   | 74        | `GAVIC411809712` | Non-empty aliases array.                                                   |
 | Secondary addresses               | 193       | `GAVIC411087566` | Child-address classification.                                              |
 | Parent with exported children     | 1         | `GAVIC423911067` | Primary classification and a non-empty secondaries array.                  |
-| Multiple geocodes                 | 408       | `GAVIC411087566` | At least two exported geocodes; tests aggregation and best-code selection. |
+| Multiple geocodes                 | 405       | `GAVIC411087566` | At least two exported geocodes; tests aggregation and best-code selection. |
 | Ward assignment                   | 449       | `GAVIC411087566` | Non-null ward after administrative spatial processing.                     |
 | Lot without street number         | 30        | `GAVIC411935231` | Lot present and numberFirst null.                                          |
 | Building name                     | 33        | `GAVIC411670057` | Named building.                                                            |
@@ -38,9 +38,6 @@ accepted as precomputed tags.
 
 ## Known gaps
 
-- **Three or more geocodes:** no committed output document has three geocodes.
-  The fixture covers two-geocode addresses. Older documentation's “50+ with 3+”
-  was an extraction target, not achieved output coverage.
 - **Non-gazetted localities:** no committed address document has a locality class
   other than `GAZETTED LOCALITY`. Authority-table rows alone do not exercise this path.
 - **Broad parent/child coverage:** only one exported parent has exported children.
@@ -68,3 +65,20 @@ This command is for the small committed fixture. Use streaming checks for
 production files. The [schema reference](SCHEMA-REFERENCE.md) describes source
 rows and columns; the [fixture guide](README.md#make-a-deliberate-fixture-change)
 explains how to change or replace the snapshot safely.
+
+## New schema 1.1 geocode cases
+
+`seed-geocode-cases.sql` changes four fixture addresses with clearly synthetic
+source rows. The base extract is unchanged. `GAVIC411087566` has three valid
+points and an equal-rank tie inserted in reverse PID order. `GAVIC411441273`
+has retired site points and identical street defaults. `GAVIC411670057` has an
+invalid active site point and a locality default. `GAVIC411685451` has invalid
+site and default coordinates, so both exported coordinates remain null.
+
+The committed output has 417 primary site points, 32 street fallbacks, one
+locality fallback and one address without either. The integration test also
+checks source reliability before type preference, unknown precision, retired
+default exclusion and a conflicting-default export failure. CTE and materialized
+output remain byte-identical. The 18 untouched documents in `schema-1.0-samples.json`
+come from the published v2026.08 sample audit, two from each state/territory;
+they test reader compatibility independently of the synthetic fixture.

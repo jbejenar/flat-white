@@ -19,6 +19,16 @@ export const GeocodeSchema = z.object({
   reliability: z.number().int().min(1).max(6),
 });
 
+/** Coarse/default coordinates are deliberately separate from the site geometry. */
+export const FallbackGeocodeSchema = z.object({
+  latitude: z.number().min(-44).max(-9),
+  longitude: z.number().min(96).max(168),
+  typeCode: z.string().min(1),
+  type: z.string().min(1),
+  source: z.literal("GNAF_DEFAULT"),
+  precision: z.enum(["street", "locality", "unknown"]),
+});
+
 export const LocationSchema = z.object({
   lat: z.number(),
   lon: z.number(),
@@ -111,6 +121,8 @@ export const AddressDocumentSchema = z.object({
   aliasPrincipal: z.enum(["PRINCIPAL", "ALIAS"]),
   primarySecondary: z.enum(["PRIMARY", "SECONDARY"]).nullable(),
   geocode: GeocodeSchema.nullable(),
+  // Optional for readers of schema 1.0.0; every 1.1.0 writer emits object or null.
+  fallbackGeocode: FallbackGeocodeSchema.nullable().optional(),
   location: LocationSchema.nullable(),
   allGeocodes: z.array(AllGeocodesItemSchema),
   locality: LocalitySchema,
@@ -118,6 +130,45 @@ export const AddressDocumentSchema = z.object({
   boundaries: BoundariesSchema,
   aliases: z.array(AliasSchema),
   secondaries: z.array(SecondarySchema),
+});
+
+/** Stricter producer contract; keep the reader compatible with historical documents. */
+export const AddressDocumentWriterSchema = AddressDocumentSchema.extend({
+  fallbackGeocode: FallbackGeocodeSchema.nullable(),
+}).superRefine((doc, ctx) => {
+  const issue = (path: string[], message: string) =>
+    ctx.addIssue({ code: "custom", path, message });
+  if (doc.geocode) {
+    if (
+      !doc.allGeocodes.some(
+        (point) =>
+          point.lat === doc.geocode?.latitude &&
+          point.lng === doc.geocode.longitude &&
+          point.type === doc.geocode.type &&
+          point.reliability === doc.geocode.reliability,
+      )
+    )
+      issue(["geocode"], "Selected site point must occur in allGeocodes");
+    if (doc.fallbackGeocode !== null)
+      issue(["fallbackGeocode"], "A site point excludes a fallback");
+    if (doc.location?.lat !== doc.geocode.latitude || doc.location?.lon !== doc.geocode.longitude)
+      issue(["location"], "Location must copy the selected site point");
+  } else if (doc.location !== null || doc.allGeocodes.length !== 0) {
+    issue(["geocode"], "Missing site point requires null location and no site geocodes");
+  }
+  for (const point of [
+    ...(doc.geocode ? [{ lat: doc.geocode.latitude, lng: doc.geocode.longitude }] : []),
+    ...doc.allGeocodes,
+  ]) {
+    if (point.lat < -44 || point.lat > -9 || point.lng < 96 || point.lng > 168)
+      issue(["geocode"], "Site point lies outside the supported Australian bounds");
+  }
+  if (doc.fallbackGeocode) {
+    const code = doc.fallbackGeocode.typeCode;
+    const precision = code === "STL" ? "street" : code === "LOC" ? "locality" : "unknown";
+    if (doc.fallbackGeocode.precision !== precision)
+      issue(["fallbackGeocode", "precision"], "Precision must follow the source type code");
+  }
 });
 
 // --- Locality-only document schema ---
@@ -137,6 +188,7 @@ export const LocalityDocumentSchema = z.object({
 
 // --- Inferred TypeScript types ---
 
+export type FallbackGeocode = z.infer<typeof FallbackGeocodeSchema>;
 export type Geocode = z.infer<typeof GeocodeSchema>;
 export type Location = z.infer<typeof LocationSchema>;
 export type AllGeocodesItem = z.infer<typeof AllGeocodesItemSchema>;

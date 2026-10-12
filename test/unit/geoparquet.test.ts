@@ -175,7 +175,12 @@ describe("convertToGeoparquet", () => {
     expect(geo.primary_column).toBe("geometry");
     expect(geo.columns.geometry.encoding).toBe("WKB");
     expect(geo.columns.geometry.geometry_types).toEqual(["Point"]);
-    expect(geo.columns.geometry.crs.id).toEqual({ authority: "EPSG", code: 4326 });
+    expect(geo.columns.geometry.crs.id).toEqual({ authority: "EPSG", code: 7844 });
+    expect(geo.columns.geometry.crs.name).toBe("GDA2020");
+    expect(geo.columns.geometry.crs.datum.ellipsoid).toMatchObject({
+      name: "GRS 1980",
+      inverse_flattening: 298.257222101,
+    });
   });
 
   it("computes correct bounding box", async () => {
@@ -210,7 +215,18 @@ describe("convertToGeoparquet", () => {
     const geoparquetPath = tmpPath(".geoparquet");
     files.push(ndjsonPath, geoparquetPath);
 
-    writeFileSync(ndjsonPath, makeDoc({ geocode: null }) + "\n");
+    const fallback = {
+      latitude: -37,
+      longitude: 145,
+      typeCode: "STL",
+      type: "STREET LOCALITY",
+      source: "GNAF_DEFAULT",
+      precision: "street",
+    };
+    writeFileSync(
+      ndjsonPath,
+      makeDoc({ geocode: null, location: null, fallbackGeocode: fallback }) + "\n",
+    );
 
     await convertToGeoparquet({ inputPath: ndjsonPath, outputPath: geoparquetPath });
 
@@ -220,6 +236,7 @@ describe("convertToGeoparquet", () => {
     await reader.close();
 
     expect(row.geometry).toBeNull();
+    expect(JSON.parse(row.fallbackGeocode as string)).toEqual(fallback);
   });
 
   it("preserves all scalar and complex fields alongside geometry", async () => {

@@ -28,6 +28,7 @@ SQL
     fi
     printf 'CREATE TEMP TABLE cte_rows AS\n'
     sed 's/__SCHEMA_VERSION__/202602/g' sql/address_full.sql
+    sed 's/__SCHEMA_VERSION__/202602/g' sql/address_geocodes_prep.sql
     sed 's/__SCHEMA_VERSION__/202602/g' sql/address_full_prep.sql
     printf 'CREATE TEMP TABLE materialized_rows AS\n'
     sed 's/__SCHEMA_VERSION__/202602/g' sql/address_full_main.sql

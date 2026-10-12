@@ -20,7 +20,7 @@ export interface GeoparquetConvertOptions {
 }
 
 /**
- * Encode a WGS 84 POINT as WKB (Well-Known Binary).
+ * Encode a POINT (the caller supplies CRS metadata) as WKB (Well-Known Binary).
  *
  * Layout (21 bytes, little-endian):
  *   [0]    byte order: 0x01 (LE)
@@ -69,6 +69,7 @@ const GEOPARQUET_SCHEMA = new ParquetSchema({
   primarySecondary: { type: "UTF8", optional: true },
   // Complex fields serialized as JSON strings
   geocode: { type: "UTF8", optional: true },
+  fallbackGeocode: { type: "UTF8", optional: true },
   location: { type: "UTF8", optional: true },
   allGeocodes: { type: "UTF8" },
   locality: { type: "UTF8" },
@@ -91,14 +92,14 @@ function buildGeoMetadata(bbox: [number, number, number, number] | null): Record
     crs: {
       $schema: "https://proj.org/schemas/v0.7/projjson.schema.json",
       type: "GeographicCRS",
-      name: "WGS 84",
+      name: "GDA2020",
       datum: {
         type: "GeodeticReferenceFrame",
-        name: "World Geodetic System 1984",
+        name: "Geocentric Datum of Australia 2020",
         ellipsoid: {
-          name: "WGS 84",
+          name: "GRS 1980",
           semi_major_axis: 6378137,
-          inverse_flattening: 298.257223563,
+          inverse_flattening: 298.257222101,
         },
       },
       coordinate_system: {
@@ -118,7 +119,7 @@ function buildGeoMetadata(bbox: [number, number, number, number] | null): Record
           },
         ],
       },
-      id: { authority: "EPSG", code: 4326 },
+      id: { authority: "EPSG", code: 7844 },
     },
   };
 

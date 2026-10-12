@@ -228,11 +228,13 @@ else:
     },
   );
 
-  function addEvidence() {
+  function addEvidence(schemaVersion = "1.0.0") {
+    metadata.schemaVersion = schemaVersion;
     metadata.sourceLock = "source-lock.json";
     updateMetadata();
     writeFileSync(join(root, "public/metadata.json"), JSON.stringify(metadata));
     for (const name of [
+      ...(schemaVersion === "1.1.0" ? states.map((state) => `geocodes-${state}.json`) : []),
       "source-lock.json",
       "verification-report.json",
       "DOCUMENT-SCHEMA.md",
@@ -314,6 +316,29 @@ else:
     );
     expect(corrupted.status).not.toBe(0);
     expect(corrupted.stderr).toContain("Evidence checksum mismatch");
+  });
+
+  it("requires and resolves every schema 1.1 geocode diagnostic in recovery", () => {
+    addEvidence("1.1.0");
+    for (const [path, value] of [
+      ["package.json", { version: "1.1.0" }],
+      [
+        "opensearch/address-mappings.json",
+        { _meta: { schemaVersion: "1.1.0", asgsYear: 2026 }, properties: {} },
+      ],
+    ])
+      responses[`${prefix}/contents/${path}?ref=${commit}`] = {
+        encoding: "base64",
+        content: Buffer.from(JSON.stringify(value)).toString("base64"),
+      };
+    const result = plan();
+    expect(result.status, result.stderr).toBe(0);
+    const resolved = JSON.parse(readFileSync(join(root, "plan.json"), "utf8"));
+    for (const state of states) expect(resolved.evidence).toHaveProperty(`geocodes-${state}.json`);
+    release.assets = release.assets.filter((asset) => asset.name !== "geocodes-OT.json");
+    const missing = plan();
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain("geocodes-OT.json");
   });
 
   it.each(["missing-index", "missing-source", "different-digest"])(

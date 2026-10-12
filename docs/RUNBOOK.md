@@ -252,3 +252,12 @@ metadata, and the affected workflow outcome. State separately whether the releas
 is public and whether the S3 mirror completed. Link the run and explain the root
 cause, change and verification. Do not describe a passing fixture or preflight as
 a completed production build.
+
+## Schema 1.1 geocode failures
+
+**New in 1.1.0:** inspect the state's `.ndjson.geocodes.json` when flattening
+reports conflicting defaults. It names affected PIDs and preserves counts even
+though publication stops. Check the active raw defaults for those addresses;
+identical coordinate/type duplicates are allowed, conflicting ones are not.
+Do not pick a row arbitrarily or move default coordinates into the primary point.
+See the [upgrade guide](MIGRATING-TO-SCHEMA-1.1.md) for the consumer contract.

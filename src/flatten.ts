@@ -9,19 +9,21 @@
  * regardless of dataset size.
  */
 
-import { createWriteStream, readFileSync } from "node:fs";
+import { createWriteStream, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import { Readable, Transform } from "node:stream";
 import postgres from "postgres";
-import { AddressDocumentSchema } from "./schema.js";
+import { AddressDocumentWriterSchema } from "./schema.js";
 import type { AddressDocument } from "./schema.js";
 import { ProgressLogger } from "./progress.js";
+import { GeocodeDiagnostics } from "./geocode-diagnostics.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SQL_PATH = resolve(__dirname, "..", "sql", "address_full.sql");
 const PREP_SQL_PATH = resolve(__dirname, "..", "sql", "address_full_prep.sql");
+const GEOCODE_PREP_SQL_PATH = resolve(__dirname, "..", "sql", "address_geocodes_prep.sql");
 const MAIN_SQL_PATH = resolve(__dirname, "..", "sql", "address_full_main.sql");
 
 /**
@@ -140,6 +142,7 @@ export function composeDocument(row: Record<string, unknown>, version: string): 
     aliasPrincipal: "PRINCIPAL",
     primarySecondary: mapPrimarySecondary(row.primary_secondary),
     geocode,
+    fallbackGeocode: (row.fallback_geocode as AddressDocument["fallbackGeocode"]) ?? null,
     location: composeLocation(geocode),
     allGeocodes: allGeocodes
       ? allGeocodes.map((g) => ({
@@ -306,6 +309,7 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
   const schemaVersion = deriveSchemaVersion(version);
   let count = 0;
   let errors = 0;
+  const geocodes = new GeocodeDiagnostics(version);
 
   logger?.stageStart("flatten");
 
@@ -340,7 +344,12 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
 
       if (materialize) {
         // Production mode: pre-materialize aggregations as temp tables, then stream the simple join
-        const prepSql = applySchemaVersion(readFileSync(PREP_SQL_PATH, "utf-8"), schemaVersion);
+        const prepSql = applySchemaVersion(
+          readFileSync(GEOCODE_PREP_SQL_PATH, "utf-8") +
+            "\n" +
+            readFileSync(PREP_SQL_PATH, "utf-8"),
+          schemaVersion,
+        );
         console.log("[flatten] Materializing aggregation tables...");
         await reserved.unsafe(prepSql); // DDL: creates temp tables in the reserved connection's session
         console.log("[flatten] Aggregation tables ready. Starting cursor stream...");
@@ -367,7 +376,8 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
         transform(row: Record<string, unknown>, _encoding, callback) {
           try {
             const doc = composeDocument(row, version);
-            const result = AddressDocumentSchema.safeParse(doc);
+            geocodes.observe(row, doc);
+            const result = AddressDocumentWriterSchema.safeParse(doc);
             if (result.success) {
               count++;
               logger?.progress("flatten", { rows: count });
@@ -390,6 +400,14 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
       const output = createWriteStream(outputPath);
 
       await pipeline(source, compose, output);
+      const diagnostics = geocodes.report();
+      writeFileSync(`${outputPath}.geocodes.json`, JSON.stringify(diagnostics, null, 2) + "\n");
+      if (!diagnostics.passed) {
+        errors += diagnostics.affectedAddresses.conflictingDefaults;
+        console.error(
+          "[flatten] Conflicting active default geocodes; publication is blocked. See geocodes.json.",
+        );
+      }
 
       logger?.stageEnd("flatten", { rows: count });
     } finally {

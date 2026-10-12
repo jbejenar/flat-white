@@ -56,3 +56,8 @@ For a derivative-dataset listing, identify both upstream datasets, the selected
 source quarters, output format, schema version and ASGS year. Preserve the
 [source attribution and licensing](../README.md#data-sources-and-attribution).
 The Apache 2.0 code licence does not replace the source data's terms.
+
+**Schema 1.1 follow-up:** these drafts describe the original ASGS migration.
+For a 1.1 announcement, also explain the separate fallback precision and corrected
+GeoParquet CRS from the [upgrade guide](MIGRATING-TO-SCHEMA-1.1.md). Use the published
+release metadata for availability and counts.

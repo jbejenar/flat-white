@@ -5,7 +5,7 @@
 > their original code and schema. Read the [migration guide](MIGRATING-TO-ASGS-2026.md)
 > before publishing or consuming the new contract.
 
-A code version and a data release answer different questions. Schema `1.0.0`
+A code version and a data release answer different questions. Schema `1.1.0`
 describes the document contract. A tag such as `v2026.08.1` identifies a particular
 data build. All versions below are examples; check existing releases before
 choosing a tag.
@@ -78,7 +78,7 @@ both sources; automatic discovery may choose different compatible quarters.
 
 4. Inspect all nine state jobs, concatenation and release verification. Use the
    [runbook](RUNBOOK.md) for failures; do not bypass failed checks.
-5. Review the release assets and metadata. Confirm `schemaVersion: "1.0.0"`,
+5. Review the release assets and metadata. Confirm `schemaVersion: "1.1.0"`,
    `asgsYear: 2026`, the intended source versions, per-state counts and total count.
    Read the verification and build-over-build comparison reports, especially for
    unexplained count drops or missing geographic assignments.
@@ -313,14 +313,14 @@ A GitHub metadata excerpt for an illustrative patch is:
   "version": "2026.08.1",
   "gnafVersion": "2026.08",
   "adminBoundariesVersion": "2026.08",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "asgsYear": 2026
 }
 ```
 
 S3 uses paths such as `data/address/2026-08-1/` and
 `manifests/address-2026-08-1.json`. Its manifest keeps `manifest_version: 2` and adds
-`schema_version: "1.0.0"` and `asgs_year: 2026`. See the
+`schema_version: "1.1.0"` and `asgs_year: 2026`. See the
 [migration guide's metadata table](MIGRATING-TO-ASGS-2026.md#know-which-version-you-are-checking)
 for the differences between release, source, schema and manifest versions.
 
@@ -376,3 +376,19 @@ version; do not remove or rewrite a published manifest to force a retry.
 For read-only diagnosis, compare the public release metadata, workflow logs and
 S3 manifest/object metadata. Keep any publication or repair action separate from
 that inspection. See the [runbook](RUNBOOK.md#release-or-s3-failure).
+
+## Schema 1.1 geocode release gate
+
+**New in 1.1.0:** every writer emits `fallbackGeocode`, even when null. Release
+verification requires that field and checks each state's `geocodes-STATE.json`
+against the compressed artifact. Conflicting active defaults block publication;
+invalid source points remain visible as affected-address counts and PID samples.
+August 2026 OT must have 3,394 site points and 411 separate defaults (332 street,
+79 locality). Fallbacks must never populate primary geometry.
+
+The evidence index includes these diagnostics and the
+[schema 1.1 upgrade guide](MIGRATING-TO-SCHEMA-1.1.md). Complete comparison permits
+only the reviewed new field and valid site selection or ordering repairs that
+preserve the valid source-point multiset. Changes to unrelated fields or PIDs
+hold the release for investigation. Read the full change records before resolving
+a held draft; passing row counts alone are insufficient.

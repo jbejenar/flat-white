@@ -408,3 +408,11 @@ mesh-block section of the pinned upstream census preparation SQL. The resulting
 | `state`                    | varchar(3)                  | VIC in this fixture.                                                   |
 | `mb_ar_sqkm`               | numeric(11,2)               | Synthetic area value.                                                  |
 | `geom`                     | geometry(MultiPolygon,7844) | Synthetic GDA2020 geometry.                                            |
+
+## New schema 1.1 geocode overlay
+
+The table counts above describe `seed-postgres.sql`. `seed-geocode-cases.sql`
+adds five site rows and one default row, and retires or modifies candidates for
+four named fixture addresses. Source date columns (`date_created`, `date_retired`)
+and `address_default_geocode_pid` are used by this policy. See
+[the measured cases](edge-cases.md#new-schema-11-geocode-cases) before changing it.
