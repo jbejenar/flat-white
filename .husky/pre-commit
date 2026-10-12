@@ -1,1 +1,1 @@
-npx lint-staged && ./scripts/pre-commit-checks.sh
+npx lint-staged --hide-unstaged && ./scripts/pre-commit-checks.sh

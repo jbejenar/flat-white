@@ -125,6 +125,19 @@ not certification of every field or of the complete dataset.
   reconstruction and idempotency for an existing mirror. See
   [the procedure](docs/RELEASING.md#recover-a-draft-or-incomplete-mirror).
 
+## Follow-up findings from the dependency audit
+
+- **Runtime migration required for newer Parquet:** `@dsnp/parquetjs` 1.8.9
+  and 1.9.x require Node 24.18 or later. The October rollup keeps 1.8.8 pinned
+  to preserve Node 22 support; [PR #217](https://github.com/jbejenar/flat-white/pull/217)
+  records the deferred update. Before removing the pin, update the declared
+  runtime, `.nvmrc`, both Docker stages, development container and setup guidance
+  together. Match Node type definitions to the supported runtime and rerun strict
+  installs, Parquet/GeoParquet round trips, fixtures and container checks.
+- **TypeScript 7 needs compatible lint tooling:** keep TypeScript 6.0.3 while
+  `typescript-eslint` 8.71.1 requires TypeScript below 6.1. Upgrade the compiler
+  and its lint tooling together when upstream supports that combination.
+
 ## Historical work log — April 2026
 
 The dates, release targets, completed items and unchecked tasks below describe

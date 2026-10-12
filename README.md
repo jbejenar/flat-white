@@ -170,6 +170,11 @@ For development, use the committed fixture. It exercises preparation, spatial
 joins, both flatten SQL paths, schema checks and the regression baseline without
 a national download. You need Node.js 22.22.1 or newer and Docker with Compose.
 
+**Dependency compatibility:** npm now rejects packages that require an unsupported
+Node version, both locally and in the Docker build. Node type definitions follow
+the Node 22 runtime. Parquet stays at `@dsnp/parquetjs` 1.8.8 because newer releases
+require Node 24.18 or later; upgrading it needs a coordinated runtime migration.
+
 ```bash
 git clone --recurse-submodules https://github.com/jbejenar/flat-white.git
 cd flat-white

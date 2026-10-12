@@ -14,7 +14,7 @@ FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 
 # Install dependencies first (cache layer)
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci --ignore-scripts
 
 # Copy source and build inputs
