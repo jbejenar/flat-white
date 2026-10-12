@@ -18,6 +18,7 @@ def fingerprint(root):
             "package.json",
             "package-lock.json",
             ".nvmrc",
+            ".npmrc",
             "tsconfig.json",
             "src/",
             "sql/",
