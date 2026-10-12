@@ -32,7 +32,11 @@ the published manifest and all 11 data/mapping object sizes and SHA-256 checksum
      only street/locality coordinates exist.
   4. Qualify official NSW council ward snapshots, starting with the sampled
      councils where licensing and currency permit. Assign only qualifying site
-     points; publish coverage reasons and dated source evidence.
+     points; publish coverage reasons and dated source evidence. Camden is qualified
+     for 31 August 2026; the isolated implementation includes a source lock,
+     strict site-point eligibility, independent artifact checks and evidence mirroring.
+     The 451-document baseline, real SQL ward integration and fixture container pass.
+     See docs/NSW-WARD-SOURCES.md. National schema 1.1 publication is still pending.
   5. Publish immutable patch releases, verify S3 and catalogue evidence, and
      compare all PIDs and changed fields with the prior release.
 - Track [upstream loader PR #103](https://github.com/minus34/gnaf-loader/pull/103).

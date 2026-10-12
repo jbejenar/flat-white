@@ -416,3 +416,10 @@ adds five site rows and one default row, and retires or modifies candidates for
 four named fixture addresses. Source date columns (`date_created`, `date_retired`)
 and `address_default_geocode_pid` are used by this policy. See
 [the measured cases](edge-cases.md#new-schema-11-geocode-cases) before changing it.
+
+## Synthetic council ward checks
+
+`ward-sources/` contains tiny polygons and a fixture-only lock. Normal exports
+remain the 451 Victorian baseline. `test/integration/wards/test.sh` creates an
+NSW crosswalk in a rollback-only transaction and checks both export paths,
+duplicate parts, overlaps, gaps, precision, fallback exclusion and council status.

@@ -68,7 +68,17 @@ SELECT
   -- Admin boundaries
   ab.lga_pid,
   ab.lga_name,
-  ab.ward_name,
+  CASE WHEN ap.state = 'NSW'
+    THEN CASE WHEN wm.matches = 1 THEN wm.ward_name ELSE NULL END
+    ELSE ab.ward_name END                               AS ward_name,
+  ws.source_id                                         AS ward_source_id,
+  CASE WHEN ap.state <> 'NSW' THEN 'not_applicable'
+    WHEN ws.status = 'undivided' THEN 'undivided'
+    WHEN ws.source_id IS NULL THEN 'unsupported'
+    WHEN NOT we.eligible THEN 'insufficient_precision'
+    WHEN wm.matches = 0 THEN 'unmatched'
+    WHEN wm.matches > 1 THEN 'ambiguous'
+    ELSE 'matched' END                                 AS ward_reason,
   ab.se_lower_name                                      AS state_electorate_name,
   ab.ce_name                                            AS commonwealth_electorate_name,
 
@@ -132,6 +142,22 @@ LEFT JOIN tmp_street_alias_agg saa
 -- Admin boundaries
 LEFT JOIN gnaf___SCHEMA_VERSION__.address_principal_admin_boundaries ab
   ON ab.gnaf_pid = ap.gnaf_pid
+
+-- Council sources require an exact Geoscape LGA crosswalk and a precise selected
+-- site point. Default/street/locality points never enter this assignment.
+LEFT JOIN tmp_ward_sources ws ON ap.state = 'NSW' AND ws.lga_code = ab.lga_pid
+LEFT JOIN LATERAL (
+  SELECT COALESCE((ag.best_geocode->>'reliability')::integer IN (1,2)
+    AND EXISTS (SELECT 1 FROM tmp_ward_types WHERE code = ag.best_geocode->>'typeCode'), false) AS eligible
+) we ON ap.state = 'NSW'
+LEFT JOIN LATERAL (
+  SELECT count(DISTINCT w.ward_id) AS matches, min(w.name) AS ward_name
+  FROM tmp_ward_polygons w
+  WHERE ws.status = 'enabled' AND we.eligible AND w.source_id = ws.source_id
+    AND ST_Covers(w.geom, ST_SetSRID(ST_MakePoint(
+      (ag.best_geocode->>'longitude')::double precision,
+      (ag.best_geocode->>'latitude')::double precision),7844))
+) wm ON ap.state = 'NSW'
 
 -- ASGS 2026 lookup, created by upstream 02-02e-prep-census-2026-bdys-tables.sql.
 -- Schema 1.x must never substitute the 2021 codes or hierarchy here.

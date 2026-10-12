@@ -81,3 +81,8 @@ The source-PID tie-break rule also ships in the preceding schema 1.0 correction
 ([PR #222](https://github.com/jbejenar/flat-white/pull/222)). Consumers already using
 that correction have deterministic selection; schema 1.1 adds valid-point filtering
 and the explicit default-coordinate fallback.
+
+**NSW ward enrichment:** [the source and coverage guide](NSW-WARD-SOURCES.md)
+explains the first qualified council (Camden), precise-site eligibility, null
+reasons and publication gates. The base Geoscape package still has no NSW wards;
+these council snapshots are separately locked and imported after cache restore.

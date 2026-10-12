@@ -139,6 +139,8 @@ def resolve(repository, tag):
         index = json.loads(content)
         if index.get("schemaVersion", "1.0.0") != schema:
             raise ValueError("Evidence index and release schema version disagree")
+        if index.get("wardSourceLock") != metadata.get("wardSourceLock"):
+            raise ValueError("Ward evidence index and release metadata disagree")
         entries = validate_index(index, release_version, commit)
         evidence["evidence-index.json"] = {
             "bytes": item["size"],

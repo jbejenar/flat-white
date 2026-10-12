@@ -1,0 +1,164 @@
+{
+  "formatVersion": 1,
+  "fixtureOnly": true,
+  "referenceDate": "2026-02-28",
+  "qualificationDate": "2026-10-12",
+  "preciseSiteTypes": [
+    {
+      "code": "BAP",
+      "name": "BUILDING ACCESS POINT"
+    },
+    {
+      "code": "BC",
+      "name": "BUILDING CENTROID"
+    },
+    {
+      "code": "BCM",
+      "name": "BUILDING CENTROID MANUAL"
+    },
+    {
+      "code": "CDF",
+      "name": "CENTRE-LINE DROPPED FRONTAGE"
+    },
+    {
+      "code": "DF",
+      "name": "DRIVEWAY FRONTAGE"
+    },
+    {
+      "code": "EA",
+      "name": "EMERGENCY ACCESS"
+    },
+    {
+      "code": "EAS",
+      "name": "EMERGENCY ACCESS SECONDARY"
+    },
+    {
+      "code": "ECP",
+      "name": "ELECTRICITY CONNECTION POINT"
+    },
+    {
+      "code": "EM",
+      "name": "ELECTRICITY METER"
+    },
+    {
+      "code": "FC",
+      "name": "FRONTAGE CENTRE"
+    },
+    {
+      "code": "FCS",
+      "name": "FRONTAGE CENTRE SETBACK"
+    },
+    {
+      "code": "FDA",
+      "name": "FRONT DOOR ACCESS"
+    },
+    {
+      "code": "GCP",
+      "name": "GAS CONNECTION POINT"
+    },
+    {
+      "code": "GM",
+      "name": "GAS METER"
+    },
+    {
+      "code": "ICP",
+      "name": "INTERNET CONNECTION POINT"
+    },
+    {
+      "code": "LB",
+      "name": "LETTERBOX"
+    },
+    {
+      "code": "PAP",
+      "name": "PROPERTY ACCESS POINT"
+    },
+    {
+      "code": "PAPS",
+      "name": "PROPERTY ACCESS POINT SETBACK"
+    },
+    {
+      "code": "PC",
+      "name": "PROPERTY CENTROID"
+    },
+    {
+      "code": "PCM",
+      "name": "PROPERTY CENTROID MANUAL"
+    },
+    {
+      "code": "SCP",
+      "name": "SEWERAGE CONNECTION POINT"
+    },
+    {
+      "code": "TCP",
+      "name": "TELEPHONE CONNECTION POINT"
+    },
+    {
+      "code": "UC",
+      "name": "UNIT CENTROID"
+    },
+    {
+      "code": "UCM",
+      "name": "UNIT CENTROID MANUAL"
+    },
+    {
+      "code": "WCP",
+      "name": "WATER CONNECTION POINT"
+    },
+    {
+      "code": "WM",
+      "name": "WATER METER"
+    }
+  ],
+  "councils": [
+    {
+      "id": "camden-2024",
+      "lgaCode": "lga2a2057496fb7",
+      "lgaName": "Camden Council",
+      "status": "enabled",
+      "effectiveFrom": "2026-02-01",
+      "authorityUrl": "https://www.camden.nsw.gov.au/council/councillors",
+      "adoptionUrl": "https://www.camden.nsw.gov.au/assets/Uploads/ORD-10102023-MIN.pdf",
+      "currencyUrl": "https://elections.nsw.gov.au/elections/find-my-electorate/councils/camden",
+      "source": {
+        "url": "https://example.invalid/synthetic-wards",
+        "file": "wards-fixture.json",
+        "sha256": "775b1a8a41078f68d1619d76cf14f52c67db0feb0cbfe190eff9e60965466856",
+        "bytes": 1528,
+        "epsg": 7844,
+        "featureCount": 4,
+        "wardProperty": "ward",
+        "wards": [
+          {
+            "id": "central",
+            "name": "Central Ward"
+          },
+          {
+            "id": "north",
+            "name": "North Ward"
+          },
+          {
+            "id": "south",
+            "name": "South Ward"
+          }
+        ],
+        "licence": "CC-BY-4.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "licenceEvidenceUrl": "https://data.camden.nsw.gov.au/api/datasets/1.0/open-documents/attachments/open_data_policy_pdf/",
+        "licenceEvidenceSha256": "8c90ba1c9b5f2c8f99be072feef565b5be37e06f6f036cb56035b87a7c4be5b6",
+        "attribution": "Synthetic ward fixture for flat-white regression tests. Not a real council boundary.",
+        "qualificationNote": "SYNTHETIC TEST GEOMETRY in Victoria. Never use in production. Duplicate North feature exercises logical multipart deduplication."
+      }
+    },
+    {
+      "id": "sydney-undivided",
+      "lgaCode": "lga605d8cdb0eb8",
+      "lgaName": "Council of the City of Sydney",
+      "status": "undivided",
+      "effectiveFrom": "2026-02-01",
+      "authorityUrl": "https://elections.nsw.gov.au/elections/find-my-electorate/councils/sydney",
+      "adoptionUrl": "https://elections.nsw.gov.au/elections/find-my-electorate/councils/sydney",
+      "currencyUrl": "https://elections.nsw.gov.au/elections/find-my-electorate/councils/sydney",
+      "source": null
+    }
+  ]
+}

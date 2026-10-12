@@ -54,6 +54,7 @@ WORKDIR /app
 COPY --from=builder /app/dist/ ./dist/
 COPY --from=builder /app/node_modules/ ./node_modules/
 COPY package.json ./
+COPY config/ ./config/
 
 # Copy SQL files generated/validated during the builder stage
 COPY --from=builder /app/sql/ ./sql/
@@ -63,6 +64,7 @@ COPY fixtures/seed-postgres.sql ./fixtures/seed-postgres.sql
 COPY fixtures/seed-admin-bdys.sql ./fixtures/seed-admin-bdys.sql
 COPY fixtures/seed-census-2026.sql ./fixtures/seed-census-2026.sql
 COPY fixtures/seed-geocode-cases.sql ./fixtures/seed-geocode-cases.sql
+COPY fixtures/ward-sources/ ./fixtures/ward-sources/
 COPY fixtures/prep-admin-bdys.sql ./fixtures/prep-admin-bdys.sql
 COPY fixtures/expected-output.ndjson ./fixtures/expected-output.ndjson
 

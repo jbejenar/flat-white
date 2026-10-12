@@ -240,7 +240,10 @@ jobs:
           ADMIN_BDYS_EXTRACTED_DIR: ${{ inputs.admin_bdys_extracted_dir }}
           BOUNDARY_REFERENCE_DATE: ${{ inputs.boundary_reference_date }}
           SOURCE_ARCHIVE_DIR: sources
-        run: node dist/source-lock.js acquire >> "$GITHUB_OUTPUT"
+        run: |
+          node dist/ward-sources.js --check-date
+          node dist/source-lock.js acquire >> "$GITHUB_OUTPUT"
+          node dist/ward-sources.js
       - uses: actions/upload-artifact@v7
         with:
           name: source-archives
@@ -251,7 +254,10 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: source-lock
-          path: sources/source-lock.json
+          path: |
+            sources/source-lock.json
+            sources/ward-source-lock.json
+            sources/wards-*.json
           if-no-files-found: error
           retention-days: 30
 
@@ -401,6 +407,7 @@ jobs:
             output/flat-white-*.ndjson.gz
             output/flat-white-*.ndjson.reconciliation.json
             output/flat-white-*.ndjson.geocodes.json
+            output/flat-white-*.ndjson.wards.json
             output/build-provenance-*.json
             output/${{ matrix.state }}.count
           retention-days: 7
@@ -413,6 +420,7 @@ jobs:
           path: |
             output/quarterly-telemetry-${{ matrix.state }}.json
             output/flat-white-*.ndjson.geocodes.json
+            output/flat-white-*.ndjson.wards.json
           retention-days: 7
 
   # ---------------------------------------------------------------------------
@@ -530,6 +538,7 @@ jobs:
           ASSET_DIR="release-assets"
           mkdir -p "$ASSET_DIR"
           cp locked-source/source-lock.json "$ASSET_DIR/source-lock.json"
+          cp locked-source/ward-source-lock.json locked-source/wards-*.json "$ASSET_DIR/"
 
           # Collect per-state gzips and count files. Source filenames are
           # `flat-white-${VERSION}-${state}.ndjson.gz` (built using gnaf data
@@ -561,6 +570,7 @@ jobs:
             cp "$GZ_FILE" "$ASSET_DIR/flat-white-${RELEASE_VERSION}-${STATE_LOWER}.ndjson.gz"
             cp "artifacts/flat-white-${state}/flat-white-${STATE_LOWER}.ndjson.reconciliation.json" "$ASSET_DIR/reconciliation-${state}.json"
             cp "artifacts/flat-white-${state}/flat-white-${STATE_LOWER}.ndjson.geocodes.json" "$ASSET_DIR/geocodes-${state}.json"
+            cp "artifacts/flat-white-${state}/flat-white-${STATE_LOWER}.ndjson.wards.json" "$ASSET_DIR/wards-${state}.json"
             cp "artifacts/flat-white-${state}/build-provenance-${state}.json" "$ASSET_DIR/build-provenance-${state}.json"
 
             COUNT=$(cat "$COUNT_FILE")
@@ -592,6 +602,7 @@ jobs:
             "schemaVersion": "${SCHEMA_VERSION}",
             "asgsYear": 2026,
             "sourceLock": "source-lock.json",
+            "wardSourceLock": "ward-source-lock.json",
             "boundaryReferenceDate": "$(python3 -c 'import json; print(json.load(open("locked-source/source-lock.json"))["boundaryReferenceDate"])')",
             "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "states": ${STATES_JSON},
@@ -605,6 +616,7 @@ jobs:
           cp docs/DOCUMENT-SCHEMA.md "$ASSET_DIR/DOCUMENT-SCHEMA.md"
           cp docs/MIGRATING-TO-ASGS-2026.md "$ASSET_DIR/MIGRATING-TO-ASGS-2026.md"
           cp docs/MIGRATING-TO-SCHEMA-1.1.md "$ASSET_DIR/MIGRATING-TO-SCHEMA-1.1.md"
+          cp docs/NSW-WARD-SOURCES.md "$ASSET_DIR/NSW-WARD-SOURCES.md"
 
           # Export for later steps
           {

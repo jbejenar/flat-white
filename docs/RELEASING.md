@@ -110,6 +110,13 @@ still captures every difference and the 1% count anomaly gate remains in place.
 A failed baseline download or comparison stops publication. An older release with
 no archive lock is explicitly identified as lacking historical source-byte evidence.
 
+For schema 1.1, reviewed differences also include the new fallback field,
+source-preserving valid-site corrections, and null-to-ward assignments for an
+approved NSW council with a qualifying primary site point. The ward rule reads
+the same locked registry as the producer and verifier; an arbitrary ward name,
+an approximate point or a different LGA cannot pass it. No other field changes
+are accepted merely because a release changes schema version.
+
 The release verification report validates every document in each compressed state
 file. Build and release verification use the same per-state coverage floors,
 including 99% federal coverage for OT. The release gate also checks the source
@@ -392,3 +399,8 @@ only the reviewed new field and valid site selection or ordering repairs that
 preserve the valid source-point multiset. Changes to unrelated fields or PIDs
 hold the release for investigation. Read the full change records before resolving
 a held draft; passing row counts alone are insufficient.
+
+**NSW ward enrichment:** [the source and coverage guide](NSW-WARD-SOURCES.md)
+explains the first qualified council (Camden), precise-site eligibility, null
+reasons and publication gates. The base Geoscape package still has no NSW wards;
+these council snapshots are separately locked and imported after cache restore.

@@ -11,18 +11,18 @@ object, but their derivation and expected gaps differ.
 
 ## The ten output fields
 
-| Field                    | Method               | Prepared source                        |
-| ------------------------ | -------------------- | -------------------------------------- |
-| `lga`                    | Spatial join         | `local_government_areas`               |
-| `ward`                   | Spatial join         | `local_government_wards`               |
-| `stateElectorate`        | Spatial join         | `state_lower_house_electorates`        |
-| `commonwealthElectorate` | Spatial join         | `commonwealth_electorates`             |
-| `meshBlock`              | **2026 code lookup** | `abs_2026_mb.mb_code_26`, `mb_cat_26`  |
-| `sa1`                    | **2026 code lookup** | `abs_2026_mb.s1_code_26`               |
-| `sa2`                    | **2026 code lookup** | `abs_2026_mb.s2_code_26`, `s2_name_26` |
-| `sa3`                    | **2026 code lookup** | `abs_2026_mb.s3_code_26`, `s3_name_26` |
-| `sa4`                    | **2026 code lookup** | `abs_2026_mb.s4_code_26`, `s4_name_26` |
-| `gccsa`                  | **2026 code lookup** | `abs_2026_mb.gc_code_26`, `gc_name_26` |
+| Field                    | Method               | Prepared source                                                       |
+| ------------------------ | -------------------- | --------------------------------------------------------------------- |
+| `lga`                    | Spatial join         | `local_government_areas`                                              |
+| `ward`                   | Spatial join         | NSW: qualified council snapshots; elsewhere: `local_government_wards` |
+| `stateElectorate`        | Spatial join         | `state_lower_house_electorates`                                       |
+| `commonwealthElectorate` | Spatial join         | `commonwealth_electorates`                                            |
+| `meshBlock`              | **2026 code lookup** | `abs_2026_mb.mb_code_26`, `mb_cat_26`                                 |
+| `sa1`                    | **2026 code lookup** | `abs_2026_mb.s1_code_26`                                              |
+| `sa2`                    | **2026 code lookup** | `abs_2026_mb.s2_code_26`, `s2_name_26`                                |
+| `sa3`                    | **2026 code lookup** | `abs_2026_mb.s3_code_26`, `s3_name_26`                                |
+| `sa4`                    | **2026 code lookup** | `abs_2026_mb.s4_code_26`, `s4_name_26`                                |
+| `gccsa`                  | **2026 code lookup** | `abs_2026_mb.gc_code_26`, `gc_name_26`                                |
 
 All ten fields are nullable. Types and object shapes are defined in the
 [document schema](DOCUMENT-SCHEMA.md#boundaries). `lga.code` is a Geoscape LGA
@@ -102,6 +102,9 @@ the policy; do not lower it simply to make a failed build pass.
 
 The pinned loader's single-state builds prepare these polygon types:
 
+This table describes the **base Geoscape package**. NSW's separately qualified
+Camden ward snapshot is imported later; see [NSW ward sources](NSW-WARD-SOURCES.md).
+
 | State | LGA | Ward | Lower house | Commonwealth | Upper house |
 | ----- | --- | ---- | ----------- | ------------ | ----------- |
 | ACT   | No  | No   | Yes         | Yes          | No          |
@@ -179,3 +182,8 @@ the safeguards; their old recovery steps are not current instructions.
 **New in 1.1.0:** default coordinates are exposed separately as `fallbackGeocode`.
 They do not turn into site points or establish eligibility for NSW council ward
 assignment. See the [upgrade guide](MIGRATING-TO-SCHEMA-1.1.md).
+
+**NSW ward enrichment:** [the source and coverage guide](NSW-WARD-SOURCES.md)
+explains the first qualified council (Camden), precise-site eligibility, null
+reasons and publication gates. The base Geoscape package still has no NSW wards;
+these council snapshots are separately locked and imported after cache restore.

@@ -20,6 +20,8 @@ import { pipeline } from "node:stream/promises";
 import { AddressDocumentSchema, AddressDocumentWriterSchema } from "./schema.js";
 import type { AddressDocument } from "./schema.js";
 import { GeocodeDiagnosticsSchema } from "./geocode-diagnostics.js";
+import { WardDiagnosticsSchema, WardOutputVerifier, type WardReport } from "./ward-diagnostics.js";
+import { loadWardLock, type WardLock } from "./ward-sources.js";
 import { PidLedger } from "./pid-ledger.js";
 import { z } from "zod";
 import { VERSION } from "./index.js";
@@ -77,6 +79,7 @@ const releaseMetadataSchema = z.object({
   asgsYear: z.literal(ASGS_YEAR),
   sourceLock: z.literal("source-lock.json").optional(),
   boundaryReferenceDate: z.string().optional(),
+  wardSourceLock: z.literal("ward-source-lock.json").optional(),
   states: z.record(z.string(), z.number().int().positive()),
   totalCount: z.number().int().positive(),
 });
@@ -178,6 +181,7 @@ export async function verifyGzippedState(
     adminBoundariesVersion?: string;
     requireWriter?: boolean;
     geocodeDiagnostics?: z.infer<typeof GeocodeDiagnosticsSchema>;
+    wards?: { lock: WardLock; report: WardReport };
   },
 ): Promise<StateVerification> {
   const stateThresholds = PER_STATE_BOUNDARY_THRESHOLDS[state];
@@ -200,6 +204,9 @@ export async function verifyGzippedState(
   const fallbackCounts = { street: 0, locality: 0, unknown: 0 };
   let qualityErrors = 0;
   const qualityDiagnostics: string[] = [];
+  const wards = expected?.wards
+    ? new WardOutputVerifier(expected.wards.lock, expected.wards.report, expected.sourceVersion)
+    : undefined;
   const checkOtSnapshot =
     state === "OT" &&
     expected?.sourceVersion === "2026.08" &&
@@ -249,6 +256,7 @@ export async function verifyGzippedState(
           continue;
         }
         const doc = parsed.data;
+        wards?.observe(doc);
         if (doc.geocode) siteCount++;
         if (doc.fallbackGeocode) fallbackCounts[doc.fallbackGeocode.precision]++;
 
@@ -310,6 +318,12 @@ export async function verifyGzippedState(
     const identities = await ledger.finish();
     duplicatePids = identities.duplicateCount;
     if (expected && rowCount !== expected.count) qualityErrors++;
+    if (wards && !wards.passed()) {
+      qualityErrors++;
+      qualityDiagnostics.push(
+        "Ward source diagnostics, eligible coverage or assignments disagree with the compressed artifact",
+      );
+    }
     if (expected?.geocodeDiagnostics) {
       const report = expected.geocodeDiagnostics;
       if (
@@ -647,6 +661,14 @@ async function main(): Promise<void> {
   if (fixtureOnly && sourceVersion !== "2026.02")
     throw new Error("Fixture verification requires the frozen 2026.02 snapshot");
   if (!fixtureOnly) await verifyBuildProvenance(assetDir, metadata);
+  if (!fixtureOnly && metadata.wardSourceLock !== "ward-source-lock.json")
+    throw new Error("Current publication requires qualified ward evidence");
+  const wardLock = fixtureOnly
+    ? undefined
+    : await loadWardLock(
+        join(assetDir, "ward-source-lock.json"),
+        metadata.boundaryReferenceDate ?? "",
+      );
 
   const stateFiles = findStateFiles(assetDir, version, states);
 
@@ -697,6 +719,14 @@ async function main(): Promise<void> {
           sourceVersion,
           count,
           requireWriter: true,
+          wards: wardLock
+            ? {
+                lock: wardLock,
+                report: WardDiagnosticsSchema.parse(
+                  JSON.parse(await readFile(join(assetDir, `wards-${state}.json`), "utf8")),
+                ),
+              }
+            : undefined,
           geocodeDiagnostics: fixtureOnly
             ? undefined
             : GeocodeDiagnosticsSchema.parse(
