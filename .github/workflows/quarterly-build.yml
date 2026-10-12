@@ -494,6 +494,18 @@ jobs:
   release:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 120
+    services:
+      ward-verification:
+        image: imresamu/postgis:16-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ward_verification
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     needs: [setup, build, concatenate]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.concatenate.result == 'success' }}
     permissions:
@@ -660,7 +672,8 @@ jobs:
         run: |
           ASSET_DIR="${{ steps.collect.outputs.asset_dir }}"
           # PID checks spill to disk with a 32 MiB sort buffer.
-          node --max-old-space-size=384 dist/verification-report.js "$ASSET_DIR" --output "$ASSET_DIR/verification-report.md"
+          WARD_VERIFICATION_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ward_verification \
+            node --max-old-space-size=384 dist/verification-report.js "$ASSET_DIR" --output "$ASSET_DIR/verification-report.md"
           echo "✓ Verification report generated"
           cat "$ASSET_DIR/verification-report.md"
 

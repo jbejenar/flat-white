@@ -85,7 +85,12 @@ eligible addresses means **undefined coverage** and fails an NSW build; it never
 counts as 100%. Unsupported, undivided and insufficient-precision records stay
 outside that denominator. The report includes counts and bounded PID samples
 for every reason. The compressed-artifact verifier independently reconciles the
-denominator, assignments, council identities and source lock against the export.
+denominator, council identities and source lock against the export. It also
+recomputes every eligible address's ward from the exported primary coordinates
+and the locked source polygons in a fresh PostGIS session. A swapped ward name,
+a false null, or an incorrect overlap/gap reason blocks publication even when
+aggregate coverage still exceeds 99%. Checks stream in batches of at most 1,000
+points; the verification database is temporary and keeps no address state.
 
 ## Rebuilding and adding councils
 
@@ -107,6 +112,10 @@ recovery retain them as evidence, separately from address ingestion files.
 
 For local production builds, acquire base archives with `node dist/source-lock.js
 acquire`, then run `node dist/ward-sources.js` using the same `SOURCE_ARCHIVE_DIR`.
+For local production-artifact verification, set `WARD_VERIFICATION_DATABASE_URL`
+to an ephemeral PostGIS database. The release workflow starts one automatically;
+no persistent AWS database is involved.
+
 Fixture builds use only tiny, explicitly synthetic ward files. The integration
 test changes one fixture address inside a transaction and rolls it back; it does
 not download production G-NAF data or alter the committed address baseline.

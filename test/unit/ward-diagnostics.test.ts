@@ -92,22 +92,35 @@ describe("ward coverage and independent artifact validation", () => {
       }),
     ).toThrow(/crosswalk/);
   });
-  it("reconciles report identity, eligible denominators, counts and output scope", () => {
+  it("reconciles report identity, eligible denominators, counts and output scope", async () => {
     const diagnostics = new WardDiagnostics("2026.02", lock);
     diagnostics.observe(row, matched);
     const report = diagnostics.report();
-    const verify = (doc: AddressDocument, changed = report) => {
-      const checker = new WardOutputVerifier(lock, changed, "2026.02");
-      checker.observe(doc);
+    const verify = async (doc: AddressDocument, changed = report) => {
+      const checker = new WardOutputVerifier(lock, changed, "2026.02", async (points) =>
+        points.map(() => ({ matches: 1, name: "North Ward" })),
+      );
+      await checker.observe(doc);
       return checker.passed();
     };
-    expect(verify(matched)).toBe(true);
-    expect(verify({ ...matched, boundaries: { ...matched.boundaries, ward: null } })).toBe(false);
-    expect(verify({ ...matched, geocode: null })).toBe(false);
+    expect(await verify(matched)).toBe(true);
     expect(
-      verify({ ...matched, boundaries: { ...matched.boundaries, ward: { name: "Invented" } } }),
+      await verify({
+        ...matched,
+        boundaries: { ...matched.boundaries, ward: { name: "Central Ward" } },
+      }),
     ).toBe(false);
-    expect(verify(matched, { ...report, sourceIdentity: "0".repeat(64) })).toBe(false);
+    expect(await verify({ ...matched, boundaries: { ...matched.boundaries, ward: null } })).toBe(
+      false,
+    );
+    expect(await verify({ ...matched, geocode: null })).toBe(false);
+    expect(
+      await verify({
+        ...matched,
+        boundaries: { ...matched.boundaries, ward: { name: "Invented" } },
+      }),
+    ).toBe(false);
+    expect(await verify(matched, { ...report, sourceIdentity: "0".repeat(64) })).toBe(false);
     expect(
       WardDiagnosticsSchema.safeParse({ ...report, reasons: { ...report.reasons, matched: 2 } })
         .success,

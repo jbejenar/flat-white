@@ -65,14 +65,14 @@ not certification of every field or of the complete dataset.
   permitted by the contract but is still incomplete information.
 - **Electoral currency:** the [ACT redistribution timetable](https://www.aec.gov.au/redistributions/2025/act/index.html)
   schedules determination for 8 October 2026. The August release and 2025 ABS
-  electoral reference should not be described as containing that future boundary
-  change. Recheck the next quarter, including Symonston.
+  electoral reference predate that scheduled boundary change and should not be
+  described as containing it. Recheck the next quarter, including Symonston.
 
 ## Follow-up findings from the documentation audit
 
 - **Schema 1.1 implementation:** fallback coordinates, deterministic valid-site
   selection, generated shared SQL, publication diagnostics, converter CRS and
-  compatibility checks are implemented on the enrichment branch. Release remains pending.
+  compatibility checks merged in PR #221. Data publication remains pending.
 - **Fixture coverage:** the new geocode overlay covers three points, stable ties,
   invalid/retired points, duplicate defaults and a conflict failure test. Non-gazetted
   localities and broader parent/child coverage remain separate gaps.

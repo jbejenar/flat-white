@@ -22,6 +22,7 @@ import type { AddressDocument } from "./schema.js";
 import { GeocodeDiagnosticsSchema } from "./geocode-diagnostics.js";
 import { WardDiagnosticsSchema, WardOutputVerifier, type WardReport } from "./ward-diagnostics.js";
 import { loadWardLock, type WardLock } from "./ward-sources.js";
+import { createWardLookup, type WardLookup } from "./ward-spatial.js";
 import { PidLedger } from "./pid-ledger.js";
 import { z } from "zod";
 import { VERSION } from "./index.js";
@@ -181,7 +182,7 @@ export async function verifyGzippedState(
     adminBoundariesVersion?: string;
     requireWriter?: boolean;
     geocodeDiagnostics?: z.infer<typeof GeocodeDiagnosticsSchema>;
-    wards?: { lock: WardLock; report: WardReport };
+    wards?: { lock: WardLock; report: WardReport; lookup: WardLookup };
   },
 ): Promise<StateVerification> {
   const stateThresholds = PER_STATE_BOUNDARY_THRESHOLDS[state];
@@ -205,7 +206,12 @@ export async function verifyGzippedState(
   let qualityErrors = 0;
   const qualityDiagnostics: string[] = [];
   const wards = expected?.wards
-    ? new WardOutputVerifier(expected.wards.lock, expected.wards.report, expected.sourceVersion)
+    ? new WardOutputVerifier(
+        expected.wards.lock,
+        expected.wards.report,
+        expected.sourceVersion,
+        expected.wards.lookup,
+      )
     : undefined;
   const checkOtSnapshot =
     state === "OT" &&
@@ -256,7 +262,7 @@ export async function verifyGzippedState(
           continue;
         }
         const doc = parsed.data;
-        wards?.observe(doc);
+        await wards?.observe(doc);
         if (doc.geocode) siteCount++;
         if (doc.fallbackGeocode) fallbackCounts[doc.fallbackGeocode.precision]++;
 
@@ -318,7 +324,7 @@ export async function verifyGzippedState(
     const identities = await ledger.finish();
     duplicatePids = identities.duplicateCount;
     if (expected && rowCount !== expected.count) qualityErrors++;
-    if (wards && !wards.passed()) {
+    if (wards && !(await wards.passed())) {
       qualityErrors++;
       qualityDiagnostics.push(
         "Ward source diagnostics, eligible coverage or assignments disagree with the compressed artifact",
@@ -679,7 +685,14 @@ async function main(): Promise<void> {
   let overallPassed = true;
 
   const nationalLedger = await PidLedger.create();
+  let wardSpatial: Awaited<ReturnType<typeof createWardLookup>> | undefined;
   try {
+    if (wardLock)
+      wardSpatial = await createWardLookup(
+        wardLock,
+        assetDir,
+        process.env.WARD_VERIFICATION_DATABASE_URL,
+      );
     for (const { state, path } of stateFiles) {
       process.stdout.write(`  ${state}... `);
 
@@ -719,14 +732,16 @@ async function main(): Promise<void> {
           sourceVersion,
           count,
           requireWriter: true,
-          wards: wardLock
-            ? {
-                lock: wardLock,
-                report: WardDiagnosticsSchema.parse(
-                  JSON.parse(await readFile(join(assetDir, `wards-${state}.json`), "utf8")),
-                ),
-              }
-            : undefined,
+          wards:
+            wardLock && wardSpatial
+              ? {
+                  lock: wardLock,
+                  lookup: wardSpatial.lookup,
+                  report: WardDiagnosticsSchema.parse(
+                    JSON.parse(await readFile(join(assetDir, `wards-${state}.json`), "utf8")),
+                  ),
+                }
+              : undefined,
           geocodeDiagnostics: fixtureOnly
             ? undefined
             : GeocodeDiagnosticsSchema.parse(
@@ -787,7 +802,11 @@ async function main(): Promise<void> {
       process.exitCode = 4;
     }
   } finally {
-    await nationalLedger.close();
+    try {
+      await wardSpatial?.close();
+    } finally {
+      await nationalLedger.close();
+    }
   }
 }
 

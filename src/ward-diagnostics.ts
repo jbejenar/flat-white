@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AddressDocument } from "./schema.js";
 import { type WardLock } from "./ward-sources.js";
+import type { WardLookup, WardPoint } from "./ward-spatial.js";
 
 export const wardReasons = [
   "matched",
@@ -84,13 +85,16 @@ export function hasQualifyingSite(doc: AddressDocument, lock: WardLock): boolean
 /** Reconcile the compressed export with producer diagnostics, without trusting row flags. */
 export class WardOutputVerifier {
   private counts = new Map<string, { total: number; eligible: number; matched: number }>();
+  private spatialReasons = new Map<string, Record<"matched" | "unmatched" | "ambiguous", number>>();
+  private pending: (WardPoint & { lgaCode: string; wardName: string | null })[] = [];
   private invalid = false;
   constructor(
     private lock: WardLock,
     private report: WardReport,
     private version: string,
+    private lookup: WardLookup,
   ) {}
-  observe(doc: AddressDocument): void {
+  async observe(doc: AddressDocument): Promise<void> {
     if (doc.state !== "NSW") return;
     const code = doc.boundaries.lga?.code;
     const council = this.lock.registry.councils.find((c) => c.lgaCode === code);
@@ -109,8 +113,39 @@ export class WardOutputVerifier {
     if (qualified) entry.eligible++;
     if (ward) entry.matched++;
     this.counts.set(key, entry);
+    if (qualified && doc.geocode) {
+      this.pending.push({
+        sourceId: council.id,
+        lgaCode: council.lgaCode,
+        longitude: doc.geocode.longitude,
+        latitude: doc.geocode.latitude,
+        wardName: ward?.name ?? null,
+      });
+      if (this.pending.length === 1000) await this.flush();
+    }
   }
-  passed(): boolean {
+  private async flush(): Promise<void> {
+    if (!this.pending.length) return;
+    const intersections = await this.lookup(this.pending);
+    if (intersections.length !== this.pending.length) throw new Error("Incomplete ward lookup");
+    for (let i = 0; i < this.pending.length; i++) {
+      const point = this.pending[i];
+      const result = intersections[i];
+      const reason =
+        result.matches === 1 ? "matched" : result.matches === 0 ? "unmatched" : "ambiguous";
+      if (point.wardName !== (result.matches === 1 ? result.name : null)) this.invalid = true;
+      const reasons = this.spatialReasons.get(point.lgaCode) ?? {
+        matched: 0,
+        unmatched: 0,
+        ambiguous: 0,
+      };
+      reasons[reason]++;
+      this.spatialReasons.set(point.lgaCode, reasons);
+    }
+    this.pending = [];
+  }
+  async passed(): Promise<boolean> {
+    await this.flush();
     const report = this.report;
     if (
       this.invalid ||
@@ -145,6 +180,9 @@ export class WardOutputVerifier {
           actual.reasons.undivided)
       )
         return false;
+      const spatial = this.spatialReasons.get(code);
+      for (const reason of ["matched", "unmatched", "ambiguous"] as const)
+        if (actual.reasons[reason] !== (spatial?.[reason] ?? 0)) return false;
     }
     if (total)
       for (const council of this.lock.registry.councils.filter((c) => c.status === "enabled")) {
