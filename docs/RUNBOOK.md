@@ -261,3 +261,8 @@ though publication stops. Check the active raw defaults for those addresses;
 identical coordinate/type duplicates are allowed, conflicting ones are not.
 Do not pick a row arbitrarily or move default coordinates into the primary point.
 See the [upgrade guide](MIGRATING-TO-SCHEMA-1.1.md) for the consumer contract.
+
+**NSW ward enrichment:** [the source and coverage guide](NSW-WARD-SOURCES.md)
+explains the first qualified council (Camden), precise-site eligibility, null
+reasons and publication gates. The base Geoscape package still has no NSW wards;
+these council snapshots are separately locked and imported after cache restore.

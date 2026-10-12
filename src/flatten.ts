@@ -19,6 +19,8 @@ import { AddressDocumentWriterSchema } from "./schema.js";
 import type { AddressDocument } from "./schema.js";
 import { ProgressLogger } from "./progress.js";
 import { GeocodeDiagnostics } from "./geocode-diagnostics.js";
+import { wardContext, importWardSources } from "./ward-sources.js";
+import { WardDiagnostics } from "./ward-diagnostics.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SQL_PATH = resolve(__dirname, "..", "sql", "address_full.sql");
@@ -310,6 +312,8 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
   let count = 0;
   let errors = 0;
   const geocodes = new GeocodeDiagnostics(version);
+  const wards = await wardContext(version);
+  const wardDiagnostics = new WardDiagnostics(version, wards.lock);
 
   logger?.stageStart("flatten");
 
@@ -340,6 +344,7 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
     // use that same connection — same Postgres session, temp tables persist.
     const reserved = await sql.reserve();
     try {
+      await importWardSources(reserved, wards.lock, wards.directory);
       let flattenSql: string;
 
       if (materialize) {
@@ -377,6 +382,7 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
           try {
             const doc = composeDocument(row, version);
             geocodes.observe(row, doc);
+            wardDiagnostics.observe(row, doc);
             const result = AddressDocumentWriterSchema.safeParse(doc);
             if (result.success) {
               count++;
@@ -402,6 +408,12 @@ export async function flatten(options: FlattenOptions): Promise<{ count: number;
       await pipeline(source, compose, output);
       const diagnostics = geocodes.report();
       writeFileSync(`${outputPath}.geocodes.json`, JSON.stringify(diagnostics, null, 2) + "\n");
+      const wardReport = wardDiagnostics.report();
+      writeFileSync(`${outputPath}.wards.json`, JSON.stringify(wardReport, null, 2) + "\n");
+      if (!wardReport.passed) {
+        errors++;
+        console.error(`[flatten] Ward publication gate: ${wardReport.errors.join("; ")}`);
+      }
       if (!diagnostics.passed) {
         errors += diagnostics.affectedAddresses.conflictingDefaults;
         console.error(

@@ -208,24 +208,24 @@ Schema 1.x uses ASGS 2026. The `202602` schema suffix below identifies the froze
 
 All boundary fields sourced from two tables: the spatially-joined admin boundaries table and the ABS mesh block lookup.
 
-| Output Field                             | SQL Alias                      | Source Table.Column | Transform                                               |
-| ---------------------------------------- | ------------------------------ | ------------------- | ------------------------------------------------------- |
-| `boundaries.lga.name`                    | `lga_name`                     | `ab.lga_name`       | Null if either name or code is null                     |
-| `boundaries.lga.code`                    | `lga_pid`                      | `ab.lga_pid`        | Used as `code` in output                                |
-| `boundaries.ward.name`                   | `ward_name`                    | `ab.ward_name`      | Null if null                                            |
-| `boundaries.stateElectorate.name`        | `state_electorate_name`        | `ab.se_lower_name`  | SQL alias: `ab.se_lower_name AS state_electorate_name`  |
-| `boundaries.commonwealthElectorate.name` | `commonwealth_electorate_name` | `ab.ce_name`        | SQL alias: `ab.ce_name AS commonwealth_electorate_name` |
-| `boundaries.meshBlock.code`              | `mb_2026_code`                 | `ap.mb_2026_code`   | `String()` cast. Null if code or category is null.      |
-| `boundaries.meshBlock.category`          | `mesh_block_category`          | `mb.mb_cat_26`      | SQL alias: `mb.mb_cat_26 AS mesh_block_category`        |
-| `boundaries.sa1`                         | `s1_code_26`                   | `mb.s1_code_26`     | Null-coalesce                                           |
-| `boundaries.sa2.code`                    | `s2_code_26`                   | `mb.s2_code_26`     | Null if either code or name is null                     |
-| `boundaries.sa2.name`                    | `s2_name_26`                   | `mb.s2_name_26`     |                                                         |
-| `boundaries.sa3.code`                    | `s3_code_26`                   | `mb.s3_code_26`     | Null if either code or name is null                     |
-| `boundaries.sa3.name`                    | `s3_name_26`                   | `mb.s3_name_26`     |                                                         |
-| `boundaries.sa4.code`                    | `s4_code_26`                   | `mb.s4_code_26`     | Null if either code or name is null                     |
-| `boundaries.sa4.name`                    | `s4_name_26`                   | `mb.s4_name_26`     |                                                         |
-| `boundaries.gccsa.code`                  | `gc_code_26`                   | `mb.gc_code_26`     | Null if either code or name is null                     |
-| `boundaries.gccsa.name`                  | `gc_name_26`                   | `mb.gc_name_26`     |                                                         |
+| Output Field                             | SQL Alias                      | Source Table.Column                                                               | Transform                                               |
+| ---------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `boundaries.lga.name`                    | `lga_name`                     | `ab.lga_name`                                                                     | Null if either name or code is null                     |
+| `boundaries.lga.code`                    | `lga_pid`                      | `ab.lga_pid`                                                                      | Used as `code` in output                                |
+| `boundaries.ward.name`                   | `ward_name`                    | NSW: reviewed council polygons and selected site point; elsewhere: `ab.ward_name` | Null if null                                            |
+| `boundaries.stateElectorate.name`        | `state_electorate_name`        | `ab.se_lower_name`                                                                | SQL alias: `ab.se_lower_name AS state_electorate_name`  |
+| `boundaries.commonwealthElectorate.name` | `commonwealth_electorate_name` | `ab.ce_name`                                                                      | SQL alias: `ab.ce_name AS commonwealth_electorate_name` |
+| `boundaries.meshBlock.code`              | `mb_2026_code`                 | `ap.mb_2026_code`                                                                 | `String()` cast. Null if code or category is null.      |
+| `boundaries.meshBlock.category`          | `mesh_block_category`          | `mb.mb_cat_26`                                                                    | SQL alias: `mb.mb_cat_26 AS mesh_block_category`        |
+| `boundaries.sa1`                         | `s1_code_26`                   | `mb.s1_code_26`                                                                   | Null-coalesce                                           |
+| `boundaries.sa2.code`                    | `s2_code_26`                   | `mb.s2_code_26`                                                                   | Null if either code or name is null                     |
+| `boundaries.sa2.name`                    | `s2_name_26`                   | `mb.s2_name_26`                                                                   |                                                         |
+| `boundaries.sa3.code`                    | `s3_code_26`                   | `mb.s3_code_26`                                                                   | Null if either code or name is null                     |
+| `boundaries.sa3.name`                    | `s3_name_26`                   | `mb.s3_name_26`                                                                   |                                                         |
+| `boundaries.sa4.code`                    | `s4_code_26`                   | `mb.s4_code_26`                                                                   | Null if either code or name is null                     |
+| `boundaries.sa4.name`                    | `s4_name_26`                   | `mb.s4_name_26`                                                                   |                                                         |
+| `boundaries.gccsa.code`                  | `gc_code_26`                   | `mb.gc_code_26`                                                                   | Null if either code or name is null                     |
+| `boundaries.gccsa.name`                  | `gc_name_26`                   | `mb.gc_name_26`                                                                   |                                                         |
 
 **Join path (admin):** `address_principals.gnaf_pid` → `address_principal_admin_boundaries.gnaf_pid`
 
@@ -283,3 +283,8 @@ See [source attribution and licensing](../README.md#data-sources-and-attribution
 
 - **G-NAF** (Geocoded National Address File) — Geoscape Australia (formerly PSMA)
 - **Administrative Boundaries** — Geoscape Australia / ABS
+
+**NSW ward enrichment:** [the source and coverage guide](NSW-WARD-SOURCES.md)
+explains the first qualified council (Camden), precise-site eligibility, null
+reasons and publication gates. The base Geoscape package still has no NSW wards;
+these council snapshots are separately locked and imported after cache restore.

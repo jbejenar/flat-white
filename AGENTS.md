@@ -16,6 +16,8 @@ flat-white transforms Australian Government G-NAF address data into pre-joined, 
 
 ```
 src/
+  ward-sources.ts       — qualified council snapshots, hashes and post-cache imports
+  ward-diagnostics.ts   — NSW eligibility, missing reasons and publication gates
   source-lock.ts        — acquire and verify shared source archives; database provenance
   index.ts              — package entry point, schema/package version export
   schema.ts             — TypeScript types + Zod validation; ASGS_YEAR = 2026

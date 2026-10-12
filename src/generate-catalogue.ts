@@ -223,6 +223,9 @@ export function processReleases(
             "DOCUMENT-SCHEMA.md",
             "MIGRATING-TO-ASGS-2026.md",
             "MIGRATING-TO-SCHEMA-1.1.md",
+            "NSW-WARD-SOURCES.md",
+            "ward-source-lock.json",
+            "wards-NSW.json",
           ].includes(a.name),
       )
       .map((a) => ({

@@ -8,6 +8,8 @@ for a downloaded file; older published releases keep their original contract.
 > though the JSON structure is unchanged. The
 > [migration guide](MIGRATING-TO-ASGS-2026.md) explains the impact and upgrade steps.
 
+- [NSW ward sources and coverage](NSW-WARD-SOURCES.md): qualified councils, eligibility, missing-data reasons and source evidence.
+
 ## Use the data
 
 | I want to…                            | Read                                                   |

@@ -66,6 +66,8 @@ const NameOnlySchema = z.object({
 export const BoundariesSchema = z
   .object({
     lga: NameCodeSchema.nullable(),
+    // NSW requires a reviewed council source and a precise primary site point.
+    // See docs/NSW-WARD-SOURCES.md; default coordinates never assign wards.
     ward: NameOnlySchema.nullable(),
     stateElectorate: NameOnlySchema.nullable(),
     commonwealthElectorate: NameOnlySchema.nullable(),

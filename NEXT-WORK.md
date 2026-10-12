@@ -32,7 +32,11 @@ the published manifest and all 11 data/mapping object sizes and SHA-256 checksum
      only street/locality coordinates exist.
   4. Qualify official NSW council ward snapshots, starting with the sampled
      councils where licensing and currency permit. Assign only qualifying site
-     points; publish coverage reasons and dated source evidence.
+     points; publish coverage reasons and dated source evidence. Camden is qualified
+     for 31 August 2026; the isolated implementation includes a source lock,
+     strict site-point eligibility, independent artifact checks and evidence mirroring.
+     The 451-document baseline, real SQL ward integration and fixture container pass.
+     See docs/NSW-WARD-SOURCES.md. National schema 1.1 publication is still pending.
   5. Publish immutable patch releases, verify S3 and catalogue evidence, and
      compare all PIDs and changed fields with the prior release.
 - Track [upstream loader PR #103](https://github.com/minus34/gnaf-loader/pull/103).
@@ -61,14 +65,14 @@ not certification of every field or of the complete dataset.
   permitted by the contract but is still incomplete information.
 - **Electoral currency:** the [ACT redistribution timetable](https://www.aec.gov.au/redistributions/2025/act/index.html)
   schedules determination for 8 October 2026. The August release and 2025 ABS
-  electoral reference should not be described as containing that future boundary
-  change. Recheck the next quarter, including Symonston.
+  electoral reference predate that scheduled boundary change and should not be
+  described as containing it. Recheck the next quarter, including Symonston.
 
 ## Follow-up findings from the documentation audit
 
 - **Schema 1.1 implementation:** fallback coordinates, deterministic valid-site
   selection, generated shared SQL, publication diagnostics, converter CRS and
-  compatibility checks are implemented on the enrichment branch. Release remains pending.
+  compatibility checks merged in PR #221. Data publication remains pending.
 - **Fixture coverage:** the new geocode overlay covers three points, stable ties,
   invalid/retired points, duplicate defaults and a conflict failure test. Non-gazetted
   localities and broader parent/child coverage remain separate gaps.

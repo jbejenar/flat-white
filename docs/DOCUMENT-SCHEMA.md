@@ -165,18 +165,18 @@ table is nullable.** State-specific boundary availability and unmatched addresse
 can produce nulls. A missing assignment is different from an incompatible source
 dataset, which fails the build's input validation.
 
-| Field                    | Shape when present                   | Meaning and source                                                                                     |
-| ------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `lga`                    | `{ name: string, code: string }`     | Council area, assigned by spatial join. `code` is the Geoscape LGA identifier, not an ABS census code. |
-| `ward`                   | `{ name: string }`                   | Local government ward, assigned by spatial join.                                                       |
-| `stateElectorate`        | `{ name: string }`                   | State lower-house electorate, assigned by spatial join.                                                |
-| `commonwealthElectorate` | `{ name: string }`                   | Federal electorate, assigned by spatial join.                                                          |
-| `meshBlock`              | `{ code: string, category: string }` | **Changed in 1.0.0:** ASGS 2026 mesh block and category.                                               |
-| `sa1`                    | string                               | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 1 code.                                         |
-| `sa2`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 2.                                              |
-| `sa3`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 3.                                              |
-| `sa4`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 4.                                              |
-| `gccsa`                  | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Greater Capital City Statistical Area.                                 |
+| Field                    | Shape when present                   | Meaning and source                                                                                            |
+| ------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `lga`                    | `{ name: string, code: string }`     | Council area, assigned by spatial join. `code` is the Geoscape LGA identifier, not an ABS census code.        |
+| `ward`                   | `{ name: string }`                   | Local government ward. NSW uses qualified council sources and precise site points; other states use Geoscape. |
+| `stateElectorate`        | `{ name: string }`                   | State lower-house electorate, assigned by spatial join.                                                       |
+| `commonwealthElectorate` | `{ name: string }`                   | Federal electorate, assigned by spatial join.                                                                 |
+| `meshBlock`              | `{ code: string, category: string }` | **Changed in 1.0.0:** ASGS 2026 mesh block and category.                                                      |
+| `sa1`                    | string                               | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 1 code.                                                |
+| `sa2`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 2.                                                     |
+| `sa3`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 3.                                                     |
+| `sa4`                    | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Statistical Area Level 4.                                                     |
+| `gccsa`                  | `{ name: string, code: string }`     | **Changed in 1.0.0:** ASGS 2026 Greater Capital City Statistical Area.                                        |
 
 Census enrichment follows `address_principals.mb_2026_code` to
 `abs_2026_mb.mb_code_26`. It does not fall back to the 2021 lookup. These fields
@@ -262,3 +262,8 @@ in the TypeScript argument parser does not make it a supported Docker flag.
 
 See [source data and attribution](../README.md#data-sources-and-attribution).
 The code licence does not replace the source data's licensing terms.
+
+**NSW ward enrichment:** [the source and coverage guide](NSW-WARD-SOURCES.md)
+explains the first qualified council (Camden), precise-site eligibility, null
+reasons and publication gates. The base Geoscape package still has no NSW wards;
+these council snapshots are separately locked and imported after cache restore.

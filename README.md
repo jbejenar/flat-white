@@ -20,6 +20,8 @@
   <a href="docs/README.md">Documentation</a>
 </p>
 
+**New NSW ward coverage:** Camden is the first qualified council; other gaps remain explicit. See [NSW ward sources and coverage](docs/NSW-WARD-SOURCES.md).
+
 ## What is this?
 
 flat-white turns Australian G-NAF address data into **one JSON document per

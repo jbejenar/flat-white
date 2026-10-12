@@ -53,6 +53,16 @@ def validate_index(record, version=None, commit=None):
     )
     if record.get("schemaVersion", "1.0.0") != "1.0.0":
         required.update(f"geocodes-{state}.json" for state in STATES)
+    if record.get("wardSourceLock") is not None:
+        ward_files = record.get("wardSourceFiles")
+        if (record["wardSourceLock"] != "ward-source-lock.json"
+            or not isinstance(ward_files, list) or not ward_files
+            or len(ward_files) != len(set(ward_files))
+            or any(not re.fullmatch(r"wards-[a-z0-9-]+\.json", f) for f in ward_files)):
+            raise ValueError("Invalid ward source evidence inventory")
+        required.update(ward_files)
+        required.update({"ward-source-lock.json", "NSW-WARD-SOURCES.md"})
+        required.update(f"wards-{state}.json" for state in STATES)
     if record["releaseVersion"].count(".") == 2:
         required.update(f"comparison-{state}.jsonl.gz" for state in STATES)
     if not required <= names:
@@ -117,6 +127,20 @@ def index(directory, version, commit):
         "schemaVersion": metadata["schemaVersion"],
         "files": [file_entry(path) for path in paths],
     }
+    if metadata.get("wardSourceLock") is not None:
+        if metadata["wardSourceLock"] != "ward-source-lock.json":
+            raise ValueError("Unknown ward source lock asset")
+        lock = json.loads((directory / "ward-source-lock.json").read_text())
+        result["wardSourceLock"] = "ward-source-lock.json"
+        result["wardSourceFiles"] = [c["source"]["file"] for c in lock["registry"]["councils"] if c["source"]]
+        for council in lock["registry"]["councils"]:
+            source = council["source"]
+            if source:
+                if not re.fullmatch(r"wards-[a-z0-9-]+\.json", source["file"]):
+                    raise ValueError("Unsafe ward source filename")
+                entry = file_entry(directory / source["file"])
+                if entry["bytes"] != source["bytes"] or entry["sha256"] != source["sha256"]:
+                    raise ValueError("Ward source bytes do not match the qualified snapshot")
     validate_index(result, version, commit)
     (directory / "evidence-index.json").write_text(json.dumps(result, indent=2) + "\n")
 

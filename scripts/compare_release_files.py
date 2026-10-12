@@ -187,7 +187,7 @@ def geocode_tie_repair(before, after):
 
 
 def allowed_change(
-    change, state, quarter, prior_schema, schema, before=None, after=None
+    change, state, quarter, prior_schema, schema, before=None, after=None, ward_registry=None
 ):
     if (
         quarter == "2026.08"
@@ -197,6 +197,21 @@ def allowed_change(
         and change["path"].split(".")[0] in ("geocode", "location", "allGeocodes")
     ):
         return geocode_tie_repair(before, after)
+
+    if (quarter == "2026.08" and state == "NSW" and schema == "1.1.0"
+        and prior_schema in ("1.0.0", "1.1.0") and ward_registry is not None
+        and before is not None and after is not None
+        and change["path"] == "boundaries.ward" and change["beforePresent"]
+        and change.get("before") is None and change["afterPresent"]):
+        lga = after.get("boundaries", {}).get("lga")
+        point = after.get("geocode")
+        council = next((c for c in ward_registry["councils"] if c["status"] == "enabled"
+                        and lga == {"code": c["lgaCode"], "name": c["lgaName"]}), None)
+        # Names are locked alongside approved codes; no guess based on LGA text.
+        types = ward_registry["preciseSiteTypes"]
+        return bool(council and point and point.get("reliability") in (1, 2)
+                    and any(point.get("type") in (t["code"],t["name"]) for t in types)
+                    and change.get("after") in [{"name": w["name"]} for w in council["source"]["wards"]])
     # Only reviewed repairs may pass a same-quarter comparison. The producer's
     # independent source, writer, reconciliation and OT snapshot gates still apply.
     if (
@@ -229,7 +244,7 @@ def allowed_change(
 
 
 def compare_state(
-    prior, current, output, *, state, prior_quarter, quarter, prior_schema, schema
+    prior, current, output, *, state, prior_quarter, quarter, prior_schema, schema, ward_registry=None
 ):
     same_quarter = prior_quarter == quarter
     report = {
@@ -299,7 +314,7 @@ def compare_state(
                         unexpected = False
                         for change in changes:
                             approved = not same_quarter or allowed_change(
-                                change, state, quarter, prior_schema, schema, a, b
+                                change, state, quarter, prior_schema, schema, a, b, ward_registry
                             )
                             change["expected"] = approved
                             unexpected |= not approved
@@ -359,6 +374,13 @@ def compare_release(directory, repository):
     mirror = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mirror)
     metadata = json.loads((directory / "metadata.json").read_text())
+    ward_registry = None
+    if metadata.get("wardSourceLock"):
+        lock = json.loads((directory / "ward-source-lock.json").read_text())
+        ward_registry = json.loads((Path(__file__).resolve().parents[1] / "config/nsw-wards.json").read_text())
+        if (lock.get("registry") != ward_registry or ward_registry["fixtureOnly"]
+            or ward_registry["referenceDate"] != metadata.get("boundaryReferenceDate")):
+            raise ValueError("Ward comparison requires the qualified registry and reference date")
     releases = json.loads(
         subprocess.check_output(
             [
@@ -457,6 +479,7 @@ def compare_release(directory, repository):
                 quarter=metadata["gnafVersion"],
                 prior_schema=plan["schema_version"],
                 schema=metadata["schemaVersion"],
+                ward_registry=ward_registry,
             )
             if (
                 result["priorCount"] != plan["files"][state]["records"]

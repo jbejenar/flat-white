@@ -16,6 +16,7 @@ VALUES
   ('FW_TIE_002','2026-02-01','411236384','EAS',2,145.002,-37.002),
   ('FW_TIE_001','2026-02-01','411236384','PAPS',2,145.001,-37.001);
 SQL
+  cat sql/ward_sources_prep.sql
   for pass in reversed reordered; do
     if [[ "$pass" == reordered ]]; then
       cat <<'SQL'
