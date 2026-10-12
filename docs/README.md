@@ -12,14 +12,15 @@ for a downloaded file; older published releases keep their original contract.
 
 ## Use the data
 
-| I want to…                            | Read                                                   |
-| ------------------------------------- | ------------------------------------------------------ |
-| Download a state and check it         | [README quick start](../README.md#quick-start)         |
-| Upgrade an existing consumer          | [ASGS 2026 migration guide](MIGRATING-TO-ASGS-2026.md) |
-| Understand fields, nulls and versions | [Document schema](DOCUMENT-SCHEMA.md)                  |
-| Trace a value to its source           | [Field provenance](FIELD-PROVENANCE.md)                |
-| Understand geographic assignments     | [Boundary processing](BOUNDARIES.md)                   |
-| Review changes to published files     | [Changelog](../CHANGELOG.md)                           |
+| I want to…                            | Read                                                              |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| Download a state and check it         | [README quick start](../README.md#quick-start)                    |
+| Upgrade from schema 0.x / ASGS 2021   | [ASGS 2026 migration guide](MIGRATING-TO-ASGS-2026.md)            |
+| Upgrade from schema 1.0 to 1.1        | [Fallback coordinates and enrichment](MIGRATING-TO-SCHEMA-1.1.md) |
+| Understand fields, nulls and versions | [Document schema](DOCUMENT-SCHEMA.md)                             |
+| Trace a value to its source           | [Field provenance](FIELD-PROVENANCE.md)                           |
+| Understand geographic assignments     | [Boundary processing](BOUNDARIES.md)                              |
+| Review changes to published files     | [Changelog](../CHANGELOG.md)                                      |
 
 ## Build and maintain it
 
@@ -42,7 +43,7 @@ These records are useful context, not current build instructions:
 
 - [Earlier boundary incidents](history/BOUNDARIES-PRE-1.0.md): the old dual-path implementation and its removal.
 - [April 2026 performance baseline](PERFORMANCE.md) and [NSW memory analysis](NSW-MEMORY-ANALYSIS.md): measurements and estimates from before this migration.
-- [Roadmap](../ROADMAP.md) and [earlier session notes](../NEXT-SESSION.md): dated plans and implementation history. Their old examples do not define schema 1.0.0.
+- [Roadmap](../ROADMAP.md) and [earlier session notes](../NEXT-SESSION.md): dated plans and implementation history. Use the current contract for schema 1.x.
 
 Changed current guidance is marked **Schema 1.0.0 change**. Historical sections
 keep their original versions and dates so that old decisions and incidents remain

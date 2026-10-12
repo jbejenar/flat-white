@@ -28,14 +28,17 @@ the published manifest and all 11 data/mapping object sizes and SHA-256 checksum
      targets v2026.08.2. Do not publish the held draft or claim S3 success before verification.
      Upstream date policy: [PR #105](https://github.com/minus34/gnaf-loader/pull/105).
   3. Schema 1.1.0 `fallbackGeocode`, deterministic valid site-point selection,
-     converter/CRS and compatibility checks. Preserve null primary geometry when
-     only street/locality coordinates exist.
+     converter/CRS and compatibility checks merged in [PR #221](https://github.com/jbejenar/flat-white/pull/221).
+     Primary geometry stays null when only street/locality coordinates exist.
+     The v2026.08.3 metadata preflight passed; national publication is pending.
   4. Qualify official NSW council ward snapshots, starting with the sampled
      councils where licensing and currency permit. Assign only qualifying site
      points; publish coverage reasons and dated source evidence. Camden is qualified
-     for 31 August 2026; the isolated implementation includes a source lock,
-     strict site-point eligibility, independent artifact checks and evidence mirroring.
-     The 451-document baseline, real SQL ward integration and fixture container pass.
+     for 31 August 2026. [PR #224](https://github.com/jbejenar/flat-white/pull/224)
+     merged with all checks passing. It includes a source lock, strict site-point
+     eligibility, independent spatial verification of every eligible exported point,
+     and evidence mirroring. The 451-document baseline, real SQL integration,
+     empty-database verifier and fixture container pass.
      See docs/NSW-WARD-SOURCES.md. National schema 1.1 publication is still pending.
   5. Publish immutable patch releases, verify S3 and catalogue evidence, and
      compare all PIDs and changed fields with the prior release.

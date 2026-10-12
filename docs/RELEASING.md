@@ -257,7 +257,7 @@ For an exact-source rebuild, choose a new patch number and reuse a published loc
 
 ```bash
 gh workflow run quarterly-build.yml --ref main \
-  -f source_lock_release_tag=v2026.08.1 -f patch_version=2
+  -f source_lock_release_tag=v2026.08.2 -f patch_version=3
 ```
 
 These tags are examples, not a claim that those releases exist. The selected lock
@@ -317,7 +317,7 @@ A GitHub metadata excerpt for an illustrative patch is:
 
 ```json
 {
-  "version": "2026.08.1",
+  "version": "2026.08.3",
   "gnafVersion": "2026.08",
   "adminBoundariesVersion": "2026.08",
   "schemaVersion": "1.1.0",
@@ -325,8 +325,8 @@ A GitHub metadata excerpt for an illustrative patch is:
 }
 ```
 
-S3 uses paths such as `data/address/2026-08-1/` and
-`manifests/address-2026-08-1.json`. Its manifest keeps `manifest_version: 2` and adds
+S3 uses paths such as `data/address/2026-08-3/` and
+`manifests/address-2026-08-3.json`. Its manifest keeps `manifest_version: 2` and adds
 `schema_version: "1.1.0"` and `asgs_year: 2026`. See the
 [migration guide's metadata table](MIGRATING-TO-ASGS-2026.md#know-which-version-you-are-checking)
 for the differences between release, source, schema and manifest versions.
@@ -340,7 +340,7 @@ Manually making a draft public does not by itself run a previously skipped S3 jo
 After reviewing and publishing it, use the explicit mirror-only mode:
 
 ```bash
-gh workflow run quarterly-build.yml --ref main -f mirror_release_tag=v2026.08.1
+gh workflow run quarterly-build.yml --ref main -f mirror_release_tag=v2026.08.2
 ```
 
 This is a publication action that writes to S3. Use it only for the public release
