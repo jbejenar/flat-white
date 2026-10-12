@@ -1,9 +1,9 @@
 # DEC-007 — GitHub Releases Distribution
 
-> **Schema 1.0.0 change — current clarification.**
+> **Updated for schema 1.1.0 — current clarification.**
 > GitHub Releases remains the primary download channel. The optional S3 mirror is
 > implemented and runs after public release. Release metadata and the S3 manifest
-> identify schema 1.0.0 and ASGS 2026; the manifest envelope remains version 2. The
+> identify the actual schema version and ASGS 2026; the manifest envelope remains version 2. The
 > combined national file is a workflow artifact and S3 output rather than a GitHub
 > release asset. See [distribution details](../RELEASING.md#what-gets-published).
 

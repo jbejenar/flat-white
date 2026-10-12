@@ -10,6 +10,12 @@
 > replaces the old fixed quarterly day. The fixture keeps February addresses with
 > a synthetic 2026 census overlay. See the [migration guide](docs/MIGRATING-TO-ASGS-2026.md).
 > Historical 2021 references in completed tickets are preserved as evidence.
+>
+> **Publication audit, 12 October 2026:** the Docker Hub workflow and its
+> multi-architecture checks exist, but no publication runs or required repository
+> credentials were visible. P2.07/E1.07 completion entries below are historical
+> implementation notes, not evidence of an available registry image. Use the
+> README's source-build instructions; see [the current follow-up](NEXT-WORK.md#current-focus).
 
 ### Australian addresses. Flattened and served.
 

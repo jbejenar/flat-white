@@ -4,8 +4,10 @@ Schema 1.1 keeps ASGS 2026 and adds `fallbackGeocode`. It answers a common
 question: when the source has no property point, does it at least locate the
 street or locality? The answer now has its own field and an explicit precision.
 
-Check the downloaded release's `metadata.json` before upgrading. This guide
-describes the current code; an older published release remains schema 1.0.
+Schema 1.1 was first published in
+[v2026.08.3](https://github.com/jbejenar/flat-white/releases/tag/v2026.08.3).
+Check the downloaded release's `metadata.json` before upgrading: the preceding
+August releases `v2026.08` and `v2026.08.2` remain schema 1.0.
 Consumers migrating from schema 0.x must also follow the
 [ASGS 2026 migration](MIGRATING-TO-ASGS-2026.md).
 
@@ -59,7 +61,12 @@ a NSW ward or place a precise property marker.
 6. Check fallback-only addresses in the application. They must not appear as
    precise property locations. Switch readers after these checks pass.
 
-For August 2026, the audited OT expectation is 3,394 site points plus 411
+The first schema 1.1 release contains 14,822,288 site points and 286,222 separate
+fallbacks nationally: 276,837 street and 9,385 locality. The full comparison with
+`v2026.08.2` found no changes to existing coordinates or other fields, apart from
+the qualified Camden ward fills. Both releases used identical base source archives.
+
+For OT, the published August results are 3,394 site points plus 411
 separate fallbacks: 332 street and 79 locality. The two documented federal
 boundary exceptions remain null; this update does not snap points into polygons.
 These are checks for that source edition, not permanent targets for later quarters.

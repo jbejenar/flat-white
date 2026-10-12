@@ -9,24 +9,27 @@ The `gnaf-loader Update Check` workflow checks `minus34/gnaf-loader` every Monda
 ## Current pin and upstream repair
 
 The pin is [`a0fec3b`](https://github.com/jbejenar/gnaf-loader/commit/a0fec3b6efceeca1a6a48beff8d10c9da586342d),
-the `202608` release plus three submitted repairs. The authority fix in
-[upstream PR #103](https://github.com/minus34/gnaf-loader/pull/103). The release's
-authority-table query contains a literal `%` before the schema name and selects
-no tables. That skips field-name normalization, deduplication and authority keys;
-electoral preparation then fails or multiplies polygon rows.
+the `202608` release plus three repairs now merged upstream.
+[PR #103](https://github.com/minus34/gnaf-loader/pull/103), merged on 4 October
+2026, fixes the authority-table query. The original release used a literal `%`
+before the schema name and selected no tables. That skipped field-name
+normalization, deduplication and authority keys; electoral preparation then
+failed or multiplied polygon rows.
 
 The contribution uses a parameterized exact schema comparison and a literal
-`_aut` suffix. The existing configured fork hosts this immutable commit while
-upstream review is pending. The submodule working tree stays clean; no build-time
-patch is applied. This is a temporary pin exception, not a new source contract.
+`_aut` suffix. The existing configured fork still hosts the immutable commit
+used by the verified releases. As of 12 October, the latest published upstream
+tag remains `202608`, released before the repairs. A future pin update must retain
+all three fixes and pass the checks below. The submodule working tree stays clean;
+no build-time patch is applied. This pin does not change the source contract.
 The census preparation SQL and NDJSON baseline are unchanged by this repair.
 
-**New loader repairs:** [PR #104](https://github.com/minus34/gnaf-loader/pull/104)
+**Other loader repairs:** [PR #104](https://github.com/minus34/gnaf-loader/pull/104)
 loads the ACT/NT federal dependencies needed by OT without exporting those states.
 [PR #105](https://github.com/minus34/gnaf-loader/pull/105) adds an explicit boundary
 reference date. flat-white supplies the administrative package month-end; the
-upstream default remains backward compatible. All three repairs are included in
-the temporary fork pin.
+upstream default remains backward compatible. Both merged on 5 October 2026.
+All three repairs are included in the current fork pin.
 
 CI now runs nine small database tests from the pinned loader inside the built
 production image, with networking disabled. They exercise the actual cleanup

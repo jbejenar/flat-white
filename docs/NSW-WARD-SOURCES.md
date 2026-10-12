@@ -43,8 +43,15 @@ The exact Geoscape crosswalk is `lga2a2057496fb7`, **Camden Council**. Qualifica
 on 12 October 2026 checked all 58,791 Camden addresses in the checksum-verified
 published August baseline. All 57,844 qualifying site points intersected exactly
 one logical ward. Another 208 had reliability-3 gap geocodes; 739 had no primary
-site point. Those 947 do not qualify. These are baseline qualification results;
-use the new release's diagnostics for its actual counts.
+site point. Those 947 do not qualify.
+
+The first published enrichment release,
+[v2026.08.3](https://github.com/jbejenar/flat-white/releases/tag/v2026.08.3), confirmed
+the same counts on its final artifacts: 57,844 matched out of 57,844 eligible,
+947 excluded, and no unmatched or ambiguous points. Its publication verifier
+independently recomputed every eligible assignment from the locked polygons.
+See the [published coverage report](https://github.com/jbejenar/flat-white/releases/download/v2026.08.3/wards-NSW.json);
+later releases must pass their own checks against their own source snapshots.
 
 ## How an address qualifies
 
