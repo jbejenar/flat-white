@@ -9,7 +9,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-Apache_2.0-blue" alt="Licence"></a>
   <img src="https://img.shields.io/badge/node-22%20%7C%2024%20%7C%2026-brightgreen" alt="Node 22, 24 or 26">
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
-  <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-72%2F100_L4-97ca00" alt="ARI Score"></a>
+  <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-73%2F100_L4-97ca00" alt="ARI Score"></a>
 </p>
 
 <p align="center">
