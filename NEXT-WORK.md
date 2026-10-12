@@ -61,9 +61,13 @@ migration shipped in `v2026.08` through PRs #204 and #205. See the dated
      and evidence objects passed size/SHA-256 checks. [Catalogue deployment
      38199929841](https://github.com/jbejenar/flat-white/actions/runs/38199929841)
      passed, and its live page was checked over HTTP.
-- Track [upstream loader PR #103](https://github.com/minus34/gnaf-loader/pull/103).
-  Replace its temporary fix pin with an upstream version containing the repair
-  once the authority integration and existing compatibility checks pass.
+- Upstream loader repairs [#103](https://github.com/minus34/gnaf-loader/pull/103),
+  [#104](https://github.com/minus34/gnaf-loader/pull/104) and
+  [#105](https://github.com/minus34/gnaf-loader/pull/105) merged on 4–5 October.
+  As of 12 October, the latest published upstream release is still `202608`,
+  which predates those repairs. Keep the recorded `a0fec3b` pin until a replacement
+  containing all three fixes passes the authority, dependency/date and existing
+  compatibility checks. The published builds retain their exact original pin.
 - Record national build memory/capacity evidence separately from the successful
   publication and the small random-sample check. Neither proves every source
   field is complete or every geographic assignment is correct.
@@ -99,10 +103,12 @@ not certification of every field or of the complete dataset.
 - **Electoral currency:** the AEC [confirmed the ACT, SA and Tasmania
   redistributions on 8 October 2026](https://www.aec.gov.au/media/2026/10-08.htm).
   The repaired August snapshot predates those determinations and does not claim
-  to include them. Recheck the next source quarter, including Symonston. Keep
-  boundary dates distinct from parliamentary representation: the AEC explains
-  that [new electorates apply to the next general election](https://www.aec.gov.au/redistributions/about/need-to-know.html),
-  while existing MPs continue to represent their previous electorates.
+  to include them. Recheck the next source quarter, including Symonston. The
+  [AEC distinguishes three dates](https://www.aec.gov.au/redistributions/about/need-to-know.html):
+  the new names and boundaries took effect on 8 October; elections will use them
+  when a writ is issued for the next general election; and MPs will represent the
+  new electorates after that election. The later election timing does not delay
+  the boundary change.
 
 ## Follow-up findings from the documentation audit
 

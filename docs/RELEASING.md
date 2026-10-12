@@ -263,8 +263,8 @@ gh workflow run quarterly-build.yml --ref main \
 
 That release is already published; choose another unused patch number for a new
 build. The selected lock supplies the source quarters and URLs; do not combine
-it with URL overrides. The
-acquisition job downloads those URLs again and rejects changed bytes. A historical
+it with URL overrides. The acquisition job downloads those URLs again and rejects
+changed bytes. A historical
 release without a lock cannot prove byte-identical upstream inputs. Its document
 files can still be compared, but do not invent missing archive checksums.
 
