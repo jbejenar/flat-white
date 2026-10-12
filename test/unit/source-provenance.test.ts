@@ -120,7 +120,8 @@ it("fingerprints tracked build inputs and the loader pin, excluding generated fi
   mkdirSync(join(directory, "scripts"));
   mkdirSync(join(directory, "gnaf-loader"));
   writeFileSync(join(directory, "src/schema.ts"), "export const version = 1;");
-  git("add", "src");
+  writeFileSync(join(directory, ".npmrc"), "engine-strict=true\n");
+  git("add", "src", ".npmrc");
   execFileSync("git", ["-C", join(directory, "gnaf-loader"), "init", "-q"]);
   const loaderCommit = () =>
     execFileSync("git", [
@@ -146,6 +147,10 @@ it("fingerprints tracked build inputs and the loader pin, excluding generated fi
   const original = hash();
   mkdirSync(join(directory, "scripts/__pycache__"));
   writeFileSync(join(directory, "scripts/__pycache__/generated.pyc"), "generated");
+  expect(hash()).toBe(original);
+  writeFileSync(join(directory, ".npmrc"), "engine-strict=false\n");
+  expect(hash()).not.toBe(original);
+  writeFileSync(join(directory, ".npmrc"), "engine-strict=true\n");
   expect(hash()).toBe(original);
   writeFileSync(join(directory, "src/schema.ts"), "export const version = 2;");
   expect(hash()).not.toBe(original);

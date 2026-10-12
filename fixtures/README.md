@@ -11,7 +11,8 @@ national dataset. It contains **451 principal VIC addresses** from the February
 
 ## Run the fixture build
 
-With Node.js 22.22.1 or newer, Docker and Compose available:
+With the pinned Node.js version from `.nvmrc`, Docker and Compose available
+(see [supported Node versions](../README.md#build-it-yourself)):
 
 ```bash
 npm ci

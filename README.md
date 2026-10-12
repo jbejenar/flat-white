@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/jbejenar/flat-white/actions/workflows/ci.yml"><img src="https://github.com/jbejenar/flat-white/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/licence-Apache_2.0-blue" alt="Licence"></a>
-  <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="Node">
+  <img src="https://img.shields.io/badge/node-22%20%7C%2024%20%7C%2026-brightgreen" alt="Node 22, 24 or 26">
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
   <a href=".github/workflows/ariscan.yml"><img src="https://img.shields.io/badge/ARI-72%2F100_L4-97ca00" alt="ARI Score"></a>
 </p>
@@ -168,7 +168,13 @@ Postgres is a build tool, not a database service you need to run to consume the 
 
 For development, use the committed fixture. It exercises preparation, spatial
 joins, both flatten SQL paths, schema checks and the regression baseline without
-a national download. You need Node.js 22.22.1 or newer and Docker with Compose.
+a national download. Use the pinned Node.js 22.22.1 in `.nvmrc` and Docker with
+Compose. **Supported Node versions:** 22.22.1 through 22.x, 24.x and 26.x.
+
+**Dependency compatibility:** npm now rejects packages that require an unsupported
+Node version, both locally and in the Docker build. Node type definitions follow
+the Node 22 runtime. Parquet stays at `@dsnp/parquetjs` 1.8.8 because newer releases
+require Node 24.18 or later; upgrading it needs a coordinated runtime migration.
 
 ```bash
 git clone --recurse-submodules https://github.com/jbejenar/flat-white.git
