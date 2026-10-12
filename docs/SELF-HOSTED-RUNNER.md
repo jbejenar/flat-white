@@ -54,7 +54,8 @@ npm ci
 ./scripts/build-fixture-only.sh
 ```
 
-These commands require Node.js 22.22.1 or newer and Docker Compose on the host.
+Use the pinned Node.js version in `.nvmrc` and Docker Compose on the host. The
+[development instructions](../README.md#build-it-yourself) list the supported Node versions.
 Leave `GNAF_VERSION` unset for the frozen fixture.
 
 Then dispatch a metadata-only workflow run to the runner label:

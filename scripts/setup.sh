@@ -6,15 +6,11 @@ set -euo pipefail
 
 echo "=== flat-white setup ==="
 
-# Check Node.js version
-REQUIRED_NODE=22
-CURRENT_NODE=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$CURRENT_NODE" -lt "$REQUIRED_NODE" ]; then
-  echo "ERROR: Node.js >= $REQUIRED_NODE required (found v$(node -v))"
-  echo "  Install via: nvm install $REQUIRED_NODE"
-  exit 1
-fi
-echo "Node.js $(node -v) — OK"
+# Let npm enforce package.json and dependency engines through .npmrc before
+# other setup. This also installs the exact lockfile rather than updating it.
+echo "Node.js $(node -v) — checking declared engine requirements..."
+echo "Installing locked npm dependencies..."
+npm ci
 
 # Check Docker
 if ! command -v docker &> /dev/null; then
@@ -37,10 +33,6 @@ else
   echo "Initialising gnaf-loader submodule..."
   git submodule update --init
 fi
-
-# Install dependencies
-echo "Installing npm dependencies..."
-npm install
 
 # Verify TypeScript compiles
 echo "Type-checking..."
