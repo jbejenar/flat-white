@@ -42,7 +42,7 @@
   "dependencies": {
     "@dsnp/parquetjs": "1.8.8",
     "postgres": "^3.4.9",
-    "zod": "^4.6.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
